@@ -1,0 +1,24 @@
+name: Build Check
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        if: hashFiles('package.json') != ''
+        run: npm ci
+      - name: Run build
+        if: hashFiles('package.json') != ''
+        run: npm run build
+      - name: Skip when no package.json exists
+        if: hashFiles('package.json') == ''
+        run: echo "No package.json yet."
