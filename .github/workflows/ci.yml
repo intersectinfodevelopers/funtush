@@ -15,26 +15,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Detect project files
-        run: |
-          if [ -f package.json ]; then
-            echo "package.json found"
-          else
-            echo "No package.json found yet."
-          fi
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
-        if: hashFiles('package.json') != ''
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        if: hashFiles('package.json') != ''
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Test
-        if: hashFiles('package.json') != ''
-        run: npm test -- --ci
-
-      - name: Build
-        if: hashFiles('package.json') != ''
-        run: npm run build
+        run: pnpm run test

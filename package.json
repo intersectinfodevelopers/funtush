@@ -1,0 +1,29 @@
+{
+  "name": "funtush",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Funtush monorepo â B2B2C multi-tenant SaaS marketplace for trekking agencies.",
+  "packageManager": "pnpm@11.5.1",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{js,mjs,cjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs,cjs,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@funtush/config": "workspace:*",
+    "eslint": "^9.17.0",
+    "globals": "^15.13.0",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.5.4",
+    "vitest": "^2.1.8"
+  }
+}

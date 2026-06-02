@@ -13,12 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
       - name: Install dependencies
-        if: hashFiles('package.json') != ''
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Run lint
-        if: hashFiles('package.json') != ''
-        run: npm run lint
-      - name: Skip when no package.json exists
-        if: hashFiles('package.json') == ''
-        run: echo "No package.json yet."
+        run: pnpm run lint

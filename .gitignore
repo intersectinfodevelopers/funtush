@@ -5,12 +5,16 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+.claude/
 
 # Dependencies
 node_modules/
 dist/
 build/
 coverage/
+
+# Build tooling
+.turbo/
 
 # Environment
 .env
