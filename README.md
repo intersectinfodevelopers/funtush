@@ -7,6 +7,7 @@ Funtush is a private travel and tours SaaS project.
 - `develop`: protected integration branch
 - Feature branches should branch from `develop`
 
+
 ## Repository scaffold
 - Issue templates live in `.github/ISSUE_TEMPLATE/`
 - Pull request template lives in `.github/PULL_REQUEST_TEMPLATE.md`
@@ -19,6 +20,8 @@ Plain JavaScript (ESM), managed with [Turborepo](https://turbo.build) +
 [pnpm](https://pnpm.io) workspaces. Requires Node.js >= 22 and pnpm >= 11.
 See [docs/MONOREPO.md](docs/MONOREPO.md) for the full explainer.
 
+```bash
+pnpm install bcrypt jsonwebtoken node nodemailer express pg
 ```
 apps/
   api/      @funtush/api      Node.js + Express backend
@@ -30,6 +33,13 @@ packages/
   ui/       @funtush/ui       Shared UI primitives + design tokens
 config/     @funtush/config   Shared ESLint preset
 ```
+
+## Environment Variables
+
+```env
+DATABASE_URL
+```
+
 
 ### Commands
 
