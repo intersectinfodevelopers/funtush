@@ -6,4 +6,5 @@ packages:
   - "packages/*"
   - "config"
 allowBuilds:
+  bcrypt: true
   esbuild: true
