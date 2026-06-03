@@ -2,16 +2,21 @@
   "name": "@funtush/database",
   "version": "0.0.0",
   "private": true,
-  "description": "Data-access layer placeholder (PostgreSQL/MongoDB/Redis) for Funtush.",
+  "description": "Data-access layer (PostgreSQL/MongoDB/Redis) for Funtush.",
   "type": "module",
   "main": "./src/index.js",
-  "exports": {
-    ".": "./src/index.js"
-  },
+  "exports": { ".": "./src/index.js" },
   "scripts": {
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
-    "clean": "rimraf .turbo coverage"
+    "clean": "rimraf .turbo coverage",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@funtush/shared": "workspace:*",
