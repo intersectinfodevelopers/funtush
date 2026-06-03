@@ -4,9 +4,15 @@
   "private": true,
   "description": "Data-access layer (PostgreSQL/MongoDB/Redis) for Funtush.",
   "type": "module",
+<<<<<<< HEAD
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
+=======
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+>>>>>>> a65db82 (feat: run initial migration + seed, add prisma adapter deps (Day 2))
   },
   "scripts": {
     "lint": "eslint src",
