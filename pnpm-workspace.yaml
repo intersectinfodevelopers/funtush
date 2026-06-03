@@ -6,6 +6,5 @@ packages:
   - "packages/*"
   - "config"
 allowBuilds:
-  '@prisma/engines': false
+  bcrypt: true
   esbuild: true
-  prisma: false
