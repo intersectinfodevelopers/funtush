@@ -1,17 +1,20 @@
 import express from "express";
+import { resolveTenant } from "./middleware/resolveTenant.middleware.js";
 
 const app = express();
-const port = Number(process.env.PORT ?? 4000);
 
 app.use(express.json());
+app.use(resolveTenant);
 
-// Liveness probe consumed by Prometheus / the load balancer.
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "funtush-api" });
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    tenantId: req.tenantId,
+    agencyId: req.agencyId,
+    context: req.context,   // ← "platform" | "agency" | "admin"
+  });
 });
 
-app.listen(port, () => {
-  console.log(`Funtush API listening on port ${port}`);
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`Server running on port ${process.env.PORT || 3000}`);
 });
-
-export { app };
