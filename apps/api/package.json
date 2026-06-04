@@ -1,0 +1,30 @@
+{
+  "name": "@funtush/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Funtush backend API (Node.js + Express).",
+  "type": "module",
+  "main": "./src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rimraf .turbo coverage"
+  },
+  "dependencies": {
+    "@funtush/database": "workspace:*",
+    "@funtush/shared": "workspace:*",
+    "bcrypt": "^6.0.0",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^8.0.10"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.9.1",
+    "@types/nodemailer": "^8.0.0"
+  }
+}

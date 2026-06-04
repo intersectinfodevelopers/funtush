@@ -1,0 +1,10 @@
+# pnpm workspace definition.
+# Tenant-facing apps live under apps/*, shared libraries under packages/*,
+# and cross-cutting tooling (tsconfig, eslint) under config/.
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "config"
+allowBuilds:
+  bcrypt: false
+  esbuild: true

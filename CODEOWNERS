@@ -1,0 +1,5 @@
+/apps/api/* @backend-lead
+/apps/mobile/* @mobile-lead
+/packages/database/* @database-lead
+
+* @project-owner
