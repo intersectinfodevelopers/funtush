@@ -1,7 +1,7 @@
 import { validateAcencyInput } from "../utils/validator";
 import { db } from "../../../../packages/database/src/db";
 import { generateSlug } from "../utils/slug";
-import { sendWelcomeEmail } from "../utils/email";
+import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email";
 
 interface CreateAgencyInput {
   company_name: string;
@@ -52,11 +52,79 @@ export const createAgency = async (data: CreateAgencyInput) => {
     [agency.id, "refresh-token"]
   );
 
+  const trial_expires_at = new Date();
+  trial_expires_at.setDate(trial_expires_at.getDate() + 30);
+
+  await db.query(
+    "INSERT INTO agency (company_id, tier, trial_expires_at) VALUES ($1, $2, $3)",
+    [agency.id, "FREE", trial_expires_at]
+  );
+
   // email after registration
   await sendWelcomeEmail(email, password, company_name);
 
   return {
-    message: "agency registered successfully",
-    slug,
+    success: true,
+    message: "Agency registered successfully",
+    data: {
+      slug,
+    },
   };
+};
+
+
+export const lockExpiredAgencies = async () => {
+  const now = new Date();
+
+  // Find expired tiers where status is still active
+  const expiredAgencies = await db.query(
+    `SELECT * FROM agency WHERE trial_expires_at < $1 AND status = 'ACTIVE'`,
+    [now]
+  );
+
+  const agencies = expiredAgencies.rows;
+
+  if (agencies.length === 0) return;
+
+  // Lock them
+  await db.query(
+    `UPDATE agency SET status = 'LOCKED' WHERE trial_expires_at < $1 AND status = 'ACTIVE' RETURNING *`,
+    [now]
+  );
+
+  // Send warning email
+  for (const agency of agencies) {
+    await sendTrialExpiredEmail(agency.email, agency.company_name);
+  }
+
+};
+
+
+//TO BE DONE
+export const getSubscription = async () => {
+  // 
+};
+
+export const getAgencyDashboard = async () => {
+  // 
+};
+
+export const acceptBookings = async () => {
+  // 
+};
+
+export const publishPackages = async () => {
+  // 
+};
+
+
+export const agencySubscription = async (agencyId: string, tier: string) => {
+  return await db.query(
+    `UPDATE agency
+     SET status = 'ACTIVE',
+         tier = $1
+     WHERE id = $2
+     RETURNING *`,
+    [tier, agencyId]
+  );
 };
