@@ -42,10 +42,10 @@ export async function getDashboardStats() {
     ]);
 
   const stats = {
-    agenciesByTier: agenciesByTier.reduce<Record<string, number>>((acc, row) => {
-      acc[row.tier] = row._count._all;
-      return acc;
-    }, {}),
+ agenciesByTier: (agenciesByTier as any[]).reduce((acc: Record<string, number>, row: any) => {
+  acc[row.tier] = row._count._all;
+  return acc;
+}, {} as Record<string, number>),
     totalActiveSubscriptions: activeSubscriptions,
     revenueThisMonth: monthlyRevenue._sum.amount ?? 0,
     activeTreksLive: activeTreks,
