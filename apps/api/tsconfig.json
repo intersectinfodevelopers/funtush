@@ -1,4 +1,14 @@
 {
-  "extends": "../../config/tsconfig.base.json",
-  "include": ["src"]
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "commonjs",
+    "moduleResolution": "Node",
+    "ignoreDeprecations": "6.0",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"],
 }

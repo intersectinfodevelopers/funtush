@@ -3,8 +3,7 @@ import { db } from "../../../../packages/database/src/db";
 import { generateSlug } from "../utils/slug";
 import { sendWelcomeEmail } from "../utils/email";
 
-
-interface CreateAgencyData {
+interface CreateAgencyInput {
   company_name: string;
   email: string;
   password: string;
@@ -12,7 +11,7 @@ interface CreateAgencyData {
   country?: string;
 }
 
-export const createAgency = async (data: CreateAgencyData) => {
+export const createAgency = async (data: CreateAgencyInput) => {
   const { company_name, email, password, phone } = data;
 
   // validation

@@ -13,5 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf .turbo coverage"
+  },
+  "dependencies": {
+    "redis": "^6.0.0"
   }
 }

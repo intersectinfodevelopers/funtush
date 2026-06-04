@@ -1,0 +1,14 @@
+{
+  "name": "@funtush/auth",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@funtush/shared": "workspace:*",
+    "bcrypt": "^6.0.0",
+    "express": "^4.22.2",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}
