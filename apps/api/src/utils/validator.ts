@@ -1,4 +1,10 @@
-export const validateAcencyInput = (data: any) => {
+interface AgencyInput {
+  email: string;
+  password: string;
+  phone: string;
+}
+
+export const validateAcencyInput = (data: AgencyInput) => {
   const { email, password, phone } = data;
 
   if (!email.includes("@")) {

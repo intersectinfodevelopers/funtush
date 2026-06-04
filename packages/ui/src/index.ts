@@ -9,4 +9,4 @@ export const designTokens = {
   },
   radius: 8,
   spacingUnit: 4,
-};
+} as const;

@@ -8,6 +8,9 @@
       "persistent": true
     },
     "lint": {},
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
     "test": {},
     "clean": {
       "cache": false

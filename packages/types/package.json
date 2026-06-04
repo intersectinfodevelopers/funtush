@@ -1,18 +1,13 @@
 {
-  "name": "@funtush/mobile",
+  "name": "@funtush/types",
   "version": "0.0.0",
   "private": true,
-  "description": "Funtush guide/trekker mobile app (React Native â placeholder).",
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "dev": "tsx src/index.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf .turbo coverage"
-  },
-  "dependencies": {
-    "@funtush/shared": "workspace:*"
   }
 }
