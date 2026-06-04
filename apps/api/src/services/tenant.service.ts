@@ -1,50 +1,52 @@
-import { prisma } from "@funtush/database";
-
-const prisma = new PrismaClient();
+import { prisma } from "../packages/database/prisma";
+import { cacheGet, cacheSet, TENANT_TTL } from "./redis.service";
 
 export interface TenantInfo {
-  tenantId: string | null;
-  agencyId: string | null;
-  context: "central_platform" | "agency" | "platform_admin" | "unknown";
+  tenantId: string;
+  agencyId: string;
 }
 
-
-
-
+/**
+ * Resolve tenant from a subdomain slug.
+ * e.g. xyz.funtush.io → slug = "xyz"
+ */
 export async function getTenantBySubdomain(slug: string): Promise<TenantInfo | null> {
+  const cacheKey = `tenant:subdomain:${slug}`;
+  const cached = await cacheGet<TenantInfo>(cacheKey);
+  if (cached) return cached;
+
   const agency = await prisma.agency.findUnique({
-    where: { subdomain: slug },
+    where: { slug },
     select: { id: true, tenantId: true },
   });
 
   if (!agency) return null;
 
-  return {
-    tenantId: agency.tenantId,
-    agencyId: agency.id,
-    context: "agency",
-  };
+  const info: TenantInfo = { tenantId: agency.tenantId, agencyId: agency.id };
+  await cacheSet(cacheKey, info, TENANT_TTL);
+  return info;
 }
 
 /**
  * Resolve tenant from a fully custom domain.
- *  www.custom.com → looks up custom domain mapping
+ * e.g. www.custom.com → looks up domainMapping table
  */
 export async function getTenantByCustomDomain(domain: string): Promise<TenantInfo | null> {
-  const mapping = await prisma.customDomain.findUnique({
+  const cacheKey = `tenant:domain:${domain}`;
+  const cached = await cacheGet<TenantInfo>(cacheKey);
+  if (cached) return cached;
+
+  const mapping = await prisma.domainMapping.findUnique({
     where: { domain },
-    select: {
-      agency: {
-        select: { id: true, tenantId: true },
-      },
-    },
+    include: { agency: { select: { id: true, tenantId: true } } },
   });
 
   if (!mapping?.agency) return null;
 
-  return {
+  const info: TenantInfo = {
     tenantId: mapping.agency.tenantId,
     agencyId: mapping.agency.id,
-    context: "agency",
   };
+  await cacheSet(cacheKey, info, TENANT_TTL);
+  return info;
 }

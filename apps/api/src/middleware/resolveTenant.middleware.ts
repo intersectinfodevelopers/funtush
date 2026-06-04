@@ -1,108 +1,90 @@
+import { prisma } from "../packages/database/prisma";
 import type { Request, Response, NextFunction } from "express";
-import { redis } from "../lib/redis";
-import { prisma } from "@funtush/database";
+import { getTenantBySubdomain, getTenantByCustomDomain } from "../services/tenant.service";
 
-// Extend Express Request globally — no custom interface needed
-declare global {
-  namespace Express {
-    interface Request {
-      tenantId?: string | null;
-      agencyId?: string | null;
-      context?: "platform" | "agency" | "admin";
-    }
-  }
+
+const ADMIN_WHITELIST = new Set(
+  (process.env.ADMIN_IP_WHITELIST || "127.0.0.1,::1").split(",").map((ip) => ip.trim())
+);
+
+function getClientIp(req: Request): string {
+  return (
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.socket.remoteAddress ||
+    ""
+  );
 }
 
 export async function resolveTenant(
-  req: Request,        // ← Standard Request, not TenantRequest
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const host = req.headers.host?.split(":")[0];
+  
+    const host = req.headers.host?.split(":")[0]?.toLowerCase();
 
     if (!host) {
-      res.status(404).json({ error: "Invalid host" });
+      res.status(404).end();
       return;
     }
 
-    if (host === "funtush.com") {
-      req.context = "platform";
+  
+    if (host === "funtush.com" || host === "www.funtush.com") {
+      req.context  = "platform";
       req.tenantId = null;
       req.agencyId = null;
       return next();
     }
 
+    
     if (host === "admin.funtush.com") {
-      req.context = "admin";
-      req.tenantId = null;
-      req.agencyId = null;
-      return next();
-    }
-
-    const cacheKey = `tenant:${host}`;
-    const cached = await redis.get(cacheKey);
-
-    if (cached) {
-      const data = JSON.parse(cached);
-      req.context = "agency";
-      req.tenantId = data.tenantId;
-      req.agencyId = data.agencyId;
+      const ip = getClientIp(req);
+      if (!ADMIN_WHITELIST.has(ip)) {
+   
+        res.status(404).end();
+        return;
+      }
+      req.context        = "admin";
+      req.tenantId       = null;
+      req.agencyId       = null;
+      req.adminIpAllowed = true;
       return next();
     }
 
     if (host.endsWith(".funtush.io")) {
-      const slug = host.split(".")[0];
-
-      const agency = await prisma.agency.findUnique({
-        where: { slug },
-      });
-
-      if (!agency) {
-        res.status(404).json({ error: "Tenant not found" });
+      const slug = host.replace(/\.funtush\.io$/, "");
+      if (!slug) {
+        res.status(404).end();
         return;
       }
 
-      await redis.set(
-        cacheKey,
-        JSON.stringify({
-          tenantId: agency.tenantId,
-          agencyId: agency.id,
-        }),
-        "EX",
-        300
-      );
+      const tenant = await getTenantBySubdomain(slug);
+      if (!tenant) {
+        res.status(404).end();
+        return;
+      }
 
-      req.context = "agency";
-      req.tenantId = agency.tenantId;
-      req.agencyId = agency.id;
+      req.context  = "agency";
+      req.tenantId = tenant.tenantId;
+      req.agencyId = tenant.agencyId;
       return next();
     }
 
-    const domain = await prisma.domainMapping.findUnique({
-      where: { domain: host },
-      include: { agency: true },
-    });
-
-    if (domain?.agency) {
-      await redis.set(
-        cacheKey,
-        JSON.stringify({
-          tenantId: domain.agency.tenantId,
-          agencyId: domain.agency.id,
-        }),
-        "EX",
-        300
-      );
-
-      req.context = "agency";
-      req.tenantId = domain.agency.tenantId;
-      req.agencyId = domain.agency.id;
-      return next();
+    const tenant = await getTenantByCustomDomain(host);
+    if (!tenant) {
+      res.status(404).end();
+      return;
     }
 
-    res.status(404).json({ error: "Unknown domain" });
+    req.context  = "agency";
+    req.tenantId = tenant.tenantId;
+    req.agencyId = tenant.agencyId;
+    return next();
+
   } catch (err) {
-    res.status(500).json({ error: "Tenant resolution failed" });
+    console.error("[resolveTenant] Unexpected error:", err);
+   
+    res.status(404).end();
   }
 }

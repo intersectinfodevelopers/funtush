@@ -1,12 +1,28 @@
-import Redis from "ioredis";
+import { redis } from "../lib/redis";
 
-const redis = new Redis();
+export const TENANT_TTL = 300; // 5 minutes
 
-export async function redisGet(key: string) {
-  const data = await redis.get(key);
-  return data ? JSON.parse(data) : null;
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  try {
+    const data = await redis.get(key);
+    return data ? (JSON.parse(data) as T) : null;
+  } catch {
+    return null;
+  }
 }
 
-export async function redisSet(key: string, value: any, ttl: number) {
-  await redis.set(key, JSON.stringify(value), "EX", ttl);
+export async function cacheSet(key: string, value: unknown, ttl: number = TENANT_TTL): Promise<void> {
+  try {
+    await redis.set(key, JSON.stringify(value), "EX", ttl);
+  } catch (err) {
+    console.error("[Redis] cacheSet failed:", err);
+  }
+}
+
+export async function cacheDel(key: string): Promise<void> {
+  try {
+    await redis.del(key);
+  } catch (err) {
+    console.error("[Redis] cacheDel failed:", err);
+  }
 }

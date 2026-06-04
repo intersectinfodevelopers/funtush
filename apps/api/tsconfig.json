@@ -9,7 +9,10 @@
     "skipLibCheck": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "typeRoots": ["./src/types", "./node_modules/@types"]
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "paths": {
+      "@funtush/database": ["../../packages/database/src/index.d.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

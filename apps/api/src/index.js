@@ -11,9 +11,9 @@ app.get("/health", (req, res) => {
     status: "ok",
     tenantId: req.tenantId,
     agencyId: req.agencyId,
-    context: req.context,   // ← "platform" | "agency" | "admin"
+    context: req.context,   
   });
-});
+}); 
 
 app.listen(process.env.PORT || 3000, () => {
   console.log(`Server running on port ${process.env.PORT || 3000}`);

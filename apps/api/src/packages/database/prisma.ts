@@ -1,22 +1,13 @@
-import { prisma } from "@funtush/database";
+import { PrismaClient } from "@prisma/client";
 
-export async function getTenantFromSlug(slug: string) {
-  return prisma.tenant.findUnique({
-    where: { slug },
-    select: {
-      tenantId: true,
-      agencyId: true,
-    },
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma || new PrismaClient({
+    log: ["error"],
+    datasources: { db: { url: process.env.DATABASE_URL } },
   });
-}
 
-
-export async function getTenantFromDomain(domain: string) {
-  return prisma.tenantDomain.findUnique({
-    where: { domain },
-    select: {
-      tenantId: true,
-      agencyId: true,
-    },
-  });
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
 }
