@@ -1,0 +1,45 @@
+
+ generator client {
+  provider = "prisma-client-js"
+ }
+ datasource db {
+  provider = "postgresql"
+  
+ } 
+ 
+ 
+ 
+ model Role {
+  id          String           @id @default(uuid())
+  agencyId    String           @map("agency_id")
+  name        String
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  permissions RolePermission[]
+    
+
+  @@unique([agencyId, name])  
+  @@map("roles")               
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique 
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  roles       RolePermission[]
+
+  @@map("permissions")        
+}
+
+
+model RolePermission {
+  roleId        String     @map("role_id")
+  permissionKey String     @map("permission_key")
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey]) 
+  @@map("role_permissions")    
+}

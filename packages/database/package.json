@@ -14,6 +14,10 @@
     "clean": "rimraf .turbo coverage"
   },
   "dependencies": {
-    "@funtush/shared": "workspace:*"
+    "@funtush/shared": "workspace:*",
+    "@prisma/client": "^7.8.0"
+  },
+  "devDependencies": {
+    "prisma": "^7.8.0"
   }
 }
