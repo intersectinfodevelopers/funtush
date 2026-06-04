@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,67 +6,35 @@ datasource db {
   provider = "postgresql"
 }
 
-enum AgencyStatus {
-  TRIAL
-  ACTIVE
-  LOCKED
-  SUSPENDED
+model Role {
+  id          String           @id @default(uuid())
+  agencyId    String           @map("agency_id")
+  name        String
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  permissions RolePermission[]
+
+  @@unique([agencyId, name])
+  @@map("roles")
 }
 
-enum UserRole {
-  SUPER_ADMIN
-  AGENCY_ADMIN
-  STAFF
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
 }
 
-model SubscriptionTier {
-  id           String   @id @default(uuid())
-  name         String   @unique // FREE, SMALL, MEDIUM, LARGE
-  maxStaff     Int      @map("max_staff")
-  maxGuides    Int      @map("max_guides")
-  monthlyPrice Decimal  @map("monthly_price") @db.Decimal(10, 2)
-  features     Json
-  agencies     Agency[]
+model RolePermission {
+  roleId        String     @map("role_id")
+  permissionKey String     @map("permission_key")
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
 
-  @@map("subscription_tiers")
-}
-
-model Agency {
-  id             String           @id @default(uuid())
-  name           String
-  email          String           @unique
-  slug           String           @unique
-  status         AgencyStatus     @default(TRIAL)
-  tierName       String           @map("tier")
-  tier           SubscriptionTier @relation(fields: [tierName], references: [name])
-  trialExpiresAt DateTime?        @map("trial_expires_at")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  users          AgencyUser[]
-
-  @@map("agencies")
-}
-
-model AgencyUser {
-  id            String         @id @default(uuid())
-  tenantId      String?        @map("tenant_id")
-  agencyId      String?        @map("agency_id")
-  agency        Agency?        @relation(fields: [agencyId], references: [id])
-  email         String         @unique
-  passwordHash  String         @map("password_hash")
-  role          UserRole       @default(STAFF)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  refreshTokens RefreshToken[]
-
-  @@map("agency_users")
-}
-
-model RefreshToken {
-  id        String     @id @default(uuid())
-  userId    String     @map("user_id")
-  user      AgencyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String     @map("token_hash")
-  expiresAt DateTime   @map("expires_at")
-  createdAt DateTime   @default(now()) @map("created_at")
-
-  @@map("refresh_tokens")
+  @@id([roleId, permissionKey])
+  @@map("role_permissions")
 }
