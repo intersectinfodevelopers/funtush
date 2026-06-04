@@ -1,4 +1,5 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
+
 import { createAgency } from "../services/agency.service";
 
 export const registerAcency = async (req: Request, res: Response) => {
