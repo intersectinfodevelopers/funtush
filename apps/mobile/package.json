@@ -4,10 +4,11 @@
   "private": true,
   "description": "Funtush guide/trekker mobile app (React Native â placeholder).",
   "type": "module",
-  "main": "./src/index.js",
+  "main": "./src/index.ts",
   "scripts": {
-    "dev": "node src/index.js",
+    "dev": "tsx src/index.ts",
     "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf .turbo coverage"
   },
