@@ -14,6 +14,10 @@
     "clean": "rimraf .turbo coverage"
   },
   "dependencies": {
-    "@funtush/shared": "workspace:*"
+    "@funtush/shared": "workspace:*",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
   }
 }

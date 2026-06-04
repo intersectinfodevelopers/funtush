@@ -14,4 +14,5 @@ app.listen(port, () => {
   console.log(`Funtush API listening on port ${port}`);
 });
 
+
 export { app };
