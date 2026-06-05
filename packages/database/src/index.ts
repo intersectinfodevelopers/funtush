@@ -1,15 +1,11 @@
+<<<<<<< HEAD
 import { tenantKey, type TenantContext } from "@funtush/shared";
 export * from "./redis.js";
 export * from "./db.js";
+=======
+import { PrismaClient } from "@prisma/client";
+>>>>>>> d3d6a77 (feat(auth): add trekker registration, OTP verification, and refresh-token login flow)
 
-/**
- * Connection configuration for the three primary stores (Backend Guide §3):
- * PostgreSQL (relational/RLS), MongoDB (audit/GPS/SOS), Redis (sessions/queues).
- * Real clients (pg, mongodb, ioredis) are wired up in Phase 1; this is the
- * package boundary, not the implementation.
- */
+export const prisma = new PrismaClient();
 
-/** Resolves the Redis cache key namespace for a tenant. */
-export function tenantCacheNamespace(ctx: TenantContext): string {
-  return tenantKey(ctx, "cache");
-}
+export * from "@prisma/client";

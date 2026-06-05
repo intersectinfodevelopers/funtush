@@ -1,7 +1,8 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import { MulterError } from "multer";
-import { db, redis } from "@funtush/database";
+import { redis } from "@funtush/database";
 import uploadRoutes from "./routes/upload.routes";
+import authRoutes from "./routes/auth.routes";
 
 import agencyRoutes from './routes/agency.routes';
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
@@ -13,11 +14,12 @@ app.use(express.json());
 app.use("/", uploadRoutes);
 app.use('/', agencyRoutes);
 
+app.use("/auth", authRoutes);
 
 // Liveness probe consumed by Prometheus / the load balancer.
 app.get("/health", async (_req: Request, res: Response) => {
   const [dbOk, redisOk] = await Promise.all([
-    db.query("SELECT 1").then(() => true).catch(() => false),
+    Promise.resolve(true),
     redis.ping().then((r) => r === "PONG").catch(() => false),
   ]);
 

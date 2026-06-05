@@ -1,46 +1,60 @@
 # Auth Package
 
-This package provides a reusable authentication utility module for Node.js + TypeScript applications. It is designed to handle secure user authentication features such as password hashing, JWT token generation, OTP verification, Redis integration, and role-based access control.
+This package provides a reusable authentication utility module for Node.js + TypeScript applications. It is designed to handle secure user authentication features such as password hashing, JWT access and refresh token generation, OTP-based registration and verification, Redis integration, and role-based access control. It also includes reusable login services for platform admins, agency admins, and trekkers, plus helper flows for trekker registration and email confirmation.
 
 
 ## Features
 
-### Authentication (JWT)
-- JWT Access Token (15 min expiry)
-- JWT Refresh Token (7 days expiry)
-- JWT verification with payload validation
-- Type-safe authentication using TypeScript
+### JWT Authentication
+- Access token generation with 15 minute expiry
+- Refresh token generation with 7 day expiry
+- Access token verification with payload validation
+- Type-safe JWT payloads
 
-###  Password Utilities
-- Password hashing using bcrypt (salt rounds: 10)
-- Secure password comparison utility
+### Password Utilities
+- Password hashing with bcrypt (10 salt rounds)
+- Secure password comparison
 
-### OTP System (Redis-based)
-- 6-digit OTP generation (crypto-secure)
-- OTP storage in Redis with 15-minute TTL
+### OTP Flow
+- 6 digit crypto-secure OTP generation
+- OTP storage in Redis with a 15 minute TTL
 - OTP verification with auto-delete on success
-- Redis singleton connection via shared package
+- Redis access via the shared singleton client
 
-###  Authorization Middleware
-- `requireAuth` → JWT authentication middleware
-- `requireRoleType` → domain-level access control (platform / tenant / trekker)
-- `requireRole` → role-based access control
-- `requirePermission` → permission-based authorization (RBAC-ready)
+### Authorization Middleware
+- `requireAuth`
+- `requireRoleType`
+- `requireRole`
+- `requirePermission`
+
+### Service Layer
+- `adminLogin`
+- `agencyLogin`
+- `trekkerLogin`
+- `registerTrekker`
+- `verifyOtp`
 
 
-### Redis Integration
-- Centralized Redis client provided via `@funtush/shared`
-- Singleton pattern ensures single persistent connection
-- Used for OTP storage, validation, and TTL management
+## Public Exports
 
+The package entrypoint re-exports the auth helpers and services from `src/index.ts`.
+
+Available exports include:
+
+- JWT helpers from `jwt.ts`
+- Password helpers from `password.ts`
+- OTP helpers from `otp.ts`
+- Authorization middleware from `middleware.ts`
+- Login services from `service/auth.service.ts`
+- Trekker registration from `service/register.service.ts`
+- OTP verification from `service/otp.service.ts`
 
 ## Installation
 
 ```bash
-pnpm add bcrypt jsonwebtoken redis express
+pnpm add bcrypt jsonwebtoken express
 pnpm add -D @types/bcrypt @types/jsonwebtoken @types/express @types/node
 ```
-
 
 ## Environment Variables
 
@@ -50,70 +64,54 @@ JWT_REFRESH_SECRET=your_refresh_secret
 REDIS_URL=your_redis_url
 ```
 
-## Project Structure
-
-## System Architecture
+## Flow Overview
 
 ```bash
 JWT Layer
-   ↓
+  ↓
 Auth Middleware (requireAuth)
-   ↓
+  ↓
 Role Type Guard (requireRoleType)
-   ↓
+  ↓
 Role Guard (requireRole)
-   ↓
+  ↓
 Permission Guard (requirePermission)
-   ↓
+  ↓
 Business Logic
 ```
 
-## Structure
+## Package Structure
 
 ```bash
 packages/
-│
 ├── auth/
-│ ├── src/
-│ │ ├── types/
-│ │ │ └── shared.d.ts
-│ │ │
-│ │ ├── index.ts
-│ │ ├── jwt.ts
-│ │ ├── middleware.ts
-│ │ ├── otp.ts
-│ │ ├── password.ts
-│ │ └── types.ts
-│
-├── shared/
-│ ├── src/
-│ │ ├── index.js
-│ │ ├── redis.ts
+│  └── src/
+│     ├── index.ts
+│     ├── jwt.ts
+│     ├── middleware.ts
+│     ├── otp.ts
+│     ├── password.ts
+│     ├── types.ts
+│     ├── service/
+│     │  ├── auth.service.ts
+│     │  ├── otp.service.ts
+│     │  └── register.service.ts
+│     └── utils/
+│        └── hashToken.ts
 ```
-
 
 ## Tech Stack
 
-This authentication package is built using the following technologies:
+- Node.js
+- TypeScript
+- jsonwebtoken
+- bcrypt
+- Redis
+- Express.js
+- pnpm
 
-#### Core Technologies
-- **Node.js**
-- **TypeScript** 
+## Type Definitions
 
-#### Authentication & Security
-- **jsonwebtoken** 
-- **bcrypt** 
-
-#### Data & Caching
-- **Redis** 
-
-#### Web Framework Support
-- **Express.js** 
-
-#### Package Manager
-- **pnpm** 
-
-#### Type Definitions
 - `@types/node`
 - `@types/express`
 - `@types/jsonwebtoken`

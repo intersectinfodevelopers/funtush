@@ -1,6 +1,5 @@
 import nodemailer from "nodemailer";
 
-
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -8,7 +7,6 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
-
 
 export const sendWelcomeEmail = async (
   email: string,
@@ -23,16 +21,16 @@ export const sendWelcomeEmail = async (
       text: `
 Hello ${company_name},
 
-    Your Agency "${company_name}" has been successfully registered.
+Your Agency "${company_name}" has been successfully registered.
 
 Login credentials:
-    Email: ${email}
+Email: ${email}
 Password: ${password}
 
 Please change your password after first login.
 
 Thank you!
-`,
+      `,
     });
   } catch (error) {
     console.error("Email sending failed:", error);
@@ -40,33 +38,52 @@ Thank you!
   }
 };
 
-
-
 export const sendTrialExpiredEmail = async (
   email: string,
   company_name: string
 ) => {
   try {
     await transporter.sendMail({
-      from: `"Funtush System" < ${process.env.EMAIL_USER} > `,
-      to:email,
+      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+      to: email,
       subject: "Trial Expired - Action Required",
       text: `
 Hello ${company_name},
 
-    Your free trial has expired and your account is now LOCKED.
+Your free trial has expired and your account is now LOCKED.
 
 To continue using the system, please upgrade your subscription.
 
 If you believe this is a mistake, please contact support.
 
 Thank you,
-    Funtush Team
+Funtush Team
       `,
     });
-
   } catch (error) {
     console.error("Email sending failed:", error);
+    throw error;
+  }
+};
+
+export const sendOtpEmail = async (email: string, otp: string) => {
+  try {
+    await transporter.sendMail({
+      from: `"Trekking System" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "Your OTP Code",
+      text: `
+Hello,
+
+Your verification code is: ${otp}
+
+This code will expire in 15 minutes.
+
+Thank you!
+      `,
+    });
+  } catch (error) {
+    console.error("OTP email sending failed:", error);
     throw error;
   }
 };
