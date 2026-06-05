@@ -12,7 +12,7 @@ function expiry(days: number) {
 
 // PLATFORM ADMIN LOGIN
 export async function adminLogin(email: string, password: string) {
-  const user = await prisma.agencyUser.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user || user.role !== "SUPER_ADMIN") {
     throw new Error("Invalid credentials");
@@ -42,7 +42,7 @@ export async function adminLogin(email: string, password: string) {
 
 // AGENCY LOGIN
 export async function agencyLogin(email: string, password: string) {
-  const user = await prisma.agencyUser.findUnique({
+  const user = await prisma.user.findUnique({
     where: { email },
     include: { agency: true },
   });
@@ -82,13 +82,12 @@ export async function agencyLogin(email: string, password: string) {
 
 // trekker login
 export async function trekkerLogin(email: string, password: string) {
-  const db = prisma;
-
-  const user = await db.trekker.findUnique({
+  const user = await prisma.user.findUnique({
     where: { email },
+    include: { trekker: true },
   });
 
-  if (!user) {
+  if (!user || !user.trekker) {
     throw new Error("Invalid credentials");
   }
 
