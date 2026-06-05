@@ -1,5 +1,5 @@
 import express from "express";
-import { getSubscriptionTiers, registerAcency, updateAgencySubscription } from "../controllers/agency.controller";
+import { getSubscriptionTiers, registerAcency, updateAgencyDomain, updateAgencyProfile, updateAgencySubscription } from "../controllers/agency.controller";
 import { acceptBookings, getAgencyDashboard, publishPackages } from "../services/agency.service";
 import { checkAgencyStatus } from "../middlewares/agencyAccess.middleware";
 
@@ -23,5 +23,10 @@ router.route("/dashboard")
 router.route("/agencies/me/subscribe")
     .get(updateAgencySubscription);
 
+router.route("/agencies/me/profile")
+    .patch(updateAgencyProfile);
+
+router.route("/agencies/me/domain")
+    .patch(updateAgencyDomain);
 
 export default router;
