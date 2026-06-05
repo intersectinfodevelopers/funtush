@@ -168,7 +168,7 @@ export const updateAgencyProfileService = async (data: AgencyInfo, agencyId: str
   };
 
   const fields: string[] = [];
-  const values: any[] = [];
+  const values: unknown[] = [];
   let index = 1;
 
   let mapsUrl: string | undefined;
