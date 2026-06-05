@@ -6,7 +6,7 @@
   "type": "module",
   "main": "./src/index.js",
   "scripts": {
-  "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "start": "node src/index.js",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
@@ -17,7 +17,8 @@
     "@funtush/shared": "workspace:*",
     "@prisma/client": "^7.8.0",
     "express": "^4.22.2",
-    "ioredis": "^5.11.0"
+    "ioredis": "^5.11.0",
+    "mongodb": "^7.2.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

@@ -5,7 +5,7 @@ import agenciesRouter  from "./agencies.route";
 
 const router = Router();
 
-// All /admin/* routes require valid admin context (IP-whitelisted)
+// All /admin/* routes require valid admin context
 router.use(requireAdmin);
 
 router.use("/dashboard", dashboardRouter);

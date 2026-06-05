@@ -1,18 +1,22 @@
 import express from "express";
-import { resolveTenant } from "./middleware/resolveTenant.middleware";
-import adminRouter from "./routes/admin/index";
+import { resolveTenant }      from "./middleware/resolveTenant.middleware";
+import { rateLimitMiddleware } from "./middleware/rateLimit.middleware";
+import { requestLogger }       from "./middleware/requestLogger.middleware";
+import adminRouter             from "./routes/admin/index";
 
 const app = express();
 
 app.use(express.json());
 
-// 1. Resolve tenant context on every request FIRST
+
+app.use(requestLogger);
+
 app.use(resolveTenant);
 
-// 2. Mount admin routes (internally guarded by requireAdmin)
+app.use(rateLimitMiddleware);
+
 app.use("/admin", adminRouter);
 
-// 3. Health check — useful to verify tenant resolution is wired
 app.get("/health", (req, res) => {
   res.json({
     status:   "ok",
@@ -20,6 +24,11 @@ app.get("/health", (req, res) => {
     agencyId: req.agencyId,
     context:  req.context,
   });
+});
+
+
+app.post("/sos", (req, res) => {
+  res.json({ status: "SOS received", message: "Emergency services notified" });
 });
 
 export default app;

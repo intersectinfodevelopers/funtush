@@ -8,7 +8,6 @@ export interface TenantInfo {
 
 /**
  * Resolve tenant from a subdomain slug.
- * e.g. xyz.funtush.io → slug = "xyz"
  */
 export async function getTenantBySubdomain(slug: string): Promise<TenantInfo | null> {
   const cacheKey = `tenant:subdomain:${slug}`;
@@ -29,7 +28,7 @@ export async function getTenantBySubdomain(slug: string): Promise<TenantInfo | n
 
 /**
  * Resolve tenant from a fully custom domain.
- * e.g. www.custom.com → looks up domainMapping table
+
  */
 export async function getTenantByCustomDomain(domain: string): Promise<TenantInfo | null> {
   const cacheKey = `tenant:domain:${domain}`;
