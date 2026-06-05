@@ -57,12 +57,19 @@ Designed to handle onboarding, authentication, subscription control, and access 
 ### Subscription tiers
 - Subscription plans available
 
+### Agency Profile
+- Agency info → show_on_website toggle 
+
+### Custom Domain
+- Accessible to paid tiers
+
 ### Utilities
 - node-cron for trial period subscription expiration
 - nodemailer → Welcome Email, Subscription Expiration Warning Email
 
 ### Subscription Middleware
 - `checkAgencyStatus`→ status : ACTIVE/LOCKED
+- `isPaidTier`→ status : FREE/SMALL/MEDIUM/LARGE
 
 
 
