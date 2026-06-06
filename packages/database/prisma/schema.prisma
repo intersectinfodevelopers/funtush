@@ -6,6 +6,71 @@ datasource db {
   provider = "postgresql"
 }
 
+enum AgencyStatus {
+  TRIAL
+  ACTIVE
+  LOCKED
+  SUSPENDED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  STAFF
+}
+
+model SubscriptionTier {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  maxStaff     Int      @map("max_staff")
+  maxGuides    Int      @map("max_guides")
+  monthlyPrice Decimal  @map("monthly_price") @db.Decimal(10, 2)
+  features     Json
+  agencies     Agency[]
+
+  @@map("subscription_tiers")
+}
+
+model Agency {
+  id             String           @id @default(uuid())
+  name           String
+  email          String           @unique
+  slug           String           @unique
+  status         AgencyStatus     @default(TRIAL)
+  tier           String
+  trialExpiresAt DateTime?        @map("trial_expires_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  subscription   SubscriptionTier @relation(fields: [tier], references: [name])
+  users          AgencyUser[]
+
+  @@map("agencies")
+}
+
+model AgencyUser {
+  id            String         @id @default(uuid())
+  tenantId      String?        @map("tenant_id")
+  agencyId      String?        @map("agency_id")
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  role          UserRole       @default(STAFF)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  agency        Agency?        @relation(fields: [agencyId], references: [id])
+  refreshTokens RefreshToken[]
+
+  @@map("agency_users")
+}
+
+model RefreshToken {
+  id        String     @id @default(uuid())
+  userId    String     @map("user_id")
+  tokenHash String     @map("token_hash")
+  expiresAt DateTime   @map("expires_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+  user      AgencyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
 model Role {
   id          String           @id @default(uuid())
   agencyId    String           @map("agency_id")
