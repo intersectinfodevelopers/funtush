@@ -6,12 +6,8 @@ import agencyRoutes from './routes/agency.routes';
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
 
 const app = express();
-const port = Number(process.env.PORT ?? 4000);
 
 app.use(express.json());
-
-//For cron job
-startSubscriptionCron();
 
 app.use('/', agencyRoutes);
 
@@ -31,9 +27,18 @@ app.get("/health", async (_req: Request, res: Response) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`Funtush API listening on port ${port}`);
-});
+// Side effects (server + cron) are skipped under test so the `app` export can be
+// imported and exercised in isolation without binding a port or scheduling jobs.
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  const port = Number(process.env.PORT ?? 4000);
+
+  // For cron job
+  startSubscriptionCron();
+
+  app.listen(port, () => {
+    console.log(`Funtush API listening on port ${port}`);
+  });
+}
 
 
 export { app };
