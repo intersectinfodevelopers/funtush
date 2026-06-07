@@ -243,3 +243,42 @@ export const updateAgencyDomainService = async (agencyId: string, domain: string
   };
 
 };
+
+
+interface KYCDetails {
+  business_registration: string;
+  pan_certificate: string;
+  tourism_license: string;
+  bank_details: string;
+}
+export const AgencyKYCService = async (agencyId: string, kycDetails: KYCDetails) => {
+
+  const result = await db.query(
+    `
+    UPDATE kyc_submissions
+    SET
+      business_registration = $1,
+      pan_certificate = $2,
+      tourism_license = $3,
+      bank_details = $4,
+      status = 'SUBMITTED',
+      updated_at = NOW()
+    WHERE agency_id = $5
+    RETURNING *
+    `,
+    [
+      kycDetails.business_registration,
+      kycDetails.pan_certificate,
+      kycDetails.tourism_license,
+      kycDetails.bank_details,
+      agencyId,
+    ]
+  );
+
+  return {
+    agency: result.rows[0],
+    message: "KYC details submitted successfully. Waiting for Approval.",
+  };
+
+};
+
