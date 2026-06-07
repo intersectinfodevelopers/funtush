@@ -53,7 +53,7 @@ router.post("/register", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(400).json({
-      message:"Registration failed",
+      message: "Registration failed",
     });
   }
 });
@@ -128,9 +128,12 @@ router.post("/trekker/resend-otp", async (req, res) => {
     const result = await resendOtpService(email);
 
     res.json(result);
-  } catch (error: any) {
-    res.status(429).json({
-      message: error.message,
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    res.status(500).json({
+      message: "Request failed",
+      error: message,
     });
   }
 });
