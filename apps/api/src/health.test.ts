@@ -2,6 +2,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
+// Ensure Redis environment validation passes before the app imports shared modules.
+vi.stubEnv("REDIS_URL", "redis://127.0.0.1:6379");
+
 // Mock the data layer so /health can be exercised without live PostgreSQL or
 // Redis. `vi.hoisted` ensures these mocks exist before the (hoisted) import of
 // ./index.js pulls in the mocked @funtush/database module.
@@ -15,12 +18,14 @@ vi.mock("@funtush/database", () => ({
   redis: { ping: mockRedisPing },
 }));
 
-import { app } from "./index.js";
-
+let app: Awaited<ReturnType<typeof import("./index.js")>>["app"];
 let server: Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+  const module = await import("./index.js");
+  app = module.app;
+
   await new Promise<void>((resolve) => {
     server = app.listen(0, () => {
       const { port } = server.address() as AddressInfo;
