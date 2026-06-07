@@ -168,7 +168,7 @@ export const updateAgencyProfileService = async (data: AgencyInfo, agencyId: str
   };
 
   const fields: string[] = [];
-  const values: unknown[] = [];
+  const values: (string | null)[] = [];
   let index = 1;
 
   let mapsUrl: string | undefined;
@@ -180,7 +180,7 @@ export const updateAgencyProfileService = async (data: AgencyInfo, agencyId: str
   }
 
   for (const key in fieldMap) {
-    const value = (data as unknown)[key];
+    const value = (data as Record<string, string | null>)[key];
 
     if (value !== undefined) {
       fields.push(`${fieldMap[key]} = $${index++}`);
