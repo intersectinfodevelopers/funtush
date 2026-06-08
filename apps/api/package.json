@@ -19,6 +19,7 @@
     "@funtush/shared": "workspace:*",
     "@funtush/storage": "workspace:*",
     "@prisma/client": "^7.8.0",
+    "dotenv": "^17.4.2",
     "express": "^4.22.2",
     "multer": "1.4.5-lts.1",
     "node-cron": "^4.2.1",
@@ -29,10 +30,10 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",
-    "@types/node": "^25.9.1",
     "@types/node-cron": "^3.0.11",
-    "@types/nodemailer": "^8.0.0",
     "nodemon": "^3.1.14",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@types/node": "^25.9.1",
+    "@types/nodemailer": "^8.0.0"
   }
 }

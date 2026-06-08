@@ -1,4 +1,4 @@
-import { redis } from "./redis";
+import { redis } from "./redis.js";
 
 const ATTEMPT_KEY = (email: string) => `auth:attempts:${email}`;
 const LOCK_KEY = (email: string) => `auth:lock:${email}`;

@@ -3,9 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "dependencies": {
+    "@funtush/database": "workspace:*",
     "@funtush/shared": "workspace:*",
     "bcrypt": "^6.0.0",
     "express": "^4.22.2",

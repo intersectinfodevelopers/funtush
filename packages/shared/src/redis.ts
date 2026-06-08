@@ -1,32 +1,38 @@
-import { createClient } from "redis";
-import type { RedisClientType } from "redis";
+import { createClient, type RedisClientType } from "redis";
 
-if (!process.env.REDIS_URL) {
-  throw new Error("REDIS_URL is not defined in environment variables");
+export function getRedisUrl() {
+  const url = process.env.REDIS_URL;
+
+  if (!url) {
+    throw new Error("REDIS_URL is not defined in environment variables");
+  }
+
+  return url;
 }
 
-const redisClient = createClient({
-  url: process.env.REDIS_URL,
-});
-
-redisClient.on("error", (err) => {
-  console.error("Redis Error:", err);
-});
-
-redisClient.on("connect", () => {
-  console.log("Redis connected successfully");
-});
-
+let redisClient: RedisClientType | null = null;
 let connectPromise: Promise<RedisClientType> | null = null;
 
 export async function getRedis() {
-  if (!connectPromise) {
-    connectPromise = redisClient.connect().catch((err) => {
-      connectPromise = null;
-      throw err;
+  if (!redisClient) {
+    redisClient = createClient({
+      url: getRedisUrl(),
+    });
+
+    redisClient.on("error", (err) => {
+      console.error("Redis Error:", err);
+    });
+
+    redisClient.on("connect", () => {
+      console.log("Redis connected successfully");
     });
   }
 
+  if (!connectPromise) {
+    connectPromise = redisClient.connect().then(() => redisClient!);
+  }
+
   await connectPromise;
-  return redisClient;
+
+  return redisClient!;
 }

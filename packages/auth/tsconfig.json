@@ -6,7 +6,11 @@
     "composite": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@funtush/database": ["../../packages/database/src/index.ts"]
+    },
     "noEmit": true
   },
-  "include": ["src", "../database/src", "../../apps/api/src/types/express.d.ts"]
+  "include": ["src", "../database/src/**/*.ts", "../../apps/api/src/types/express.d.ts"]
 }

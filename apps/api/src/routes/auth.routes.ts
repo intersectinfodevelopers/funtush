@@ -1,8 +1,8 @@
 import express from "express";
 import { adminLogin, agencyLogin, getMe, logoutService, refreshTokenService, registerTrekker, requireAuth, resendOtpService, trekkerLogin, verifyOtp } from "@funtush/auth";
 
-import { validate } from "../middlewares/validate";
-import { loginSchema } from "../validations/auth.validation";
+import { validate } from "../middlewares/validate.js";
+import { loginSchema } from "../validations/auth.validation.js";
 
 const router = express.Router();
 

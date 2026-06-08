@@ -1,11 +1,18 @@
+<<<<<<< HEAD
 import express, { type Request, type Response, type NextFunction } from "express";
 import { MulterError } from "multer";
 import { redis } from "@funtush/database";
 import uploadRoutes from "./routes/upload.routes";
 import authRoutes from "./routes/auth.routes";
+=======
+import express, { type Request, type Response } from "express";
+import authRoutes from "./routes/auth.routes.js";
+import agencyRoutes from "./routes/agency.routes.js";
+import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
+import dotenv from "dotenv";
+>>>>>>> 951db2a (fix)
 
-import agencyRoutes from './routes/agency.routes';
-import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
+dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);

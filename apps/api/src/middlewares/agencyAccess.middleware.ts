@@ -1,5 +1,5 @@
 import type { Response, NextFunction } from "express";
-import type { AgencyRequest } from "../types/auth-request";
+import type { AgencyRequest } from "../types/auth-request.js";
 
 
 export const checkAgencyStatus = (req: AgencyRequest, res: Response, next: NextFunction) => {

@@ -1,7 +1,7 @@
-import { validateAcencyInput } from "../utils/validator";
-import { db } from "../../../../packages/database/src/db";
-import { generateSlug } from "../utils/slug";
-import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email";
+import { validateAcencyInput } from "../utils/validator.js";
+import { db } from "@funtush/database";
+import { generateSlug } from "../utils/slug.js";
+import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email.js";
 
 interface CreateAgencyInput {
   company_name: string;
@@ -180,7 +180,11 @@ export const updateAgencyProfileService = async (data: AgencyInfo, agencyId: str
   }
 
   for (const key in fieldMap) {
+<<<<<<< HEAD
     const value = (data as Record<string, string | null>)[key];
+=======
+    const value = data[key as keyof AgencyInfo];
+>>>>>>> 951db2a (fix)
 
     if (value !== undefined) {
       fields.push(`${fieldMap[key]} = $${index++}`);

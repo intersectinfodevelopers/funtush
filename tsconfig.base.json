@@ -13,10 +13,10 @@
     "baseUrl": ".",
     "paths": {
       "@funtush/database": [
-        "packages/database/src"
+        "packages/database/src/index.ts"
       ],
       "@funtush/auth": [
-        "packages/auth/src"
+        "packages/auth/src/index.ts"
       ]
     }
   }

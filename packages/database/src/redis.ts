@@ -1,4 +1,4 @@
-import Redis = require("ioredis");
+import Redis from "ioredis";
 
 /**
  * Single shared Redis client (Backend Guide §3: sessions, rate limiting,
@@ -7,8 +7,11 @@ import Redis = require("ioredis");
 // ioredis typings can sometimes expose a module namespace rather than a
 // constructable class depending on TS config. Normalize to a constructor
 // at runtime to avoid "not constructable" errors.
-const RedisConstructor: any = (Redis as any).default ?? Redis;
-export const redis = new RedisConstructor(process.env.REDIS_URL ?? "redis://localhost:6379");
+const RedisConstructor = Redis as unknown as new (connectionUrl: string) => any;
+
+export const redis = new RedisConstructor(
+  process.env.REDIS_URL ?? "redis://localhost:6379"
+);
 
 redis.on("connect", () => console.log("Redis connected"));
 redis.on("error", (err: Error) => console.error("Redis error:", err.message));

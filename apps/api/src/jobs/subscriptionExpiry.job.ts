@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { lockExpiredAgencies } from "../services/agency.service";
+import { lockExpiredAgencies } from "../services/agency.service.js";
 
 
 export const startSubscriptionCron = () => {

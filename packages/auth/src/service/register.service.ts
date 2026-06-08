@@ -1,7 +1,7 @@
-import { prisma } from "@funtush/database";
+import { prisma, type Trekker, type User } from "@funtush/database";
 import bcrypt from "bcrypt";
 
-export async function registerTrekker(email: string, password: string) {
+export async function registerTrekker(email: string, password: string): Promise<{ user: User; trekker: Trekker }> {
   const db = prisma;
   const existing = await db.user.findUnique({ where: { email } });
 

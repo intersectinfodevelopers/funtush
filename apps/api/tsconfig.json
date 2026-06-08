@@ -2,14 +2,26 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ESNext",
-    "module": "commonjs",
-    "moduleResolution": "Node",
+    "types": ["node"],
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext",
     "baseUrl": ".",
     "paths": {
-      "@funtush/auth": ["../../packages/auth/src"],
-      "@funtush/database": ["../../packages/database/src"]
+      "@funtush/auth": [
+        "../../packages/auth/src/index.ts"
+      ],
+      "@funtush/database": [
+        "../../packages/database/src/index.ts"
+      ]
     }
   },
-  "include": ["src", "../../packages/auth/src/utils/lockout.ts", "../../packages/auth/src/utils/redis.ts", "../../packages/auth/src/utils/otpRateLimit.ts"],
-  "exclude": ["node_modules"],
+  "include": [
+    "src",
+    "../../packages/auth/src/utils/lockout.ts",
+    "../../packages/auth/src/utils/redis.ts",
+    "../../packages/auth/src/utils/otpRateLimit.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
 }
