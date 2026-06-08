@@ -1,6 +1,6 @@
-
 import express, { type Request, type Response, type NextFunction } from "express";
 import { MulterError } from "multer";
+import { db, redis } from "@funtush/database";
 import uploadRoutes from "./routes/upload.routes";
 
 import agencyRoutes from './routes/agency.routes';
@@ -10,21 +10,23 @@ const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
 app.use(express.json());
-
-//For cron job
-startSubscriptionCron();
-
-
-
-
-// Routes
 app.use("/", uploadRoutes);
 app.use('/', agencyRoutes);
 
 
 // Liveness probe consumed by Prometheus / the load balancer.
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", service: "funtush-api" });
+app.get("/health", async (_req: Request, res: Response) => {
+  const [dbOk, redisOk] = await Promise.all([
+    db.query("SELECT 1").then(() => true).catch(() => false),
+    redis.ping().then((r) => r === "PONG").catch(() => false),
+  ]);
+
+  const ok = dbOk && redisOk;
+  res.status(ok ? 200 : 503).json({
+    status: ok ? "ok" : "error",
+    db: dbOk ? "ok" : "error",
+    redis: redisOk ? "ok" : "error",
+  });
 });
 
 // Global error handler
@@ -39,8 +41,12 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   return res.status(500).json({ error: message });
 });
 
-app.listen(port, () => {
-  console.log(`Funtush API listening on port ${port}`);
-});
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  startSubscriptionCron();
+
+  app.listen(port, () => {
+    console.log(`Funtush API listening on port ${port}`);
+  });
+}
 
 export { app };

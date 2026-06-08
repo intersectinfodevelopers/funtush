@@ -56,7 +56,7 @@ funtush/
 â   âââ mobile/   @funtush/mobile   React Native guide/trekker app (placeholder)
 âââ packages/                 # Shared internal libraries
 â   âââ shared/   @funtush/shared   Shared utilities (tenant helpers)
-â   âââ database/ @funtush/database Data-access layer (Postgres/Mongo/Redis boundary)
+â   âââ database/ @funtush/database Data-access layer (Postgres/Redis boundary)
 â   âââ ui/       @funtush/ui       Shared UI primitives + design tokens
 âââ config/       @funtush/config   Shared ESLint preset
 âââ docs/                     # Documentation (this file lives here)
@@ -108,7 +108,7 @@ scripts) and a `src/` folder. The package's `main`/`exports` point straight at
 | Package | Files | Why it exists |
 |---|---|---|
 | **`@funtush/shared`** | [`package.json`](../packages/shared/package.json), [`src/index.js`](../packages/shared/src/index.js), [`src/tenant.js`](../packages/shared/src/tenant.js), [`src/tenant.test.js`](../packages/shared/src/tenant.test.js) | Cross-cutting utilities used everywhere. Includes a `tenantKey()` helper â the foundation of the Backend Guide's #1 rule (tenant isolation). The test file proves the test runner works. |
-| **`@funtush/database`** | [`package.json`](../packages/database/package.json), [`src/index.js`](../packages/database/src/index.js) | The data-access boundary for the three primary stores (Postgres/Mongo/Redis). Currently a placeholder; real clients are wired up in Phase 1. Depends on `@funtush/shared` â demonstrates internal package linking. |
+| **`@funtush/database`** | [`package.json`](../packages/database/package.json), [`src/index.js`](../packages/database/src/index.js) | The data-access boundary for the primary stores (Postgres/Redis). Currently a placeholder; real clients are wired up in Phase 1. Depends on `@funtush/shared` â demonstrates internal package linking. |
 | **`@funtush/ui`** | [`package.json`](../packages/ui/package.json), [`src/index.js`](../packages/ui/src/index.js) | Shared design tokens / UI primitives for the web + white-label surfaces. Placeholder for now. |
 
 ### 4.4 Apps

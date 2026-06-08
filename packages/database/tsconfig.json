@@ -11,10 +11,6 @@
       "node"
     ]
   },
-  "include": [
-    "src"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["src", "prisma", "prisma.config.ts"],
+  "exclude": ["node_modules"]
 }

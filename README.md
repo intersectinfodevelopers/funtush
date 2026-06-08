@@ -57,12 +57,24 @@ Designed to handle onboarding, authentication, subscription control, and access 
 ### Subscription tiers
 - Subscription plans available
 
+### Agency Profile
+- Agency info → show_on_website toggle 
+
+### Custom Domain
+- Accessible to paid tiers
+
+### KYC Submission
+- Submission of required verification documents
+- Documents uploaded to cloud storage; saved as secure URLs linked to KYC profile
+- Super Admin : approve/reject with status and verification badges
+
 ### Utilities
 - node-cron for trial period subscription expiration
 - nodemailer → Welcome Email, Subscription Expiration Warning Email
 
 ### Subscription Middleware
 - `checkAgencyStatus`→ status : ACTIVE/LOCKED
+- `isPaidTier`→ status : FREE/SMALL/MEDIUM/LARGE
 
 
 
