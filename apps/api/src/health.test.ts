@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Express } from "express";
 
 // Ensure Redis environment validation passes before the app imports shared modules.
 vi.stubEnv("REDIS_URL", "redis://127.0.0.1:6379");
@@ -19,9 +18,7 @@ vi.mock("@funtush/database", () => ({
   redis: { ping: mockRedisPing },
 }));
 
-// const module = await import("./index.js");
-let app: Express;
-// let app: Awaited<ReturnType<typeof import("./index.js")>>["app"];
+let app: typeof import("./index.js")["app"];
 let server: Server;
 let baseUrl: string;
 
