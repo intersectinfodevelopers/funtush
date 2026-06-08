@@ -18,7 +18,7 @@ vi.mock("@funtush/database", () => ({
   redis: { ping: mockRedisPing },
 }));
 
-let app: Awaited<ReturnType<typeof import("./index.js")>>["app"];
+let app: typeof import("./index.js")["app"];
 let server: Server;
 let baseUrl: string;
 
