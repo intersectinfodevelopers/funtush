@@ -1,19 +1,21 @@
-export type RoleType =
-    "platform" | "tenant" | "trekker";
+export type RoleType = "PLATFORM" | "TENANT" | "TREKKER";
 
-export type platformRole = 
-    "super_admin" | "platform_admin" | "platform_support";
+export type Role =
+    | "SUPER_ADMIN"
+    | "PLATFORM_ADMIN"
+    | "PLATFORM_SUPPORT"
+    | "AGENCY_ADMIN"
+    | "AGENCY_MODERATOR"
+    | "GUIDE"
+    | "STAFF"
+    | "TREKKER";
 
-export type tenantRole =
-    "agency_admin" | "agency_moderator" | "guide"
-    | string; // supports dynamic custom roles
 
-export type Role = platformRole | tenantRole | "trekker";
-
+//  JWT payload shared across system
 export type jwtPayload = {
     userId: string;
-    roleType: RoleType;
-    role: Role;  
-    permissions?: string[];  
-    agencyId?: string; // Optional, only for tenant users
+    roleType: RoleType;   // PLATFORM | TENANT | TREKKER
+    role: Role;
+    permissions?: string[];
+    agencyId?: string;
 };

@@ -1,18 +1,131 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum AgencyStatus {
+  TRIAL
+  ACTIVE
+  LOCKED
+  SUSPENDED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  STAFF
+}
+
+enum RoleType {
+  PLATFORM
+  TENANT
+  TREKKER
+}
+
+model SubscriptionTier {
+  id           String  @id @default(uuid())
+  name         String  @unique
+  maxStaff     Int     @map("max_staff")
+  maxGuides    Int     @map("max_guides")
+  monthlyPrice Decimal @map("monthly_price") @db.Decimal(10, 2)
+  features     Json
+
+  agencies Agency[]
+
+  @@map("subscription_tiers")
+}
+
+model Agency {
+  id             String       @id @default(uuid())
+  name           String
+  email          String       @unique
+  slug           String       @unique
+  status         AgencyStatus @default(TRIAL)
+  tier           String
+  trialExpiresAt DateTime?    @map("trial_expires_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  subscription SubscriptionTier @relation(fields: [tier], references: [name])
+  users        User[]
+
+  @@map("agencies")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  roleType     RoleType @map("role_type")
+
+  agencyId String? @map("agency_id")
+  agency   Agency? @relation(fields: [agencyId], references: [id])
+
+  trekker Trekker?
+
+  refreshTokens RefreshToken[]
+
+  failedAttempts Int      @default(0)
+  isLocked       Boolean  @default(false)
+  lockUntil      DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Trekker {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  fullName         String?
+  phone            String?
+  country          String?
+  nationality      String?
+  emergencyContact String?
+
+  isEmailVerified Boolean   @default(false)
+  emailVerifiedAt DateTime?
+
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("trekkers")
+}
+
+model RefreshToken {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 model Role {
-  id          String           @id @default(uuid())
-  agencyId    String           @map("agency_id")
+  id          String   @id @default(uuid())
+  agencyId    String   @map("agency_id")
   name        String
   description String?
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
   permissions RolePermission[]
 
   @@unique([agencyId, name])
@@ -20,20 +133,22 @@ model Role {
 }
 
 model Permission {
-  id          String           @id @default(uuid())
-  key         String           @unique
+  id          String   @id @default(uuid())
+  key         String   @unique
   description String?
-  createdAt   DateTime         @default(now()) @map("created_at")
-  roles       RolePermission[]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
 
   @@map("permissions")
 }
 
 model RolePermission {
-  roleId        String     @map("role_id")
-  permissionKey String     @map("permission_key")
-  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission    Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+  roleId        String @map("role_id")
+  permissionKey String @map("permission_key")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
 
   @@id([roleId, permissionKey])
   @@map("role_permissions")

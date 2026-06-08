@@ -5,8 +5,12 @@
   "description": "Data-access layer (PostgreSQL/MongoDB/Redis) for Funtush.",
   "type": "module",
   "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
   },
   "scripts": {
     "lint": "eslint src",
@@ -16,16 +20,25 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "build": "tsc -p tsconfig.json",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@funtush/shared": "workspace:*",
-    "@prisma/client": "^7.8.0"
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "ioredis": "^5.11.0",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
-    "prisma": "^7.8.0"
+    "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
+    "prisma": "6.19.3",
+    "tsx": "^4.22.4"
   }
 }

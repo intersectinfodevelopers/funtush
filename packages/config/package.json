@@ -1,0 +1,9 @@
+{
+  "name": "@funtush/config",
+  "version": "0.0.0",
+  "main": "env.ts",
+  "types": "env.ts",
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

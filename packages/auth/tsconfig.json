@@ -1,12 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "ignoreDeprecations": "6.0"
+    "rootDir": "../..",
+    "outDir": "./dist",
+    "composite": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@funtush/database": ["../../packages/database/src/index.ts"]
+    },
+    "noEmit": true
   },
-  "include": ["src"],
-  "exclude": ["node_modules"]
+  "include": ["src", "../database/src/**/*.ts", "../../apps/api/src/types/express.d.ts"]
 }

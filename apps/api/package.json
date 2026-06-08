@@ -6,20 +6,34 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "nodemon --watch src --ext ts --exec \"tsx --env-file=.env src/index.ts\"",
+    "start": "tsx --env-file=.env src/index.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf .turbo coverage"
   },
   "dependencies": {
+    "@funtush/auth": "workspace:*",
     "@funtush/database": "workspace:*",
     "@funtush/shared": "workspace:*",
-    "@prisma/client": "^7.8.0",
-    "express": "^4.22.2"
+    "@funtush/storage": "workspace:*",
+    "dotenv": "^17.4.2",
+    "express": "^4.22.2",
+    "ioredis": "^5.11.1",
+    "multer": "1.4.5-lts.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.10",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6"
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^25.9.1",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^8.0.0",
+    "nodemon": "^3.1.14",
+    "zod": "^4.4.3"
   }
 }
