@@ -4,13 +4,18 @@ import { verifyOTP } from "../otp";
 export async function verifyOtp(userId: string, otp: string) {
   const db = prisma;
 
-  const user = await db.trekker.findUnique({ where: { id: userId } });
+  const trekker = await prisma.trekker.findUnique({
+    where: { id: userId },
+    include: {
+      user: true,
+    },
+  });
 
-  if (!user) {
+  if (!trekker || !trekker.user) {
     throw new Error("Invalid OTP");
   }
 
-  const valid = await verifyOTP(user.email, otp);
+  const valid = await verifyOTP(trekker.user.email, otp);
 
   if (!valid) {
     throw new Error("Invalid OTP");

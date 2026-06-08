@@ -75,12 +75,18 @@ importers:
       express:
         specifier: ^4.22.2
         version: 4.22.2
+<<<<<<< HEAD
       multer:
         specifier: 1.4.5-lts.1
         version: 1.4.5-lts.1
       node-cron:
         specifier: ^3.0.3
         version: 3.0.3
+=======
+      node-cron:
+        specifier: ^4.2.1
+        version: 4.2.1
+>>>>>>> ba80bf2 (test)
       nodemailer:
         specifier: ^8.0.10
         version: 8.0.10
@@ -2015,8 +2021,13 @@ packages:
     resolution: {integrity: sha512-c5Ko1fZJIJmzhFIkhRN76WTq+fC6tWnGy9CXA0fA+XygsWZmEwG8vmbkNqxMyoaa0Tin4djul49NzdVcJJcjeA==}
     engines: {node: ^18 || ^20 || >= 21}
 
+<<<<<<< HEAD
   node-cron@3.0.3:
     resolution: {integrity: sha512-dOal67//nohNgYWb+nWmg5dkFdIwDm8EpeGYMekPMrngV3637lqnX0lbUcCtgibHTz6SEz7DAIjKvKDFYCnO1A==}
+=======
+  node-cron@4.2.1:
+    resolution: {integrity: sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==}
+>>>>>>> ba80bf2 (test)
     engines: {node: '>=6.0.0'}
 
   node-gyp-build@4.8.4:
