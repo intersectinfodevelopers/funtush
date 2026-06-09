@@ -14,15 +14,15 @@ import { db } from "./db.js";
 describe("PostgreSQL connection", () => {
   it("exposes a pooled client with a query method", () => {
     expect(db).toBeDefined();
-    expect(typeof db.query).toBe("function");
+    expect(db).toBe("function");
   });
 
   it("answers a SELECT 1 connectivity probe", async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ "?column?": 1 }] });
 
-    const result = await db.query("SELECT 1");
+    const result = await db.$queryRaw`SELECT 1`;
 
     expect(mockQuery).toHaveBeenCalledWith("SELECT 1");
-    expect(result.rows).toHaveLength(1);
+    expect(result).toHaveLength(1);
   });
 });
