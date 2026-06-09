@@ -1,22 +1,41 @@
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Editors
 .vscode/
 .idea/
 .claude/
+*.swp
+*.swo
+*~
 
 # Dependencies
 node_modules/
+.pnpm-store/
 dist/
 build/
+out/
 coverage/
 apps/api/node_modules/
 apps/api/dist/
 
 # Build tooling
 .turbo/
+.cache/
+# App framework build output (apps/web -> Next.js, apps/mobile -> Expo)
+.next/
+.expo/
+
+# Deployment
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma — commit schema + migrations, ignore the generated client
+**/generated/prisma/
 
 # Environment
 .env
@@ -25,10 +44,24 @@ apps/api/dist/
 apps/api/.env
 apps/api/.env.*
 
+# Secrets / keys
+*.pem
+
 # Logs
+*.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
+<<<<<<< HEAD
 
 
+=======
+<<<<<<< HEAD
+.pnpm-store/
+=======
+
+
+>>>>>>> dfc14b2 (feat: implement resolveTenant middleware with Redis caching)
+>>>>>>> ed8e877

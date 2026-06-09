@@ -1,5 +1,22 @@
 {
   "compilerOptions": {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+    "target": "ESNext",
+    "module": "commonjs",
+    "moduleResolution": "Node",
+    "ignoreDeprecations": "6.0",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"],
+}
+=======
+>>>>>>> ed8e877
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "target": "ES2020",
@@ -9,6 +26,7 @@
     "skipLibCheck": true,
     "outDir": "./dist",
     "rootDir": "./src",
+<<<<<<< HEAD
     "typeRoots": ["./src/types", "./node_modules/@types"],
     "paths": {
       "@funtush/database": ["../../packages/database/src/index.d.ts"]
@@ -17,3 +35,11 @@
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
+=======
+    "typeRoots": ["./src/types", "./node_modules/@types"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+>>>>>>> dfc14b2 (feat: implement resolveTenant middleware with Redis caching)
+>>>>>>> ed8e877

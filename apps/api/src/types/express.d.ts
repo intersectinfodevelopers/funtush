@@ -10,9 +10,16 @@ declare global {
       tenantId?: string | null;
       agencyId?: string | null;
       context?: "platform" | "agency" | "admin";
+<<<<<<< HEAD
       adminIpAllowed?: boolean;
+=======
+>>>>>>> ed8e877
     }
   }
 }
 
+<<<<<<< HEAD
 export {};
+=======
+export {};
+>>>>>>> ed8e877

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 // @ts-ignore — Prisma 7 CJS client works fine at runtime via tsx
@@ -18,3 +19,27 @@ export const prisma: any =
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
+=======
+import { prisma } from "@funtush/database";
+
+export async function getTenantFromSlug(slug: string) {
+  return prisma.tenant.findUnique({
+    where: { slug },
+    select: {
+      tenantId: true,
+      agencyId: true,
+    },
+  });
+}
+
+
+export async function getTenantFromDomain(domain: string) {
+  return prisma.tenantDomain.findUnique({
+    where: { domain },
+    select: {
+      tenantId: true,
+      agencyId: true,
+    },
+  });
+}
+>>>>>>> ed8e877
