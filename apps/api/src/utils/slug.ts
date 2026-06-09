@@ -1,7 +1,7 @@
 // import { PrismaClient } from "@prisma/client";
 
 type PrismaAgency = {
-  findUnique: (args: any) => Promise<any>;
+  findUnique: (args: unknown) => Promise<unknown>;
 };
 
 type PrismaLike = {
