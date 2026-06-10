@@ -1,10 +1,10 @@
 generator client {
-  provider   = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-    url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 enum AgencyStatus {
@@ -24,6 +24,21 @@ enum RoleType {
   PLATFORM
   TENANT
   TREKKER
+}
+
+enum BookingStatus {
+  INQUIRY
+  PENDING
+
+  CONFIRMED
+  PAYMENT_PENDING
+  REJECTED
+  ALTERNATIVE_PROPOSED
+
+  PAID
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 model SubscriptionTier {
@@ -52,6 +67,9 @@ model Agency {
   subscription SubscriptionTier @relation(fields: [tier], references: [name])
   users        User[]
 
+  packages TrekPackage[]
+  bookings Booking[]
+
   @@map("agencies")
 }
 
@@ -69,8 +87,8 @@ model User {
 
   refreshTokens RefreshToken[]
 
-  failedAttempts Int      @default(0)
-  isLocked       Boolean  @default(false)
+  failedAttempts Int       @default(0)
+  isLocked       Boolean   @default(false)
   lockUntil      DateTime?
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -99,6 +117,8 @@ model Trekker {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  bookings Booking[]
 
   @@map("trekkers")
 }
@@ -152,4 +172,120 @@ model RolePermission {
 
   @@id([roleId, permissionKey])
   @@map("role_permissions")
+}
+
+model TrekPackage {
+  id       String @id @default(uuid())
+  agencyId String @map("agency_id")
+  name     String
+  slug     String @unique
+
+  agency         Agency          @relation(fields: [agencyId], references: [id])
+  departureDates DepartureDate[]
+  addOns         AddOn[]
+  bookings       Booking[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("trek_packages")
+}
+
+model DepartureDate {
+  id        String   @id @default(uuid())
+  packageId String   @map("package_id")
+  date      DateTime @db.Date
+
+  maxGroupSize   Int @map("max_group_size")
+  confirmedSlots Int @default(0) @map("confirmed_slots")
+  availableSlots Int @map("available_slots")
+
+  package  TrekPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@map("departure_dates")
+}
+
+model AddOn {
+  id        String  @id @default(uuid())
+  packageId String  @map("package_id")
+  name      String
+  price     Decimal @db.Decimal(10, 2)
+
+  package       TrekPackage    @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  bookingAddOns BookingAddOn[]
+
+  @@map("add_ons")
+}
+
+model Booking {
+  id              String @id @default(uuid())
+  agencyId        String @map("agency_id")
+  trekkerId       String @map("trekker_id")
+  packageId       String @map("package_id")
+  departureDateId String @map("departure_date_id")
+
+  groupSize  Int     @map("group_size")
+  totalPrice Decimal @map("total_price") @db.Decimal(10, 2)
+
+  status BookingStatus @default(INQUIRY)
+
+  trekkerName     String  @map("trekker_name")
+  trekkerEmail    String  @map("trekker_email")
+  trekkerPhone    String  @map("trekker_phone")
+  trekkerCountry  String? @map("trekker_country")
+  specialRequests String? @map("special_requests")
+
+  rejectionReason String?   @map("rejection_reason")
+  proposedDate    DateTime? @map("proposed_date") @db.Date
+
+  assignedGuideId String? @map("assigned_guide_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  agency        Agency        @relation(fields: [agencyId], references: [id])
+  trekker       Trekker       @relation(fields: [trekkerId], references: [id])
+  package       TrekPackage   @relation(fields: [packageId], references: [id])
+  departureDate DepartureDate @relation(fields: [departureDateId], references: [id])
+
+  addOns      BookingAddOn[]
+  paymentLink PaymentLink?
+
+  @@index([agencyId, status])
+  @@index([trekkerId])
+  @@map("bookings")
+}
+
+model BookingAddOn {
+  id        String @id @default(uuid())
+  bookingId String @map("booking_id")
+  addOnId   String @map("addon_id")
+  quantity  Int    @default(1)
+
+  priceAtBooking Decimal @map("price_at_booking") @db.Decimal(10, 2)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addOn   AddOn   @relation(fields: [addOnId], references: [id])
+
+  @@unique([bookingId, addOnId])
+  @@map("booking_add_ons")
+}
+
+model PaymentLink {
+  id        String @id @default(uuid())
+  bookingId String @unique @map("booking_id")
+
+  urlToken String @unique @map("url_token")
+
+  amount Decimal @db.Decimal(10, 2)
+
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("payment_links")
 }
