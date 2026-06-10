@@ -1,57 +1,55 @@
-<<<<<<< HEAD
-import app from "./app";
-
-const PORT = parseInt(process.env.PORT || "3000", 10);
-
-app.listen(PORT, () => {
-  console.log(`[server] Running on port ${PORT}`);
-});
-=======
-<<<<<<< HEAD:apps/api/src/index.ts
-import express, { type Request, type Response } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
+import { MulterError } from "multer";
+import { db, redis } from "@funtush/database";
+import uploadRoutes from "./routes/upload.routes";
 
 import agencyRoutes from './routes/agency.routes';
+import adminRoutes from './routes/admin.routes';
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
-=======
-import express from "express";
-import { resolveTenant } from "./middleware/resolveTenant.middleware.js";
->>>>>>> dfc14b2 (feat: implement resolveTenant middleware with Redis caching):apps/api/src/index.js
 
 const app = express();
+// app.use(express.json())
+const port = Number(process.env.PORT ?? 4000);
 
 app.use(express.json());
-app.use(resolveTenant);
-
-<<<<<<< HEAD:apps/api/src/index.ts
-//For cron job
-startSubscriptionCron();
-
+app.use("/", uploadRoutes);
 app.use('/', agencyRoutes);
+app.use('/', adminRoutes);
 
 
 // Liveness probe consumed by Prometheus / the load balancer.
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", service: "funtush-api" });
-});
+app.get("/health", async (_req: Request, res: Response) => {
+  const [dbOk, redisOk] = await Promise.all([
+    db.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
+    redis.ping().then((r) => r === "PONG").catch(() => false),
+  ]);
 
-app.listen(port, () => {
-  console.log(`Funtush API listening on port ${port}`);
-});
-
-
-export { app };
-=======
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    tenantId: req.tenantId,
-    agencyId: req.agencyId,
-    context: req.context,   // ← "platform" | "agency" | "admin"
+  const ok = dbOk && redisOk;
+  res.status(ok ? 200 : 503).json({
+    status: ok ? "ok" : "error",
+    db: dbOk ? "ok" : "error",
+    redis: redisOk ? "ok" : "error",
   });
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Server running on port ${process.env.PORT || 3000}`);
+// Global error handler
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof MulterError && err.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ error: "File too large. Max 10MB allowed." });
+  }
+  const message = err instanceof Error ? err.message : "Internal server error";
+  if (message.includes("Invalid file type")) {
+    return res.status(400).json({ error: message });
+  }
+  return res.status(500).json({ error: message });
 });
->>>>>>> dfc14b2 (feat: implement resolveTenant middleware with Redis caching):apps/api/src/index.js
->>>>>>> ed8e877
+
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  startSubscriptionCron();
+
+  app.listen(port, () => {
+    console.log(`Funtush API listening on port ${port}`);
+  });
+}
+
+export { app };

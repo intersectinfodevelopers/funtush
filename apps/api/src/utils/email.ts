@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 export const sendWelcomeEmail = async (
   email: string,
   password: string,
-  company_name: string
+  name: string
 ) => {
   try {
     await transporter.sendMail({
@@ -21,9 +21,9 @@ export const sendWelcomeEmail = async (
       to: email,
       subject: "Welcome to Trekking System",
       text: `
-Hello ${company_name},
+Hello ${name},
 
-    Your Agency "${company_name}" has been successfully registered.
+    Your Agency "${name}" has been successfully registered.
 
 Login credentials:
     Email: ${email}
@@ -44,7 +44,7 @@ Thank you!
 
 export const sendTrialExpiredEmail = async (
   email: string,
-  company_name: string
+  name: string
 ) => {
   try {
     await transporter.sendMail({
@@ -52,7 +52,7 @@ export const sendTrialExpiredEmail = async (
       to:email,
       subject: "Trial Expired - Action Required",
       text: `
-Hello ${company_name},
+Hello ${name},
 
     Your free trial has expired and your account is now LOCKED.
 

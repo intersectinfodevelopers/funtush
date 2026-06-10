@@ -15,3 +15,4 @@ export type AgencyRequest = Request & {
 export interface UpdateDomainBody {
   domain: string;
 }
+

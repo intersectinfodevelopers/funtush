@@ -1,32 +1,43 @@
 import express from "express";
-import { getSubscriptionTiers, registerAcency, updateAgencyDomain, updateAgencyProfile, updateAgencySubscription } from "../controllers/agency.controller";
-import { acceptBookings, getAgencyDashboard, publishPackages } from "../services/agency.service";
+import { acceptBooking, agencyKYCStatus, agencyKYCSubmission, getAgencyDashboard, SubscriptionTiers, publishPackage, registerAcency, updateAgencyDomain, updateAgencyProfile, updateAgencySubscription } from "../controllers/agency.controller";
 import { checkAgencyStatus } from "../middlewares/agencyAccess.middleware";
+import { authenticateWithRefreshToken } from "../middlewares/refreshTokenAuthentication";
+import { upload } from "@funtush/storage";
 
 const router = express.Router();
 
 router.route("/agencies/register")
-    .get(registerAcency);
+    .post(registerAcency);
 
 router.route("/subscription-tiers")
-    .get(getSubscriptionTiers);
+    .get(SubscriptionTiers);
 
 router.route("/bookings")
-    .get(checkAgencyStatus, acceptBookings);
+    .patch(checkAgencyStatus, authenticateWithRefreshToken, acceptBooking);
 
 router.route("/packages")
-    .get(checkAgencyStatus, publishPackages);
+    .patch(checkAgencyStatus, authenticateWithRefreshToken, publishPackage);
 
 router.route("/dashboard")
-    .get(getAgencyDashboard);
+    .get(authenticateWithRefreshToken, getAgencyDashboard);
 
 router.route("/agencies/me/subscribe")
-    .get(updateAgencySubscription);
+    .patch(authenticateWithRefreshToken, updateAgencySubscription);
 
 router.route("/agencies/me/profile")
-    .patch(updateAgencyProfile);
+    .patch(authenticateWithRefreshToken, updateAgencyProfile);
 
 router.route("/agencies/me/domain")
-    .patch(updateAgencyDomain);
+    .patch(authenticateWithRefreshToken, updateAgencyDomain);
+
+router.route("/agencies/me/kyc")
+    .get(agencyKYCStatus)
+    .post(authenticateWithRefreshToken,
+        upload.fields([
+            { name: "business_registration", maxCount: 1 },
+            { name: "pan_certificate", maxCount: 1 },
+            { name: "tourism_license", maxCount: 1 },
+            { name: "bank_details", maxCount: 1 },
+        ]), agencyKYCSubmission);
 
 export default router;
