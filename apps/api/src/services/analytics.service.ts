@@ -51,7 +51,7 @@ export async function upsertDailySummary(
       timestamp: { $gte: dayStart, $lte: dayEnd },
     };
 
-    const [inquiries, confirmed, paid, cancelled] = await Promise.all([
+   const [inquiries, confirmed, _paid, cancelled] = await Promise.all([
       events.countDocuments({ ...filter, event_type: "INQUIRY_SUBMITTED" }),
       events.countDocuments({ ...filter, event_type: "BOOKING_CONFIRMED" }),
       events.countDocuments({ ...filter, event_type: "BOOKING_PAID" }),
@@ -62,7 +62,7 @@ export async function upsertDailySummary(
     const paidEvents = await events
       .find({ ...filter, event_type: "BOOKING_PAID" })
       .toArray();
-    const revenue = paidEvents.reduce((sum, e) => {
+    const revenue = paidEvents.reduce((sum: number, e) => {
       const amount = typeof e.metadata.amount === "number" ? e.metadata.amount : 0;
       return sum + amount;
     }, 0);
