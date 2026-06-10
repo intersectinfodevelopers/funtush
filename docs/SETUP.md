@@ -38,7 +38,7 @@ docker run -d --name funtush-pg \
   -e POSTGRES_USER=funtush -e POSTGRES_PASSWORD=funtush -e POSTGRES_DB=funtush \
   -p 5432:5432 postgres:16
 
-docker run -d --name funtush-redis -p 6379:6379 redis:7
+docker run -d --name funtush-redis -p 6379:6379 redis:7 
 ```
 
 These match the default credentials in [`.env.example`](../.env.example).

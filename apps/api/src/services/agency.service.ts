@@ -1,10 +1,13 @@
 import { validateAcencyInput } from "../utils/validator";
-import { db } from "../../../../packages/database/src/db";
 import { generateSlug } from "../utils/slug";
 import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
+import { db } from "@funtush/database";
+
 
 interface CreateAgencyInput {
-  company_name: string;
+  name: string;
   email: string;
   password: string;
   phone: string;
@@ -12,121 +15,255 @@ interface CreateAgencyInput {
 }
 
 export const createAgency = async (data: CreateAgencyInput) => {
-  const { company_name, email, password, phone } = data;
+  const { name, email, password, phone } = data;
 
   // validation
   validateAcencyInput({ email, password, phone });
 
   // check duplicate email
-  const existing = await db.query(
-    "SELECT * FROM AgencyUser WHERE email = $1",
-    [email]
+  const existing = await db.agencyUser.findUnique(
+    { where: { email }, }
   );
 
-  if (existing.rows.length > 0) {
+  if (existing) {
     const error = new Error("Email already exists") as Error & { status?: number };
     error.status = 409;
     throw error;
   }
 
   // generate unique slug
-  const slug = await generateSlug(company_name, db);
+  const slug = await generateSlug(name, db);
+
+  const trialExpiresAt = new Date();
+  trialExpiresAt.setDate(trialExpiresAt.getDate() + 30);
+
+  const hashedPassword = await bcrypt.hash(
+    password,
+    10
+  );
+
+  const rawRefreshToken = crypto.randomBytes(64).toString("hex");
+  const tokenHash = await bcrypt.hash(rawRefreshToken, 10);
+
 
   // create agency
-  const agencyResult = await db.query(
-    "INSERT INTO agency (company_name, slug) VALUES ($1, $2) RETURNING *",
-    [company_name, slug]
-  );
+  const agency = await db.agency.create({
+    data: {
+      name,
+      email,
+      slug,
+      status: "ACTIVE",
+      trialExpiresAt,
 
-  const agency = agencyResult.rows[0];
+      tier: {
+        connect: {
+          name: "FREE",
+        },
+      },
+    },
+  });
+
 
   // create admin user
-  await db.query(
-    "INSERT INTO AgencyUser (company_id, email, password, role) VALUES ($1, $2, $3, $4)",
-    [agency.id, email, password, "admin"]
-  );
+  const user = await db.agencyUser.create({
+    data: {
+      agencyId: agency.id,
+      email,
+      passwordHash: hashedPassword,
+      role: "AGENCY_ADMIN",
+    },
+  });
 
-  // refresh token
-  await db.query(
-    "INSERT INTO RefreshToken (company_id, token) VALUES ($1, $2)",
-    [agency.id, "refresh-token"]
-  );
+  const refreshToken = await db.refreshToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: tokenHash,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30), // 30 days
+    },
+  });
 
-  const trial_expires_at = new Date();
-  trial_expires_at.setDate(trial_expires_at.getDate() + 30);
-
-  await db.query(
-    "INSERT INTO agency (company_id, tier, trial_expires_at) VALUES ($1, $2, $3)",
-    [agency.id, "FREE", trial_expires_at]
-  );
 
   // email after registration
-  await sendWelcomeEmail(email, password, company_name);
+  await sendWelcomeEmail(email, password, name);
 
   return {
     success: true,
     message: "Agency registered successfully",
     data: {
-      slug,
+      agencyId: agency.id,
+      slug: agency.slug,
+      rawRefreshToken: rawRefreshToken,
+      refreshToken: refreshToken,
     },
   };
 };
+
 
 
 export const lockExpiredAgencies = async () => {
   const now = new Date();
 
   // Find expired tiers where status is still active
-  const expiredAgencies = await db.query(
-    `SELECT * FROM agency WHERE trial_expires_at < $1 AND status = 'ACTIVE'`,
-    [now]
-  );
+  const agencies = await db.agency.findMany({
+    where: {
+      trial_expires_at: {
+        lt: now,
+      },
+      status: "ACTIVE",
+    },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+    },
+  });
 
-  const agencies = expiredAgencies.rows;
 
   if (agencies.length === 0) return;
 
   // Lock them
-  await db.query(
-    `UPDATE agency SET status = 'LOCKED' WHERE trial_expires_at < $1 AND status = 'ACTIVE' RETURNING *`,
-    [now]
-  );
+  await db.agency.updateMany({
+    where: {
+      trial_expires_at: {
+        lt: now,
+      },
+      status: "ACTIVE",
+    },
+    data: {
+      status: "LOCKED",
+    },
+  });
 
   // Send warning email
   for (const agency of agencies) {
-    await sendTrialExpiredEmail(agency.email, agency.company_name);
+    await sendTrialExpiredEmail(agency.email, agency.name);
   }
 
 };
 
 
-//TO BE DONE
-export const getSubscription = async () => {
-  // 
-};
+export const getSubscriptionTiers = async () => {
+  const tiers = await db.subscriptionTier.findMany();
 
-export const getAgencyDashboard = async () => {
-  // 
-};
+  if (tiers.length === 0) {
+    throw new Error("Tiers not found");
+  }
 
-export const acceptBookings = async () => {
-  // 
-};
-
-export const publishPackages = async () => {
-  // 
+  return {
+    tiers,
+  };
 };
 
 
-export const agencySubscription = async (agencyId: string, tier: string) => {
-  return await db.query(
-    `UPDATE agency
-     SET status = 'ACTIVE',
-         tier = $1
-     WHERE id = $2
-     RETURNING *`,
-    [tier, agencyId]
-  );
+export const getAgencyDashboardService = async (agencyId: string) => {
+  const agency = await db.agency.findUnique({
+    where: { id: agencyId },
+    include: {
+      tier: true,
+      users: true,
+      profile: true,
+      kyc: true,
+      subscriptions: {
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+
+
+  if (!agency) {
+    throw new Error("Agency not found");
+  }
+
+  return {
+    agency,
+  };
+};
+
+export const acceptBookingService = async (
+  agencyId: string,
+  // bookingId: string
+) => {
+  const agency = await db.agency.findUnique({
+    where: { id: agencyId },
+    select: { status: true },
+  });
+
+  if (!agency) throw new Error("Agency not found");
+
+  if (agency.status === "LOCKED") {
+    throw new Error("Agency is locked and cannot accept bookings");
+  }
+
+  //need to create "bookings" table
+  // const booking = await db.booking.updateMany({
+  //   where: {
+  //     id: bookingId,
+  //     agency_id: agencyId,
+  //   },
+  //   data: {
+  //     status: "ACCEPTED",
+  //     updated_at: new Date(),
+  //   },
+  // });
+
+  // if (booking.count === 0) {
+  //   throw new Error("Booking not found");
+  // }
+
+  return { success: true };
+};
+
+
+export const publishPackageService = async (
+  agencyId: string,
+  // packageId: string
+) => {
+  const agency = await db.agency.findUnique({
+    where: { id: agencyId },
+    select: { status: true },
+  });
+
+  if (!agency) throw new Error("Agency not found");
+
+  if (agency.status === "LOCKED") {
+    throw new Error("Agency is locked and cannot publish packages");
+  }
+
+  //Need to create "packages" table
+  // const pkg = await db.agency.updateMany({
+  //   where: {
+  //     id: packageId,
+  //     agency_id: agencyId,
+  //   },
+  //   data: {
+  //     is_published: true,
+  //     updated_at: new Date(),
+  //   },
+  // });
+
+  // if (pkg.count === 0) {
+  //   throw new Error("Package not found");
+  // }
+
+  return { success: true };
+};
+
+
+export const agencySubscription = async (agencyId: string, tierId: string) => {
+  const agency = await db.agency.update({
+    where: {
+      id: agencyId,
+    },
+    data: {
+      status: "ACTIVE",
+      tierId: tierId,
+    },
+  });
+
+
+  return {
+    subscription: agency,
+  };
 };
 
 
@@ -149,92 +286,118 @@ interface AgencyInfo {
   regions?: string[];
   regionsShowOnWebsite?: boolean;
 };
-export const updateAgencyProfileService = async (data: AgencyInfo, agencyId: string) => {
-  const fieldMap: Record<string, string> = {
-    address: "address",
-    addressShowOnWebsite: "address_show_on_website",
 
-    logo: "logo",
-    description: "description",
-    phone: "phone", /**JSON ARRAY */
-    email: "email", /**JSON ARRAY */
-    regions: "regions",
+export const updateAgencyProfileService = async (
+  data: AgencyInfo,
+  agencyId: string
+) => {
+  const updateData: Record<string, unknown> = {};
 
-    logoShowOnWebsite: "logo_show_on_website",
-    descriptionShowOnWebsite: "description_show_on_website",
-    phoneShowOnWebsite: "phone_show_on_website",
-    emailShowOnWebsite: "email_show_on_website",
-    regionsShowOnWebsite: "regions_show_on_website",
-  };
+  // helper to safely store JSON in Prisma
+  const toJson = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
-  const fields: string[] = [];
-  const values: (string | null)[] = [];
-  let index = 1;
+  let maps_url: string | undefined;
 
-  let mapsUrl: string | undefined;
-
-  if (data.address !== undefined) {
-    mapsUrl = `https://www.google.com/maps?q=${encodeURIComponent(
+  // Build Google Maps URL
+  if (data.address) {
+    maps_url = `https://www.google.com/maps?q=${encodeURIComponent(
       data.address
     )}&output=embed`;
   }
 
-  for (const key in fieldMap) {
-    const value = (data as Record<string, string | null>)[key];
+  // Map fields to db format (camelCase)
+  if (data.logo !== undefined) updateData.logo = data.logo;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.address !== undefined) updateData.address = data.address;
 
-    if (value !== undefined) {
-      fields.push(`${fieldMap[key]} = $${index++}`);
+  // JSON fields
+  if (data.phone !== undefined) updateData.phone = toJson(data.phone);
+  if (data.email !== undefined) updateData.email = toJson(data.email);
+  if (data.regions !== undefined) updateData.regions = toJson(data.regions);
 
-      /*
-      JSON ARRAY FOR PHONE NUMBERS AND EMAILS
-      */
-      values.push(Array.isArray(value) ? JSON.stringify(value) : value);
-    }
+  // Show-on-website flags
+  if (data.logoShowOnWebsite !== undefined)
+    updateData.logoShowOnWebsite = data.logoShowOnWebsite;
+
+  if (data.descriptionShowOnWebsite !== undefined)
+    updateData.descriptionShowOnWebsite = data.descriptionShowOnWebsite;
+
+  if (data.phoneShowOnWebsite !== undefined)
+    updateData.phoneShowOnWebsite = data.phoneShowOnWebsite;
+
+  if (data.emailShowOnWebsite !== undefined)
+    updateData.emailShowOnWebsite = data.emailShowOnWebsite;
+
+  if (data.addressShowOnWebsite !== undefined)
+    updateData.addressShowOnWebsite = data.addressShowOnWebsite;
+
+  if (data.regionsShowOnWebsite !== undefined)
+    updateData.regionsShowOnWebsite = data.regionsShowOnWebsite;
+
+
+  // Add maps URL if address exists
+  if (maps_url) {
+    updateData.mapsUrl = maps_url;
   }
 
-
-  /** add maps_url if address exists*/
-  if (mapsUrl) {
-    fields.push(`maps_url = $${index++}`);
-    values.push(mapsUrl);
-  }
-
-  if (fields.length === 0) {
+  if (Object.keys(updateData).length === 0) {
     return {
       message: "No fields provided to update",
       data: null,
     };
   }
 
-  values.push(agencyId);
+  console.log("agencyId:", agencyId);
+  console.log("updateData:", updateData);
 
-  const query = `
-    UPDATE agencies
-    SET ${fields.join(", ")}, updated_at = NOW()
-    WHERE id = $${index}
-    RETURNING *
-  `;
+  // await db.agency.update({
+  //   where: { id: agencyId },
+  //   data: {
+  //     maps_url,
+  //   }
+  // });
 
-  const result = await db.query(query, values);
+  const result = await db.agencyProfile.upsert({
+    where: {
+      agencyId: agencyId,
+    },
+
+    update: {
+      ...updateData,
+      // mapsUrl: maps_url,
+    },
+
+    create: {
+      agency: {
+        connect: {
+          id: agencyId,
+        },
+      },
+
+      ...updateData,
+      // mapsUrl: maps_url,
+    },
+  });
 
   return {
     message: "Agency profile updated successfully",
-    data: result.rows[0],
+    data: result,
   };
 };
 
 
 export const updateAgencyDomainService = async (agencyId: string, domain: string) => {
-  const result = await db.query(
-    `UPDATE agencies
-     SET custom_domain = $1, updated_at = NOW()
-     WHERE id = $2
-     RETURNING *`,
-    [domain, agencyId]
-  );
+  const updatedAgency = await db.agency.update({
+    where: {
+      id: agencyId,
+    },
+    data: {
+      customDomain: domain,
+    },
+  });
 
   return {
-    agency: result.rows[0],
+    updatedAgency,
     dnsInstructions: {
       step1: `Add CNAME record: ${domain} → your-app.com`,
       step2: `Wait for propagation (5-30 min)`,
@@ -253,32 +416,79 @@ interface KYCDetails {
 }
 export const AgencyKYCService = async (agencyId: string, kycDetails: KYCDetails) => {
 
-  const result = await db.query(
-    `
-    UPDATE kyc_submissions
-    SET
-      business_registration = $1,
-      pan_certificate = $2,
-      tourism_license = $3,
-      bank_details = $4,
-      status = 'SUBMITTED',
-      updated_at = NOW()
-    WHERE agency_id = $5
-    RETURNING *
-    `,
-    [
-      kycDetails.business_registration,
-      kycDetails.pan_certificate,
-      kycDetails.tourism_license,
-      kycDetails.bank_details,
+  const kyc = await db.kycSubmission.upsert({
+    where: { agencyId },
+    update: {
+      status: "SUBMITTED",
+      submittedAt: new Date(),
+    },
+    create: {
       agencyId,
-    ]
-  );
+      status: "SUBMITTED",
+    },
+  });
+
+  // delete old docs (avoid duplicates)
+  await db.kycDocument.deleteMany({
+    where: { kycId: kyc.id },
+  });
+
+  // Create documents as kycSubmission model takes document instead of singular file
+  await db.kycDocument.createMany({
+    data: [
+      {
+        kycId: kyc.id,
+        type: "BUSINESS_REGISTRATION",
+        fileUrl: kycDetails.business_registration,
+      },
+      {
+        kycId: kyc.id,
+        type: "PAN_CERTIFICATE",
+        fileUrl: kycDetails.pan_certificate,
+      },
+      {
+        kycId: kyc.id,
+        type: "TOURISM_LICENSE",
+        fileUrl: kycDetails.tourism_license,
+      },
+      {
+        kycId: kyc.id,
+        type: "BANK_DETAILS",
+        fileUrl: kycDetails.bank_details,
+      },
+    ],
+  });
+
 
   return {
-    agency: result.rows[0],
     message: "KYC details submitted successfully. Waiting for Approval.",
   };
 
 };
 
+
+export const KYCStatusService = async (agencyId: string) => {
+
+  const agency = await db.agency.findUnique({
+    where: {
+      id: agencyId,
+    },
+    select: {
+      kyc: {
+        select: {
+          status: true,
+          rejectionReason: true,
+        },
+      },
+    },
+  });
+
+  if (!agency) {
+    throw new Error("Agency not found");
+  }
+
+  return {
+    agency,
+  };
+
+};

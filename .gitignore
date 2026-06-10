@@ -18,6 +18,8 @@ dist/
 build/
 out/
 coverage/
+apps/api/node_modules/
+apps/api/dist/
 
 # Build tooling
 .turbo/
@@ -39,6 +41,8 @@ coverage/
 .env
 .env.*
 !.env.example
+apps/api/.env
+apps/api/.env.*
 
 # Secrets / keys
 *.pem
@@ -50,4 +54,14 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
+<<<<<<< HEAD
+
+
+=======
+<<<<<<< HEAD
 .pnpm-store/
+=======
+
+
+>>>>>>> dfc14b2 (feat: implement resolveTenant middleware with Redis caching)
+>>>>>>> ed8e877

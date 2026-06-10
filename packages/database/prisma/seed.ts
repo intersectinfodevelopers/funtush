@@ -1,12 +1,22 @@
-import "dotenv/config";
-
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+console.log(" before adapter DATABASE_URL =", process.env.DATABASE_URL);
 
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+// const prisma = new PrismaClient({ adapter });
+
+const prisma = new PrismaClient({
+  adapter,
+  log: ["query", "info", "warn", "error"],
+});
+
+// await prisma.$connect();
+// console.log("CONNECTED");
+
+// const test = await prisma.$queryRaw`SELECT current_user, current_database()`;
+// console.log(test);
 
 async function main() {
   // 1) Four subscription tiers (read from DB by the rest of the app).
@@ -38,3 +48,6 @@ main()
     await prisma.$disconnect();
     process.exit(1);
   });
+
+
+  // Seeded Super Admin: admin@funtush.com (password: ChangeMe123!)

@@ -4,7 +4,10 @@ import Redis from "ioredis";
  * Single shared Redis client (Backend Guide §3: sessions, rate limiting,
  * caching, realtime). Mirrors the pg Pool in db.ts — one instance per process.
  */
+console.log("REDIS_URL =", process.env.REDIS_URL);
 export const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+
+
 
 redis.on("connect", () => console.log("Redis connected"));
 redis.on("error", (err) => console.error("Redis error:", err.message));

@@ -3,26 +3,33 @@ import { generateSlug } from "./slug";
 
 describe("generateSlug", () => {
   it("slugifies a company name and returns it when no collision exists", async () => {
-    const pool = { query: vi.fn().mockResolvedValue({ rows: [] }) };
-
-    const slug = await generateSlug("Himalaya Treks & Tours!", pool);
+    const prisma = {
+      agency: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+    };
+    const slug = await generateSlug("Himalaya Treks & Tours!", prisma);
 
     expect(slug).toBe("himalaya-treks-tours");
-    expect(pool.query).toHaveBeenCalledWith("SELECT * FROM agency WHERE slug = $1", ["himalaya-treks-tours"]);
+    expect(prisma.agency.findUnique).toHaveBeenCalledWith({
+      where: { slug: "himalaya-treks-tours" },
+    });
   });
 
   it("appends an incrementing counter until a free slug is found", async () => {
-    const pool = {
-      query: vi
-        .fn()
-        .mockResolvedValueOnce({ rows: [{ slug: "everest-base-camp" }] }) // base taken
-        .mockResolvedValueOnce({ rows: [{ slug: "everest-base-camp2" }] }) // 2 taken
-        .mockResolvedValueOnce({ rows: [] }), // 3 free
+    const prisma = {
+      agency: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({ slug: "everest-base-camp" })
+          .mockResolvedValueOnce({ slug: "everest-base-camp-2" })
+          .mockResolvedValueOnce(null),
+      },
     };
 
-    const slug = await generateSlug("Everest Base Camp", pool);
+    const slug = await generateSlug("Everest Base Camp", prisma);
 
-    expect(slug).toBe("everest-base-camp3");
-    expect(pool.query).toHaveBeenCalledTimes(3);
+    expect(slug).toBe("everest-base-camp-3");
+    expect(prisma.agency.findUnique).toHaveBeenCalledTimes(3);
   });
 });
