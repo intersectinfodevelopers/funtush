@@ -37,9 +37,15 @@ vi.mock("./lib/mongo", () => ({
   getMongo: vi.fn().mockResolvedValue({
     collection: vi.fn().mockReturnValue({
       insertOne: vi.fn(),
-      find:      vi.fn().mockReturnValue({ sort: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }) }),
+      find: vi.fn().mockReturnValue({ sort: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }) }),
     }),
   }),
+}));
+
+
+vi.mock("./lib/redis", () => ({
+  redis:   { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), ttl: vi.fn() },
+  default: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), ttl: vi.fn() },
 }));
 
 let server: Server;
