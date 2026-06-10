@@ -10,6 +10,23 @@ const app = express();
 
 app.use(express.json());
 app.use(requestLogger);
+
+// Health check BEFORE tenant middleware so it always works
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+app.post("/sos", (_req, res) => {
+  res.json({ status: "SOS received" });
+});
+
+app.use(resolveTenant);
+app.use(rateLimitMiddleware);
+app.use("/admin", adminRouter);
+app.use("/", agencyRoutes);
+
+app.use(express.json());
+app.use(requestLogger);
 app.use(resolveTenant);
 app.use(rateLimitMiddleware);
 
