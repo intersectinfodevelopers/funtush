@@ -11,4 +11,5 @@ const router = express.Router();
 router.route("/register")
   .get(registerAcency);
 
+
 export default router;

@@ -1,10 +1,10 @@
-interface AgencyInput {
+interface registrationInput {
   email: string;
   password: string;
   phone: string;
 }
 
-export const validateAcencyInput = (data: AgencyInput) => {
+export const validateRegistrationInput = (data: registrationInput) => {
   const { email, password, phone } = data;
 
   if (!email.includes("@")) {

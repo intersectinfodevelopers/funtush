@@ -536,3 +536,38 @@ model TrekAddOn {
   @@index([packageId])
   @@map("trek_add_ons")
 }
+
+model Trekker {
+  id                          String      @id @default(uuid())
+  email                       String      @unique
+  name                        String
+  phone                       String
+  country                     String
+
+  emergencyContactName        String?
+  emergencyContactPhone       String?
+
+  createdAt                   DateTime     @default(now()) @map("created_at")
+
+  preference                  TrekkerPreference[]
+
+  @@map("trekkers")
+}
+
+
+model TrekkerPreference {
+  id                      String      @id @default(uuid())
+
+  trekkerId               String      @unique
+
+  preferredDestinations   String[]
+  budgetRange             String?
+  groupSizePreference     String?
+
+  createdAt               DateTime    @default(now()) @map("created_at")
+  updatedAt               DateTime    @updatedAt @map("updated_at")
+
+  trekker                 Trekker     @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+    
+  @@map("trekker_preferences")
+}

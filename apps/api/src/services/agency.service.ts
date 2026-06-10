@@ -4,6 +4,7 @@ import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { db } from "@funtush/database";
+import { validateRegistrationInput } from "../utils/validator";
 
 
 interface CreateAgencyInput {
@@ -18,7 +19,7 @@ export const createAgency = async (data: CreateAgencyInput) => {
   const { name, email, password, phone } = data;
 
   // validation
-  validateAcencyInput({ email, password, phone });
+  validateRegistrationInput({ email, password, phone });
 
   // check duplicate email
   const existing = await db.agencyUser.findUnique(
