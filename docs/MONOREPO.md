@@ -246,8 +246,8 @@ Set a custom port with the `PORT` env var (e.g. `PORT=4100`).
   (e.g. the web frontend) needs bundling, add a `build` script + turbo task for
   just that package.
 - **ESM everywhere.** Every `package.json` sets `"type": "module"`, so use
-  `import`/`export` and include the `.js` extension on relative imports
-  (e.g. `import { tenantKey } from "./tenant.js"`).
+  `import`/`export` with extensionless relative paths
+  (e.g. `import { tenantKey } from "./tenant"`).
 - **Commit `pnpm-lock.yaml`.** CI runs `pnpm install --frozen-lockfile`, which
   fails if the lockfile is missing or out of date.
 - **`packageManager` pin.** It's set to `pnpm@11.5.1` (the version on the setup

@@ -1,9 +1,9 @@
-import { generateSlug } from "../utils/slug.js";
-import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email.js";
+import { generateSlug } from "../utils/slug";
+import { sendTrialExpiredEmail, sendWelcomeEmail } from "../utils/email";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { db } from "@funtush/database";
-import { validateRegistrationInput } from "../utils/validator.js";
+import { validateRegistrationInput } from "../utils/validator";
 
 
 interface CreateAgencyInput {

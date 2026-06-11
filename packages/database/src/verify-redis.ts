@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { redis, setCache, getCache, deleteCache, checkRateLimit, setSession, getSession } from "./index.js";
+import { redis, setCache, getCache, deleteCache, checkRateLimit, setSession, getSession } from "./index";
 
 async function main() {
   console.log("PING →", await redis.ping()); // expect "PONG"

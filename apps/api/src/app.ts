@@ -1,12 +1,12 @@
 import express from "express";
 import { db, redis } from "@funtush/database";
-import { resolveTenant } from "./middleware/resolveTenant.middleware.js";
-import { rateLimitMiddleware } from "./middleware/rateLimit.middleware.js";
-import { requestLogger } from "./middleware/requestLogger.middleware.js";
-import adminRouter from "./routes/admin/index.js";
-import agencyRoutes from "./routes/agency.routes.js";
-import bookingRoutes from "./routes/booking.routes.js";
-import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
+import { resolveTenant } from "./middleware/resolveTenant.middleware";
+import { rateLimitMiddleware } from "./middleware/rateLimit.middleware";
+import { requestLogger } from "./middleware/requestLogger.middleware";
+import adminRouter from "./routes/admin/index";
+import agencyRoutes from "./routes/agency.routes";
+import bookingRoutes from "./routes/booking.routes";
+import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
 
 const app = express();
 

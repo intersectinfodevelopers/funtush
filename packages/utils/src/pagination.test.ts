@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paginate } from "./pagination.js";
+import { paginate } from "./pagination";
 
 describe("paginate", () => {
   it("uses defaults when no arguments are given", () => {

@@ -1,8 +1,9 @@
 import express from "express";
 import { adminLogin, agencyLogin, getMe, logoutService, refreshTokenService, registerTrekker, requireAuth, resendOtpService, trekkerLogin, verifyOtp } from "@funtush/auth";
 
-import { validate } from "../middlewares/validate.js";
-import { loginSchema } from "../validations/auth.validation.js";
+import { validate } from "../middlewares/validate";
+import { loginSchema } from "../validations/auth.validation";
+import { prisma } from "@funtush/database";
 
 const router = express.Router();
 
@@ -134,5 +135,25 @@ router.post("/trekker/resend-otp", async (req, res) => {
       message: "Request failed",
       error: message,
     });
+  }
+});
+
+// Register FCM token for push notifications
+router.post("/fcm-token", requireAuth, async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+
+    if (!fcmToken) {
+      return res.status(400).json({ success: false, message: "fcmToken is required" });
+    }
+
+    await prisma.user.update({
+      where: { id: req.user.userId },
+      data:  { fcmToken },
+    });
+
+    return res.status(200).json({ success: true, message: "FCM token registered" });
+  } catch (_err) {
+    return res.status(500).json({ success: false, message: "Failed to register FCM token" });
   }
 });

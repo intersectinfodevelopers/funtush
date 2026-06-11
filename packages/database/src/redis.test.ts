@@ -48,7 +48,7 @@ import {
   checkRateLimit,
   setSession,
   getSession,
-} from "./redis.js";
+} from "./redis";
 
 describe("Redis connection", () => {
   it("responds to PING with PONG", async () => {

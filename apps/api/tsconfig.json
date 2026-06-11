@@ -3,8 +3,6 @@
   "compilerOptions": {
     "target": "ESNext",
     "types": ["node"],
-    "moduleResolution": "NodeNext",
-    "module": "NodeNext",
     "baseUrl": ".",
     "paths": {
       "@funtush/auth": [
@@ -23,5 +21,5 @@
   ],
   "exclude": [
     "node_modules"
-  ],
+  ]
 }

@@ -1,26 +1,26 @@
 import { prisma, redis } from "@funtush/database";
 import { generateOTP } from "@funtush/auth";
-import { sendOtpEmail } from "../utils/email.js";
-import { sendInquiryConfirmationEmail, sendAgencyInquiryAlertEmail } from "../utils/email.js";
+import { sendOtpEmail } from "../utils/email";
+import { sendInquiryConfirmationEmail, sendAgencyInquiryAlertEmail } from "../utils/email";
+import { notifyAgencyAdmins } from "./notification.service.js";
 
 //Types
-
 export interface InquiryInput {
-  packageId:       string;
+  packageId: string;
   departureDateId: string;
-  groupSize:       number;
-  addOns?:         { addOnId: string; quantity: number }[];
-  trekkerName:     string;
-  trekkerEmail:    string;
-  trekkerPhone:    string;
+  groupSize: number;
+  addOns?: { addOnId: string; quantity: number }[];
+  trekkerName: string;
+  trekkerEmail: string;
+  trekkerPhone: string;
   trekkerCountry?: string;
   specialRequests?: string;
 }
 
 // Redis key helpers
-const otpKey   = (token: string) => `inquiry:otp:${token}`;
-const dataKey  = (token: string) => `inquiry:data:${token}`;
-const TTL      = 15 * 60; // 15 minutes
+const otpKey = (token: string) => `inquiry:otp:${token}`;
+const dataKey = (token: string) => `inquiry:data:${token}`;
+const TTL = 15 * 60; // 15 minutes
 
 //  validate, store temp, send OTP 
 export async function submitInquiry(input: InquiryInput) {
@@ -72,14 +72,14 @@ export async function submitInquiry(input: InquiryInput) {
   // Calculate total price
   const addOnsWithPrice = input.addOns?.length
     ? await prisma.trekAddOn.findMany({
-        where: { id: { in: input.addOns.map((a) => a.addOnId) } },
-      })
+      where: { id: { in: input.addOns.map((a) => a.addOnId) } },
+    })
     : [];
 
   const basePrice = Number(pkg.pricePerPerson) * groupSize;
-  const addOnTotal = addOnsWithPrice.reduce((sum, addOn) => {
+  const addOnTotal = addOnsWithPrice.reduce((sum: number, addOn: { id: string; price: unknown; perPerson: boolean }) => {
     const line = input.addOns!.find((a) => a.addOnId === addOn.id)!;
-    const qty  = line.quantity;
+    const qty = line.quantity;
     return sum + Number(addOn.price) * (addOn.perPerson ? groupSize * qty : qty);
   }, 0);
 
@@ -148,16 +148,16 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
   // Save booking to DB with status INQUIRY
   const booking = await prisma.booking.create({
     data: {
-      agencyId:        data.agencyId,
-      packageId:       data.packageId,
+      agencyId: data.agencyId,
+      packageId: data.packageId,
       departureDateId: data.departureDateId,
-      groupSize:       data.groupSize,
-      totalPrice:      data.totalPrice,
-      status:          "INQUIRY",
-      trekkerName:     data.trekkerName,
-      trekkerEmail:    data.trekkerEmail,
-      trekkerPhone:    data.trekkerPhone,
-      trekkerCountry:  data.trekkerCountry,
+      groupSize: data.groupSize,
+      totalPrice: data.totalPrice,
+      status: "INQUIRY",
+      trekkerName: data.trekkerName,
+      trekkerEmail: data.trekkerEmail,
+      trekkerPhone: data.trekkerPhone,
+      trekkerCountry: data.trekkerCountry,
       specialRequests: data.specialRequests,
       // addOns saved separately below
     },
@@ -175,11 +175,11 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
 
     await prisma.bookingAddOn.createMany({
       data: data.addOns.map((a) => {
-        const addOn = addOns.find((x) => x.id === a.addOnId)!;
+        const addOn = addOns.find((x: { id: string }) => x.id === a.addOnId)!;
         return {
-          bookingId:      booking.id,
-          addOnId:        a.addOnId,
-          quantity:       a.quantity,
+          bookingId: booking.id,
+          addOnId: a.addOnId,
+          quantity: a.quantity,
           priceAtBooking: addOn.price,
         };
       }),
@@ -206,10 +206,20 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
     booking.id,
   );
 
+  await notifyAgencyAdmins(data.agencyId, {
+    title: "New Inquiry Received",
+    body: `New inquiry from ${data.trekkerName} for ${booking.package.title}`,
+    data: {
+      bookingId: booking.id,
+      type: "NEW_INQUIRY",
+      link: `/dashboard/bookings/${booking.id}`,
+    },
+  });
+
   return {
     bookingId: booking.id,
-    status:    "INQUIRY",
-    message:   "Your inquiry has been submitted. The agency will confirm within 24 hours.",
+    status: "INQUIRY",
+    message: "Your inquiry has been submitted. The agency will confirm within 24 hours.",
   };
 }
 

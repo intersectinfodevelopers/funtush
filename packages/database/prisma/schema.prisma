@@ -146,6 +146,7 @@ model User {
   trekker Trekker?
 
   refreshTokens RefreshToken[]
+  fcmToken       String?   @map("fcm_token")  
   agencyUsers   AgencyUser[]
 
   failedAttempts Int       @default(0)
@@ -324,27 +325,27 @@ model TrekAddOn {
 // Bookings & Payments
 
 model Booking {
-  id                String   @id @default(uuid())
-  agencyId          String   @map("agency_id")
-  trekkerId         String   @map("trekker_id")
-  packageId         String   @map("package_id")
-  departureDateId   String   @map("departure_date_id")
-  groupSize         Int      @map("group_size")
-  totalPrice        Decimal  @map("total_price") @db.Decimal(10, 2)
-  status            BookingStatus @default(INQUIRY)
-  trekkerName       String   @map("trekker_name")
-  trekkerEmail      String   @map("trekker_email")
-  trekkerPhone      String   @map("trekker_phone")
-  trekkerCountry    String?  @map("trekker_country")
-  specialRequests   String?  @map("special_requests")
-  rejectionReason   String?  @map("rejection_reason")
-  proposedDate      DateTime? @map("proposed_date") @db.Date
-  assignedGuideId   String?  @map("assigned_guide_id")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id              String        @id @default(uuid())
+  agencyId        String        @map("agency_id")
+  trekkerId       String?       @map("trekker_id")
+  packageId       String        @map("package_id")
+  departureDateId String        @map("departure_date_id")
+  groupSize       Int           @map("group_size")
+  totalPrice      Decimal       @map("total_price") @db.Decimal(10, 2)
+  status          BookingStatus @default(INQUIRY)
+  trekkerName     String        @map("trekker_name")
+  trekkerEmail    String        @map("trekker_email")
+  trekkerPhone    String        @map("trekker_phone")
+  trekkerCountry  String?       @map("trekker_country")
+  specialRequests String?       @map("special_requests")
+  rejectionReason String?       @map("rejection_reason")
+  proposedDate    DateTime?     @map("proposed_date") @db.Date
+  assignedGuideId String?       @map("assigned_guide_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   agency        Agency            @relation(fields: [agencyId], references: [id])
-  trekker       Trekker           @relation(fields: [trekkerId], references: [id])
+  trekker       Trekker?          @relation(fields: [trekkerId], references: [id])
   package       TrekPackage       @relation(fields: [packageId], references: [id])
   departureDate TrekDepartureDate @relation(fields: [departureDateId], references: [id])
 

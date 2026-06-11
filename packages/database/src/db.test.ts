@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { db } from "./db.js";
+import { db } from "./db";
 
 describe("Database (Prisma)", () => {
   it("should initialize Prisma client", () => {

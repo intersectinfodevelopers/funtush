@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { submitInquiry, verifyInquiryOtp } from "../services/booking.service.js";
+import { submitInquiry, verifyInquiryOtp } from "../services/booking.service";
 
 export const submitInquiryController = async (req: Request, res: Response) => {
   try {
