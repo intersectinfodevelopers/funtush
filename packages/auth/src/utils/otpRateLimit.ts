@@ -1,4 +1,4 @@
-import { redis } from "./redis.js";
+import { redis } from "./redis";
 
 const OTP_KEY = (email: string) => `auth:otp_resend:${email}`;
 

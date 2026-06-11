@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { success, error, paginated } from "./response.js";
+import { success, error, paginated } from "./response";
 
 describe("success", () => {
   it("wraps data in a success envelope", () => {

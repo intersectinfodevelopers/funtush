@@ -1,3 +1,3 @@
-export * from "./response.js";
-export * from "./pagination.js";
-export * from "./permissions.js";
+export * from "./response";
+export * from "./pagination";
+export * from "./permissions";

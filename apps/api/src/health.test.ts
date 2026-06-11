@@ -51,11 +51,17 @@ vi.mock("./lib/redis", () => ({
   default: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), ttl: vi.fn() },
 }));
 
+vi.mock("../lib/fcm", () => ({
+  getFcm: () => ({
+    sendEachForMulticast: vi.fn().mockResolvedValue({ responses: [] }),
+  }),
+}));
+
 let server: Server;
 let baseUrl: string;
 
 beforeAll(async () => {
-  const { default: app } = await import("./app.js");
+  const { default: app } = await import("./app");
 
   await new Promise<void>((resolve) => {
     server = app.listen(0, () => {

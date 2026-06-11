@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PERMISSIONS } from "./permissions.js";
+import { PERMISSIONS } from "./permissions";
 
 describe("PERMISSIONS", () => {
   it("uses the resource:action string convention for every permission", () => {

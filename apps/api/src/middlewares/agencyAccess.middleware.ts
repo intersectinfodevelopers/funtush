@@ -1,5 +1,5 @@
 import type { Response, NextFunction } from "express";
-import type { AgencyRequest } from "../types/auth-request.js";
+import type { AgencyRequest } from "../types/auth-request";
 import { db } from "@funtush/database";
 
 

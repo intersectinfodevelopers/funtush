@@ -1,19 +1,19 @@
-import { comparePassword } from "../password.js";
+import { comparePassword } from "../password";
 import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
-} from "../jwt.js";
+} from "../jwt";
 import {
   isLocked,
   registerFailedAttempt,
   resetAttempts,
-} from "../utils/lockout.js";
-import { hashToken } from "../utils/hashToken.js";
+} from "../utils/lockout";
+import { hashToken } from "../utils/hashToken";
 import { prisma } from "@funtush/database";
-import { jwtPayload } from "../types.js";
-import { redis } from "../utils/redis.js";
-import { checkOtpRateLimit } from "../utils/otpRateLimit.js";
+import { jwtPayload } from "../types";
+import { redis } from "../utils/redis";
+import { checkOtpRateLimit } from "../utils/otpRateLimit";
 
 function expiry(days: number) {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);

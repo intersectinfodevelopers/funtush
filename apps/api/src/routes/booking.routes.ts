@@ -2,7 +2,7 @@ import express from "express";
 import {
   submitInquiryController,
   verifyInquiryOtpController,
-} from "../controllers/booking.controller.js";
+} from "../controllers/booking.controller";
 
 const router = express.Router();
 

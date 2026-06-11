@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import type { jwtPayload } from "./types.js";
+import type { jwtPayload } from "./types";
 
 const resolveSecret = (
   secret: string | undefined,

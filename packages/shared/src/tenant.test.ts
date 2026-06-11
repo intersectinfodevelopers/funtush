@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tenantKey } from "./tenant.js";
+import { tenantKey } from "./tenant";
 
 describe("tenantKey", () => {
   it("namespaces keys by tenant id", () => {

@@ -1,5 +1,5 @@
 import { prisma } from "@funtush/database";
-import { verifyOTP } from "../otp.js";
+import { verifyOTP } from "../otp";
 
 export async function verifyOtp(userId: string, otp: string) {
   const db = prisma;

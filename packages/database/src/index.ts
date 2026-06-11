@@ -1,4 +1,4 @@
-export * from "./db.js";
-export * from "./redis.js";
+export * from "./db";
+export * from "./redis";
 export * from "@prisma/client";
 

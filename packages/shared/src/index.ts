@@ -1,2 +1,2 @@
-export * from "./tenant.js";
-export * from "./redis.js";
+export * from "./tenant";
+export * from "./redis";
