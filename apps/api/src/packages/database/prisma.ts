@@ -1,1 +1,1 @@
-export { prisma } from "@funtush/database";
+export { db as prisma } from "@funtush/database";

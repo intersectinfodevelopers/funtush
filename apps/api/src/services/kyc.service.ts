@@ -5,8 +5,8 @@ import { queueEmail, getEmailQueue, EmailStatus } from "../lib/emailQueue";
  * Returns all pending KYC submissions in submission order.
  */
 export async function getKycQueue() {
-  return prisma.kYCSubmission.findMany({
-    where: { status: "PENDING" },
+  return prisma.kycSubmission.findMany({
+    where: { status: "SUBMITTED" },
     orderBy: { submittedAt: "asc" },
     select: {
       id: true,
@@ -14,7 +14,7 @@ export async function getKycQueue() {
       status: true,
       submittedAt: true,
       agency: {
-        select: { id: true, name: true, email: true, country: true },
+        select: { id: true, name: true, email: true },
       },
     },
   });
@@ -24,11 +24,11 @@ export async function getKycQueue() {
  * Returns a KYC submission with agency and document details.
  */
 export async function getKycSubmission(id: string) {
-  return prisma.kYCSubmission.findUnique({
+  return prisma.kycSubmission.findUnique({
     where: { id },
     include: {
       agency: {
-        select: { id: true, name: true, email: true, country: true, tier: true },
+        select: { id: true, name: true, email: true, tier: true },
       },
       documents: true,
     },
@@ -39,7 +39,7 @@ export async function getKycSubmission(id: string) {
  * Approves a KYC submission and awards verification status.
  */
 export async function approveKycSubmission(id: string) {
-  const submission = await prisma.kYCSubmission.findUnique({
+  const submission = await prisma.kycSubmission.findUnique({
     where: { id },
     include: { agency: { select: { id: true, name: true, email: true } } },
   });
@@ -48,34 +48,23 @@ export async function approveKycSubmission(id: string) {
     throw new Error(`KYC submission ${id} not found`);
   }
 
-  if (submission.status !== "PENDING") {
+  if (submission.status !== "SUBMITTED") {
     throw new Error(`KYC submission ${id} is already ${submission.status}`);
   }
 
-  const [updated] = await prisma.$transaction([
-    prisma.kYCSubmission.update({
-      where: { id },
-      data: {
-        status: "APPROVED",
-        reviewedAt: new Date(),
-      },
-      select: {
-        id: true,
-        status: true,
-        reviewedAt: true,
-        agencyId: true,
-      },
-    }),
-    prisma.agency.update({
-      where: { id: submission.agencyId },
-      data: {
-        badges: {
-          push: "KYC_VERIFIED",
-        },
-        kycVerifiedAt: new Date(),
-      },
-    }),
-  ]);
+  const updated = await prisma.kycSubmission.update({
+    where: { id },
+    data: {
+      status: "APPROVED",
+      reviewedAt: new Date(),
+    },
+    select: {
+      id: true,
+      status: true,
+      reviewedAt: true,
+      agencyId: true,
+    },
+  });
 
   queueEmail(
     submission.agency.email,
@@ -97,7 +86,7 @@ The Platform Team`
  * Rejects a KYC submission and stores the rejection reason.
  */
 export async function rejectKycSubmission(id: string, reason: string) {
-  const submission = await prisma.kYCSubmission.findUnique({
+  const submission = await prisma.kycSubmission.findUnique({
     where: { id },
     include: { agency: { select: { id: true, name: true, email: true } } },
   });
@@ -106,11 +95,11 @@ export async function rejectKycSubmission(id: string, reason: string) {
     throw new Error(`KYC submission ${id} not found`);
   }
 
-  if (submission.status !== "PENDING") {
+  if (submission.status !== "SUBMITTED") {
     throw new Error(`KYC submission ${id} is already ${submission.status}`);
   }
 
-  const updated = await prisma.kYCSubmission.update({
+  const updated = await prisma.kycSubmission.update({
     where: { id },
     data: {
       status: "REJECTED",

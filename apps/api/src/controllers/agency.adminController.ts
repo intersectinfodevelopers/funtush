@@ -1,5 +1,8 @@
 import type { Request, Response } from "express";
-import { approveAgencyKYCService, rejectAgencyKYCService } from "../services/admin.service";
+import {
+  approveKycSubmission as approveAgencyKYCService,
+  rejectKycSubmission as rejectAgencyKYCService,
+} from "../services/kyc.service";
 
 export const approveAgencyKYC = async (
     req: Request,

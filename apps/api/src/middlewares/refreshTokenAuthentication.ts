@@ -2,12 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { db } from "@funtush/database";
 import bcrypt from "bcrypt";
 
-interface AuthenticatedRequest extends Request {
-  agencyId?: string;
-}
-
 // Middleware to authenticate via refresh token
-export const authenticateWithRefreshToken = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const authenticateWithRefreshToken = async (req: Request, res: Response, next: NextFunction) => {
     try {
 
         const refreshToken = req.headers['x-refresh-token'] as string;
