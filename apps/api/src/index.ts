@@ -7,6 +7,7 @@ import packageRoutes from "./routes/package.routes.js";
 import agencyRoutes from "./routes/agency.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
+import packageRoutes from "./routes/package.routes.js";
 
 const app = express();
 // app.use(express.json())
