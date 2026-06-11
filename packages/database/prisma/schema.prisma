@@ -279,12 +279,13 @@ model TrekDestination {
 }
 
 model TrekItinerary {
-  id          String  @id @default(uuid())
-  packageId   String  @map("package_id")
-  dayNumber   Int     @map("day_number")
+  id          String   @id @default(uuid())
+  packageId   String   @map("package_id")
+  dayNumber   Int      @map("day_number")
   location    String?
   description String?
-  altitudeM   Int?    @map("altitude_m")
+  altitudeM   Int?     @map("altitude_m")
+  photos      String[] @default([])
 
   package TrekPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
 
