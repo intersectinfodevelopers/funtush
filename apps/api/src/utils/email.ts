@@ -87,3 +87,47 @@ Thank you!
     throw error;
   }
 };
+
+export const sendInquiryConfirmationEmail = async (
+  email: string,
+  trekkerName: string,
+  packageTitle: string,
+  departureDate: Date,
+) => {
+  await transporter.sendMail({
+    from: `"Funtush" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Your inquiry has been submitted",
+    text: `
+Hi ${trekkerName},
+
+Your inquiry for "${packageTitle}" (departing ${departureDate.toDateString()}) has been submitted.
+
+The agency will confirm within 24 hours.
+
+Thank you!
+    `,
+  });
+};
+
+export const sendAgencyInquiryAlertEmail = async (
+  agencyEmail: string,
+  trekkerName: string,
+  packageTitle: string,
+  bookingId: string,
+) => {
+  await transporter.sendMail({
+    from: `"Funtush" <${process.env.EMAIL_USER}>`,
+    to: agencyEmail,
+    subject: `New Inquiry from ${trekkerName}`,
+    text: `
+You have a new inquiry.
+
+Trekker: ${trekkerName}
+Package: ${packageTitle}
+Booking ID: ${bookingId}
+
+Please log in to your dashboard to review and respond.
+    `,
+  });
+};
