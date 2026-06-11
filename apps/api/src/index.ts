@@ -5,6 +5,7 @@ import uploadRoutes from "./routes/upload.routes";
 import authRoutes from "./routes/auth.routes";
 import agencyRoutes from "./routes/agency.routes";
 import adminRoutes from "./routes/admin.routes";
+import packageRoutes from "./routes/package.routes";
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
 
 const app = express();
@@ -16,7 +17,7 @@ app.use("/", uploadRoutes);
 app.use('/', agencyRoutes);
 app.use("/auth", authRoutes);
 app.use('/', adminRoutes);
-// app.use('/', packageRoutes);
+app.use('/', packageRoutes);
 
 // Liveness probe consumed by Prometheus / the load balancer.
 app.get("/health", async (_req: Request, res: Response) => {
