@@ -96,6 +96,18 @@ async function main() {
     });
   }
 
+  const freeTier = await prisma.subscriptionTier.upsert({
+    where: { name: "FREE" },
+    update: {},
+    create: {
+      name: "FREE",
+      maxStaff: 5,
+      maxGuides: 5,
+      monthlyPrice: 0,
+      features: {}
+    }
+  });
+
   await prisma.agency.upsert({
     where: { email: "agency@funtush.com" },
     update: {},
@@ -103,7 +115,7 @@ async function main() {
       name: "Default Agency",
       email: "agency@funtush.com",
       slug: "default-agency",
-      tier: "FREE"
+      tier: { connect: { id: freeTier.id } }
     }
   });
 
