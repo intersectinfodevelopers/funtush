@@ -4,6 +4,8 @@ import { MulterError } from "multer";
 import uploadRoutes from "./routes/upload.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import agencyRoutes from "./routes/agency.routes.js";
+import packageRoutes from "./routes/package.routes.js";
+import bookingRoutes from "./routes/booking.routes.js";
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 
 import { db, redis , connectMongo} from "@funtush/database";
@@ -24,7 +26,8 @@ app.use(express.json());
 //Routes
 app.use("/", uploadRoutes);
 app.use('/', agencyRoutes);
-
+app.use("/", packageRoutes);
+app.use("/bookings", bookingRoutes);
 app.use("/auth", authRoutes);
 
 app.use("/agencies/me/staff", staffRoutes);

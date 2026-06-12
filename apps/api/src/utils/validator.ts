@@ -82,3 +82,62 @@ export const validateItineraryDayInput = (data: ItineraryDayInput) => {
 export const validateItineraryUpdateInput = (data: Partial<ItineraryDayInput>) => {
   validateItineraryFields(data);
 };
+
+// ── Day 4: Departure Dates ───────────────────────────────────────────
+const DEPARTURE_STATUSES = ["AVAILABLE", "FULL", "GUARANTEED"];
+
+interface DepartureDateInput {
+  startDate: unknown;
+  maxSlots: unknown;
+  status?: unknown;
+}
+
+// A startDate is valid only if it parses to a real date that isn't in the past
+// (a departure you can no longer take bookings for shouldn't be created).
+const parseStartDate = (raw: unknown): Date => {
+  if (typeof raw !== "string" && !(raw instanceof Date)) {
+    throw new Error("startDate is required (ISO date string)");
+  }
+  const date = new Date(raw as string);
+  if (Number.isNaN(date.getTime())) throw new Error("startDate is not a valid date");
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  if (date < todayStart) throw new Error("startDate cannot be in the past");
+  return date;
+};
+
+// POST body — startDate + maxSlots required; status optional (defaults to AVAILABLE).
+// Returns the parsed startDate so the caller doesn't re-parse it.
+export const validateDepartureDateInput = (data: DepartureDateInput): { startDate: Date } => {
+  const startDate = parseStartDate(data.startDate);
+  if (!Number.isInteger(data.maxSlots) || (data.maxSlots as number) < 1)
+    throw new Error("maxSlots must be a positive integer");
+  if (data.status !== undefined && !DEPARTURE_STATUSES.includes(data.status as string))
+    throw new Error("status must be one of: " + DEPARTURE_STATUSES.join(", "));
+  return { startDate };
+};
+
+interface DepartureUpdateInput {
+  startDate?: unknown;
+  maxSlots?: unknown;
+  status?: unknown;
+}
+
+// PATCH body — every field optional, but at least one must be present. Returns the
+// parsed startDate when one was supplied so the caller doesn't re-parse it.
+export const validateDepartureUpdateInput = (
+  data: DepartureUpdateInput
+): { startDate?: Date } => {
+  if (data.startDate === undefined && data.maxSlots === undefined && data.status === undefined)
+    throw new Error("Provide at least one of: startDate, maxSlots, status");
+
+  let startDate: Date | undefined;
+  if (data.startDate !== undefined) startDate = parseStartDate(data.startDate);
+  if (data.maxSlots !== undefined && (!Number.isInteger(data.maxSlots) || (data.maxSlots as number) < 1))
+    throw new Error("maxSlots must be a positive integer");
+  if (data.status !== undefined && !DEPARTURE_STATUSES.includes(data.status as string))
+    throw new Error("status must be one of: " + DEPARTURE_STATUSES.join(", "));
+
+  return { startDate };
+};

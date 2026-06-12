@@ -4,6 +4,8 @@ import { createPackage, updatePackage, listPackages, publishPackage,
          duplicatePackage, archivePackage } from "../controllers/package.controller.js";
 import { addItineraryDay, updateItineraryDay, deleteItineraryDay,
          reorderItinerary } from "../controllers/itinerary.controller.js";
+import { addDepartureDate, updateDepartureDate,
+         deleteDepartureDate } from "../controllers/departureDate.controller.js";
 
 const router = express.Router();
 
@@ -33,5 +35,13 @@ router.route("/agencies/packages/:id/itinerary/reorder")
 router.route("/agencies/packages/:id/itinerary/:day")
   .put(authenticateWithRefreshToken, updateItineraryDay)
   .delete(authenticateWithRefreshToken, deleteItineraryDay);
+
+// ── Day 4: Departure Dates ───────────────────────────────────────────
+router.route("/agencies/packages/:id/dates")
+  .post(authenticateWithRefreshToken, addDepartureDate);
+
+router.route("/agencies/packages/:id/dates/:dateId")
+  .patch(authenticateWithRefreshToken, updateDepartureDate)
+  .delete(authenticateWithRefreshToken, deleteDepartureDate);
 
 export default router;
