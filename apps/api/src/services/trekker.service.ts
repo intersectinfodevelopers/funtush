@@ -1,7 +1,8 @@
 
+import { db } from '@funtush/database';
 import bcrypt from 'bcrypt';
-import { db } from "@funtush/database";
-import { validateRegistrationInput } from "../utils/validator.js";
+import { validateRegistrationInput } from 'src/utils/validator';
+
 
 
 interface CreateTrekkerInput {
@@ -56,11 +57,8 @@ export const createTrekker = async (data: CreateTrekkerInput) => {
             fullName: name,
             phone,
             country,
-            emergencyContact: emergency_contact_phone,
-<<<<<<< HEAD
+            emergencyContactPhone: emergency_contact_phone,
             emergencyContactName: emergency_contact_name,
-=======
->>>>>>> ef4ad5e (fix: rebase conflicts)
         },
     });
 
