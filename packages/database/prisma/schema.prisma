@@ -175,7 +175,6 @@ model Trekker {
   userId String @unique @map("user_id")
 
   fullName              String?
-  email        String   @unique
   phone                 String?
   country               String?
   nationality           String?
@@ -191,12 +190,12 @@ model Trekker {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bookings          Booking[]
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  preference        TrekkerPreference?
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
-
-  preference TrekkerPreference?
 
   @@map("trekker")
 }
@@ -446,7 +445,7 @@ model BookingAddOn {
   priceAtBooking Decimal @map("price_at_booking") @db.Decimal(10, 2)
 
   booking Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  addOn   TrekAddOn @relation(fields: [addOnId], references: [id], onDelete: Restrict)
+  addOn   TrekAddOn @relation(fields: [addOnId], references: [id])
 
   @@unique([bookingId, addOnId])
   @@map("booking_add_ons")
