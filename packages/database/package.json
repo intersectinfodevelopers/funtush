@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Data-access layer (PostgreSQL/MongoDB/Redis) for Funtush.",
-  "type": "module",
+  "type": "commonjs",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
@@ -34,6 +34,7 @@
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "ioredis": "^5.11.0",
+    "mongoose": "^9.6.3",
     "pg": "^8.21.0"
   },
   "devDependencies": {

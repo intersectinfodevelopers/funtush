@@ -1,19 +1,35 @@
+import "dotenv/config";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { MulterError } from "multer";
-import { db, redis } from "@funtush/database";
 import uploadRoutes from "./routes/upload.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import agencyRoutes from "./routes/agency.routes.js";
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 
+import { db, redis , connectMongo} from "@funtush/database";
+
+import staffRoutes from "./routes/staff.routes";
+
+
+
+
 const app = express();
 // app.use(express.json())
 const port = Number(process.env.PORT ?? 4000);
 
+//Middleware
+
 app.use(express.json());
+
+//Routes
 app.use("/", uploadRoutes);
 app.use('/', agencyRoutes);
+
 app.use("/auth", authRoutes);
+
+app.use("/agencies/me/staff", staffRoutes);
+
+
 
 // Liveness probe consumed by Prometheus / the load balancer.
 app.get("/health", async (_req: Request, res: Response) => {
@@ -43,7 +59,9 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  connectMongo().catch(console.error);
   startSubscriptionCron();
+  
 
   app.listen(port, () => {
     console.log(`Funtush API listening on port ${port}`);

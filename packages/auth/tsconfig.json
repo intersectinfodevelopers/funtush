@@ -9,7 +9,12 @@
         "../database/src/index.ts"
       ]
     },
-    "noEmit": true
+    "noEmit": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "ignoreDeprecations": "6.0"
   },
   "references": [
     { "path": "../database" }

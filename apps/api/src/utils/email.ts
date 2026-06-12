@@ -207,3 +207,34 @@ Funtush Team
     `,
   });
 };
+
+export const sendStaffInviteEmail = async (
+  email: string,
+  tempPassword: string,
+  agencyName: string
+) => {
+  try {
+    await transporter.sendMail({
+      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "You have been invited to join Funtush",
+      text: `
+Hello,
+
+You have been invited to join ${agencyName} on Funtush.
+
+Your login credentials:
+  Email: ${email}
+  Temporary Password: ${tempPassword}
+
+Please log in and change your password immediately after first login.
+
+Thank you,
+Funtush Team
+      `,
+    });
+  } catch (error) {
+    console.error("Staff invite email sending failed:", error);
+    throw error;
+  }
+};
