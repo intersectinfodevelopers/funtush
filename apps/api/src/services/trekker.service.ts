@@ -1,24 +1,22 @@
-
-import { db } from '@funtush/database';
-import bcrypt from 'bcrypt';
-import { validateRegistrationInput } from 'src/utils/validator';
-
-
+import { db } from "@funtush/database";
+import { validateRegistrationInput } from "src/utils/validator";
+import bcrypt from "bcrypt";
 
 interface CreateTrekkerInput {
     id: string;
     email: string;
     password: string;
-    name: string;
+    fullName: string;
     phone: string;
     country: string;
     emergency_contact_name: string;
     emergency_contact_phone: string
 }
 
+
 export const createTrekker = async (data: CreateTrekkerInput) => {
     const {
-        name, email, password, phone, country, emergency_contact_name, emergency_contact_phone
+        fullName, email, password, phone, country, emergency_contact_name, emergency_contact_phone
     } = data;
 
     // validation
@@ -54,9 +52,9 @@ export const createTrekker = async (data: CreateTrekkerInput) => {
     const trekker = await db.trekker.create({
         data: {
             userId: user.id,
-            fullName: name,
-            phone,
-            country,
+            fullName: fullName,
+            phone: phone,
+            country: country,
             emergencyContactPhone: emergency_contact_phone,
             emergencyContactName: emergency_contact_name,
         },
