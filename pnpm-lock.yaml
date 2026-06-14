@@ -4516,7 +4516,7 @@ snapshots:
 
   '@types/pdfkit@0.17.6':
     dependencies:
-      '@types/node': 25.9.2
+      '@types/node': 25.9.1
 
   '@types/pg@8.20.0':
     dependencies:

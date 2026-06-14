@@ -1,10 +1,10 @@
+import { randomBytes } from "crypto";
 import { prisma, redis, type Prisma } from "@funtush/database";
 import { generateOTP } from "@funtush/auth";
 import { sendAlternativeDateEmail, sendBookingAcceptedEmail, sendBookingRejectedEmail, sendOtpEmail } from "../utils/email";
 import { sendInquiryConfirmationEmail, sendAgencyInquiryAlertEmail } from "../utils/email";
 import { notifyAgencyAdmins, notifyTrekker } from "./notification.service.js";
 import { confirmSlotsForBooking } from "./departureDate.service.js";
-const { randomBytes } = await import("crypto");
 
 //Types
 export interface InquiryInput {
