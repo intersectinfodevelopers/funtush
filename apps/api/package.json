@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Funtush backend API (Node.js + Express).",
-  "type": "module",
+  "type": "commonjs",
   "main": "./src/index.ts",
   "scripts": {
     "dev": "nodemon --watch src --ext ts --exec \"tsx --env-file=.env src/index.ts\"",
