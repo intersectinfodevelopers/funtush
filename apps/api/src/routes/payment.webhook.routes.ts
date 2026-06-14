@@ -71,7 +71,6 @@ router.post(
   }
 );
 
-// ── Khalti ───────────────────────────────────────────────────────────────────
 // POST /webhooks/payment/:agencyId/khalti
 // Khalti sends pidx + purchase_order_id (our bookingId) in the callback body
 router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
@@ -101,7 +100,7 @@ router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
   }
 });
 
-// ── eSewa ────────────────────────────────────────────────────────────────────
+// eSewa 
 // POST /webhooks/payment/:agencyId/esewa
 // eSewa sends a base64-encoded data param containing JSON + a signature
 router.post("/:agencyId/esewa", async (req: Request, res: Response) => {

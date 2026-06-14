@@ -41,7 +41,7 @@ export async function processConfirmedPayment(
     );
   }
 
-  // ── 3. Auto-assign guide if agency has auto-assignment configured 
+  // 3. Auto-assign guide if agency has auto-assignment configured 
   // TODO: replace with your Guide model query once the Guide model exists
   // Example:
   //   const guide = await prisma.guide.findFirst({

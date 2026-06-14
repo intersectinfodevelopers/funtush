@@ -32,9 +32,9 @@ export async function generateBookingConfirmationPDF(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    // ── Header ──────────────────────────────────────────────────────────────
+// header
     doc
-      .fontSize(22)
+      .fontSize(20)
       .font("Helvetica-Bold")
       .text("Booking Confirmation", { align: "center" });
 
@@ -53,8 +53,8 @@ export async function generateBookingConfirmationPDF(
       .stroke()
       .moveDown(1);
 
-    // ── Booking Summary ──────────────────────────────────────────────────────
-    doc.fontSize(14).font("Helvetica-Bold").text("Booking Summary").moveDown(0.5);
+// booking summary
+      doc.fontSize(12).font("Helvetica-Bold").text("Booking Summary").moveDown(0.5);
 
     const summaryRows: [string, string][] = [
       ["Booking ID", data.bookingId],
@@ -73,8 +73,8 @@ export async function generateBookingConfirmationPDF(
 
     doc.moveDown(1);
 
-    // ── Trekker Details ──────────────────────────────────────────────────────
-    doc.fontSize(14).font("Helvetica-Bold").text("Trekker Details").moveDown(0.5);
+// trekker details
+    doc.fontSize(12).font("Helvetica-Bold").text("Trekker Details").moveDown(0.5);
 
     doc.fontSize(11).font("Helvetica");
     doc.text(`Name: ${data.trekkerName}`);
@@ -82,8 +82,8 @@ export async function generateBookingConfirmationPDF(
     doc.text(`Phone: ${data.trekkerPhone}`);
     doc.moveDown(1);
 
-    // ── Guide Information ────────────────────────────────────────────────────
-    doc.fontSize(14).font("Helvetica-Bold").text("Assigned Guide").moveDown(0.5);
+// assigned guide
+    doc.fontSize(12).font("Helvetica-Bold").text("Assigned Guide").moveDown(0.5);
     doc.fontSize(11).font("Helvetica");
 
     if (data.assignedGuideName) {
@@ -97,7 +97,7 @@ export async function generateBookingConfirmationPDF(
 
     doc.moveDown(1);
 
-    // ── Add-Ons ──────────────────────────────────────────────────────────────
+// add-ons
     if (data.addOns.length > 0) {
       doc.fontSize(14).font("Helvetica-Bold").text("Add-Ons").moveDown(0.5);
       doc.fontSize(11).font("Helvetica");
@@ -111,7 +111,7 @@ export async function generateBookingConfirmationPDF(
       doc.moveDown(1);
     }
 
-    // ── Itinerary ────────────────────────────────────────────────────────────
+    // itinerary
     if (data.itinerary.length > 0) {
       doc.addPage();
       doc.fontSize(14).font("Helvetica-Bold").text("Day-by-Day Itinerary").moveDown(0.5);
@@ -131,7 +131,7 @@ export async function generateBookingConfirmationPDF(
       }
     }
 
-    // ── Footer ───────────────────────────────────────────────────────────────
+    // footer
     doc.moveDown(2);
     doc
       .moveTo(50, doc.y)

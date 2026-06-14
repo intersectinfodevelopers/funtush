@@ -23,9 +23,8 @@ export function verifyStripeSignature(
   return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(signature));
 }
 
-// ---------------------------------------------------------------------------
+
 // Khalti
-// ---------------------------------------------------------------------------
 export async function verifyKhaltiPayment(
   pidx: string
 ): Promise<{ amount: number; transactionId: string } | null> {
@@ -53,10 +52,7 @@ export async function verifyKhaltiPayment(
     transactionId: data.pidx,
   };
 }
-
-// ---------------------------------------------------------------------------
 // eSewa
-// ---------------------------------------------------------------------------
 export function verifyEsewaSignature(
   message: string,
   receivedSignature: string,
@@ -69,9 +65,7 @@ export function verifyEsewaSignature(
   return hmac === receivedSignature;
 }
 
-// ---------------------------------------------------------------------------
 // ConnectIPS
-// ---------------------------------------------------------------------------
 export function verifyConnectIPSSignature(
   message: string,
   receivedSignature: string,
