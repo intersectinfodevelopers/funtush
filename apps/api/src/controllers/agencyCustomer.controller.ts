@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { agencyCustomerListService, customerNoteService, getCustomerNoteService } from "src/services/agencyCustomer.service.js";
+import { agencyCustomerListService, agencyGetCustomersProfileService, customerNoteService, getCustomerAnalyticsService, getCustomerNoteService } from "src/services/agencyCustomer.service.js";
 
 export const getAgencyCustomers = async (
   req: Request,
@@ -106,6 +106,55 @@ export const getCustomerNote = async (
       success: false,
       message:
         error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+};
+
+
+export const agencyGetCustomerProfile = async (
+  req: Request,
+  res: Response
+) => {
+
+  try {
+
+    const agencyId = req.agencyId as string;
+    const customerId = req.params.id as string;
+
+    const customer = await agencyGetCustomersProfileService(customerId, agencyId);
+
+    return res.status(200).json({
+      success: true,
+      data: customer,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch customer profile",
+    });
+  }
+};
+
+
+export const getCustomerAnalytics = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+
+    const agencyId = req.agencyId as string;
+
+    const analytics = await getCustomerAnalyticsService(agencyId);
+
+    return res.status(200).json({
+      success: true,
+      data: analytics,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch analytics",
     });
   }
 };
