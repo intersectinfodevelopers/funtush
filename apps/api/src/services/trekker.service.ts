@@ -12,8 +12,6 @@ interface CreateTrekkerInput {
     emergency_contact_name: string;
     emergency_contact_phone: string
 }
-
-
 export const createTrekker = async (data: CreateTrekkerInput) => {
     const {
         fullName, email, password, phone, country, emergency_contact_name, emergency_contact_phone
@@ -112,3 +110,6 @@ export const trekkerPreferenceService = async (data: trekkerPreferenceInput, id:
         },
     };
 };
+
+
+
