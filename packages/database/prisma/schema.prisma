@@ -79,13 +79,26 @@ enum TrekDifficulty {
   DIFFICULT
 }
 
+enum CommunicationType {
+  EMAIL
+  WHATSAPP
+}
+
+enum CommunicationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+// Core: Agency & Users
+
 model SubscriptionTier {
-  id            String         @id @default(uuid())
-  name          String         @unique
-  maxStaff      Int            @map("max_staff")
-  maxGuides     Int            @map("max_guides")
-  monthlyPrice  Decimal        @map("monthly_price") @db.Decimal(10, 2)
-  features      Json
+  id           String  @id @default(uuid())
+  name         String  @unique
+  maxStaff     Int     @map("max_staff")
+  maxGuides    Int     @map("max_guides")
+  monthlyPrice Decimal @map("monthly_price") @db.Decimal(10, 2)
+  features     Json
+
   agencies      Agency[]
   subscriptions Subscription[]
 
@@ -93,25 +106,27 @@ model SubscriptionTier {
 }
 
 model Agency {
-  id             String            @id @default(uuid())
-  name           String
-  email          String            @unique
-  slug           String            @unique
-  status         AgencyStatus      @default(TRIAL)
-  tierId         String            @map("tier_id")
-  customDomain   String?           @map("custom_domain")
-  mapsUrl        String?           @map("maps_url")
-  trialExpiresAt DateTime?         @map("trial_expires_at")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  tier           SubscriptionTier  @relation(fields: [tierId], references: [id])
-  users          AgencyUser[]
-  agencyStaffs   AgencyStaff[]
-  profile        AgencyProfile?
-  kyc            KycSubmission?
-  subscriptions  Subscription[]
-  packages       TrekPackage[]
-  destinations   TrekDestination[]
-  bookings       Booking[]
+  id                String             @id @default(uuid())
+  name              String
+  email             String             @unique
+  slug              String             @unique
+  status            AgencyStatus       @default(TRIAL)
+  tierId            String             @map("tier_id")
+  customDomain      String?            @map("custom_domain")
+  mapsUrl           String?            @map("maps_url")
+  trialExpiresAt    DateTime?          @map("trial_expires_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  tier              SubscriptionTier   @relation(fields: [tierId], references: [id])
+  users             AgencyUser[]
+  agencyStaffs      AgencyStaff[]
+  profile           AgencyProfile?
+  kyc               KycSubmission?
+  subscriptions     Subscription[]
+  packages          TrekPackage[]
+  destinations      TrekDestination[]
+  bookings          Booking[]
+  customerNotes     CustomerNote[]
+  communicationLogs CommunicationLog[]
 
   @@map("agencies")
 }
@@ -126,62 +141,122 @@ model AgencyUser {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   agencyStaffs AgencyStaff[]
 
+  customerNotes     CustomerNote[]
+  communicationLogs CommunicationLog[]
+
   @@unique([agencyId, userId])
   @@map("agency_users")
 }
 
 model User {
-  id             String         @id @default(uuid())
-  email          String         @unique
-  passwordHash   String         @map("password_hash")
-  role           UserRole
-  roleType       RoleType       @map("role_type")
-  trekker        Trekker?
-  refreshTokens  RefreshToken[]
-  fcmToken       String?        @map("fcm_token")
-  agencyUsers    AgencyUser[]
-  failedAttempts Int            @default(0)
-  isLocked       Boolean        @default(false)
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  roleType     RoleType @map("role_type")
+
+  trekker Trekker?
+
+  refreshTokens RefreshToken[]
+  fcmToken      String?        @map("fcm_token")
+  agencyUsers   AgencyUser[]
+
+  failedAttempts Int       @default(0)
+  isLocked       Boolean   @default(false)
   lockUntil      DateTime?
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@map("users")
 }
 
 model Trekker {
-  id                    String             @id @default(uuid())
-  userId                String             @unique @map("user_id")
+  id     String @id @default(uuid())
+  userId String @unique @map("user_id")
+
   fullName              String?
   phone                 String?
   country               String?
   nationality           String?
   emergencyContactName  String?
   emergencyContactPhone String?
-  isEmailVerified       Boolean            @default(false)
-  emailVerifiedAt       DateTime?
-  isActive              Boolean            @default(true)
-  lastLoginAt           DateTime?
-  createdAt             DateTime           @default(now()) @map("created_at")
-  updatedAt             DateTime           @updatedAt @map("updated_at")
-  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bookings              Booking[]
-  preference            TrekkerPreference?
+
+  isEmailVerified Boolean   @default(false)
+  emailVerifiedAt DateTime?
+
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  preference        TrekkerPreference?
+  customerNotes     CustomerNote[]
+  communicationLogs CommunicationLog[]
 
   @@map("trekker")
 }
 
 model TrekkerPreference {
-  id                    String   @id @default(uuid())
-  trekkerId             String   @unique @map("trekker_id")
-  preferredDestinations Json?    @map("preferred_destinations")
-  budgetRange           Json?    @map("budget_range")
-  groupSizePreference   Int?     @map("group_size_preference")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
-  trekker               Trekker  @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
+
+  trekkerId String @unique @map("trekker_id")
+
+  preferredDestinations Json? @map("preferred_destinations")
+  budgetRange           Json? @map("budget_range")
+  groupSizePreference   Int?  @map("group_size_preference")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  trekker Trekker @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
 
   @@map("trekker_preferences")
+}
+
+model CustomerNote {
+  id String @id @default(uuid())
+
+  agencyId  String @map("agency_id")
+  trekkerId String @map("trekker_id")
+  staffId   String @map("staff_id")
+
+  noteText String @map("note_text")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  agency  Agency     @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  trekker Trekker    @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+  staff   AgencyUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, trekkerId])
+  @@map("customer_notes")
+}
+
+model CommunicationLog {
+  id String @id @default(uuid())
+
+  agencyId  String  @map("agency_id")
+  trekkerId String  @map("trekker_id")
+  staffId   String? @map("staff_id")
+
+  type      CommunicationType
+  direction CommunicationDirection
+
+  subject String?
+  message String
+
+  sentAt DateTime @default(now()) @map("sent_at")
+
+  agency  Agency      @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  trekker Trekker     @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+  staff   AgencyUser? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, trekkerId])
+  @@map("communication_logs")
 }
 
 model RefreshToken {
@@ -250,18 +325,19 @@ model AgencyStaff {
 }
 
 model TrekPackage {
-  id             String              @id @default(uuid())
-  agencyId       String              @map("agency_id")
+  id             String         @id @default(uuid())
+  agencyId       String         @map("agency_id")
   title          String
-  slug           String              @unique
+  slug           String         @unique
   description    String?
-  durationDays   Int                 @map("duration_days")
-  pricePerPerson Decimal             @map("price_per_person") @db.Decimal(10, 2)
+  durationDays   Int            @map("duration_days")
+  pricePerPerson Decimal        @map("price_per_person") @db.Decimal(10, 2)
   difficulty     TrekDifficulty
-  maxGroupSize   Int                 @map("max_group_size")
-  status         PackageStatus       @default(DRAFT)
-  createdAt      DateTime            @default(now()) @map("created_at")
-  updatedAt      DateTime            @updatedAt @map("updated_at")
+  maxGroupSize   Int            @map("max_group_size")
+  status         PackageStatus  @default(DRAFT)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
   agency         Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   itineraries    TrekItinerary[]
   departureDates TrekDepartureDate[]
@@ -362,13 +438,14 @@ model Booking {
 }
 
 model BookingAddOn {
-  id             String    @id @default(uuid())
-  bookingId      String    @map("booking_id")
-  addOnId        String    @map("addon_id")
-  quantity       Int       @default(1)
-  priceAtBooking Decimal   @map("price_at_booking") @db.Decimal(10, 2)
-  booking        Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  addOn          TrekAddOn @relation(fields: [addOnId], references: [id], onDelete: Restrict)
+  id             String  @id @default(uuid())
+  bookingId      String  @map("booking_id")
+  addOnId        String  @map("addon_id")
+  quantity       Int     @default(1)
+  priceAtBooking Decimal @map("price_at_booking") @db.Decimal(10, 2)
+
+  booking Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addOn   TrekAddOn @relation(fields: [addOnId], references: [id])
 
   @@unique([bookingId, addOnId])
   @@map("booking_add_ons")
