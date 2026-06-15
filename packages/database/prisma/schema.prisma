@@ -106,25 +106,25 @@ model SubscriptionTier {
 }
 
 model Agency {
-  id             String            @id @default(uuid())
-  name           String
-  email          String            @unique
-  slug           String            @unique
-  status         AgencyStatus      @default(TRIAL)
-  tierId         String            @map("tier_id")
-  customDomain   String?           @map("custom_domain")
-  mapsUrl        String?           @map("maps_url")
-  trialExpiresAt DateTime?         @map("trial_expires_at")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  tier           SubscriptionTier  @relation(fields: [tierId], references: [id])
-  users          AgencyUser[]
-  agencyStaffs   AgencyStaff[]
-  profile        AgencyProfile?
-  kyc            KycSubmission?
-  subscriptions  Subscription[]
-  packages       TrekPackage[]
-  destinations   TrekDestination[]
-  bookings       Booking[]
+  id                String             @id @default(uuid())
+  name              String
+  email             String             @unique
+  slug              String             @unique
+  status            AgencyStatus       @default(TRIAL)
+  tierId            String             @map("tier_id")
+  customDomain      String?            @map("custom_domain")
+  mapsUrl           String?            @map("maps_url")
+  trialExpiresAt    DateTime?          @map("trial_expires_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  tier              SubscriptionTier   @relation(fields: [tierId], references: [id])
+  users             AgencyUser[]
+  agencyStaffs      AgencyStaff[]
+  profile           AgencyProfile?
+  kyc               KycSubmission?
+  subscriptions     Subscription[]
+  packages          TrekPackage[]
+  destinations      TrekDestination[]
+  bookings          Booking[]
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
 
@@ -164,8 +164,8 @@ model User {
   failedAttempts Int       @default(0)
   isLocked       Boolean   @default(false)
   lockUntil      DateTime?
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@map("users")
 }
