@@ -371,8 +371,6 @@ export const agencyGetCustomersProfileService = async (
     throw new Error("Customer not found");
   }
 
-
-
   const notes = await db.customerNote.findMany({
     where: {
       agencyId,
@@ -415,21 +413,14 @@ export const agencyGetCustomersProfileService = async (
   const averageBookingValue =
     visitCount > 0 ? totalSpent / visitCount : 0;
 
-  const destinationFrequency = new Map<string, number>();
-
-  bookings.forEach((booking) => {
-    booking.package.destinations.forEach((destination) => {
-      destinationFrequency.set(
-        destination.name,
-        (destinationFrequency.get(destination.name) ?? 0) + 1
-      );
-    });
-  });
-
-  const preferredDestinations = [...destinationFrequency.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([destination]) => destination);
-
+  const preferredDestinations = await db.trekkerPreference.findMany({
+    where: {
+      trekkerId: customerId
+    },
+    select: {
+      preferredDestinations: true
+    }
+  })
 
   const loyalityFlag = visitCount >= 3;
 
@@ -460,7 +451,7 @@ export const agencyGetCustomersProfileService = async (
 /**
  Agency -> gets customer analytics
  */
-export const customerAnalyticsService = async (
+export const customerAnalyticsService = async (  //— top customers by spending, repeat rate, new vs returning ratio
   agencyId: string
 ) => {
 
@@ -519,30 +510,18 @@ export const customerAnalyticsService = async (
     .sort((a, b) => b.totalSpent - a.totalSpent)
     .slice(0, 10);
 
-  //cron job left to do
-  await getMongo.customerAnalytics.create({
+  return {
     data: {
-      agencyId,
-      totalCustomers,
+      agency: agencyId,
+      totalCustomers: totalCustomers,
       newCustomers: newCustomers.length,
       returningCustomers: returningCustomers.length,
-      repeatRate,
-      newVsReturningRatio,
-      topCustomersBySpending,
+      repeatRate: repeatRate,
+      newVsReturningRatio: newVsReturningRatio,
+      topCustomersBySpending: topCustomersBySpending,
 
     },
-  });
-};
-
-export const getCustomerAnalyticsService = async (
-  agencyId: string
-) => {
-  return getMongo.customerAnalytics.findFirst({
-    where: { agencyId },
-    orderBy: {
-      generatedAt: "desc",
-    },
-  });
+  };
 };
 
 

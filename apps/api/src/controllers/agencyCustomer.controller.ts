@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { agencyCustomerListService, agencyGetCustomersProfileService, customerNoteService, getCustomerAnalyticsService, getCustomerNoteService } from "src/services/agencyCustomer.service.js";
+import { agencyCustomerListService, agencyGetCustomersProfileService, customerAnalyticsService, customerNoteService, getCustomerNoteService } from "src/services/agencyCustomer.service.js";
 
 export const getAgencyCustomers = async (
   req: Request,
@@ -41,8 +41,8 @@ export const createCustomerNote = async (
 ) => {
 
   try {
-    const agencyId = req.user.agencyId as string; // agency which staff belongs to
-    const staffId = req.user?.id;                 //staff
+    const agencyId = req.agencyId as string; // agency which staff belongs to
+    const staffId = req.user?.userId;         //staff
     const customerId = req.params.id as string;
 
     if (!staffId) {
@@ -117,7 +117,6 @@ export const agencyGetCustomerProfile = async (
 ) => {
 
   try {
-
     const agencyId = req.agencyId as string;
     const customerId = req.params.id as string;
 
@@ -144,7 +143,7 @@ export const getCustomerAnalytics = async (
 
     const agencyId = req.agencyId as string;
 
-    const analytics = await getCustomerAnalyticsService(agencyId);
+    const analytics = await customerAnalyticsService(agencyId);
 
     return res.status(200).json({
       success: true,
