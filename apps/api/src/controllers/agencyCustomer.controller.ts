@@ -133,10 +133,10 @@ export const agencyGetCustomerProfile = async (
       success: true,
       data: customer,
     });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error,
     });
   }
 };

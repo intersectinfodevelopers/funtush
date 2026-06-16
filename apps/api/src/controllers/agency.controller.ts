@@ -10,10 +10,10 @@ export const registerAgency = async (req: Request, res: Response) => {
             status: "success",
             data: newAgency,
         });
-    } catch (err:any) {
+    } catch (err) {
         res.status(500).json({
             status: "error",
-            message: err.message
+            message: err
         });
     }
 };
@@ -176,10 +176,10 @@ export const updateAgencyProfile = async (req: Request, res: Response) => {
             success: true,
             data: result.data,
         });
-    } catch (err:any) {
+    } catch (err) {
         res.status(500).json({
             status: "error",
-            message: err.message
+            message: err
         });
     }
 };
@@ -294,10 +294,10 @@ export const agencyKYCSubmission = async (req: Request, res: Response) => {
             status: "success",
             data: result,
         });
-    } catch (err:any) {
+    } catch (err) {
         res.status(500).json({
             status: "error",
-            message: err.message
+            message: err
         });
     }
 
