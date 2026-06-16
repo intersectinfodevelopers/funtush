@@ -1,5 +1,6 @@
 import { db } from "@funtush/database";
 import { validatePackageInput } from "../utils/validator";
+import { indexPackage, indexAgency, removePackage } from "./search.service.js";
 
 // TrekPackage.slug is @unique and required — derive it from the title and
 // append a counter until it's unique within the trek_packages table.
@@ -154,6 +155,12 @@ export const publishPackageService = async (agencyId: string, packageId: string)
     data: { status: "PUBLISHED" },
   });
 
+  // Sync to Meilisearch so the package appears in the marketplace (Week 3 · Day 1).
+  // Fire-and-forget: indexing must never block or fail the publish response.
+  // The owning agency is (re)indexed too so the directory reflects its packages.
+  void indexPackage(published.id);
+  void indexAgency(agencyId);
+
   return published;
 };
 
@@ -227,6 +234,9 @@ export const archivePackageService = async (agencyId: string, packageId: string)
     err.status = 404;
     throw err;
   }
+
+  // Archived packages must disappear from the public marketplace (fire-and-forget).
+  void removePackage(packageId);
 
   return { success: true, message: "Package archived" };
 };
