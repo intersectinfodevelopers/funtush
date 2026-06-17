@@ -10,7 +10,7 @@ import {
   resetAttempts,
 } from "../utils/lockout";
 import { hashToken } from "../utils/hashToken";
-import { prisma } from "@funtush/database";
+import { db, prisma } from "@funtush/database";
 import { jwtPayload } from "../types";
 import { redis } from "../utils/redis";
 import { checkOtpRateLimit } from "../utils/otpRateLimit";
@@ -74,7 +74,7 @@ export async function agencyLogin(email: string, password: string) {
     );
   }
 
-  const user = await prisma.user.findUnique({
+  const user = await db.user.findUnique({
     where: { email },
     include: {
       agencyUsers: {

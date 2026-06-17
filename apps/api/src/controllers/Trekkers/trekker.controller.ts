@@ -34,21 +34,3 @@ export const trekkerPreference= async(req:Request , res: Response) => {
         });
     }
 }
-
-
-export const customerNote= async(req:Request , res: Response) => {
-    try {
-        
-        const trekkerId = req.body;
-        const preference = await trekkerPreferenceService(req.body, trekkerId);
-        res.status(201).json({
-            status: "success",
-            data: preference
-        });
-    } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
-    }
-}

@@ -6,7 +6,7 @@ import { db } from "@funtush/database";
 export const checkAgencyStatus = async (req: AgencyRequest, res: Response, next: NextFunction) => {
     // From auth middleware
 
-    const agencyId = req.agencyUser?.agencyId;
+    const agencyId = req.agencyId;
 
     if (!agencyId) {
         return res.status(401).json({
@@ -45,7 +45,7 @@ export const checkAgencyStatus = async (req: AgencyRequest, res: Response, next:
 
 export const isPaidTier = async (req: AgencyRequest, res: Response, next: NextFunction) => {
 
-    const agencyId = req.agencyUser?.agencyId;
+    const agencyId = req.agencyId;
 
     if (!agencyId) {
         return res.status(401).json({
