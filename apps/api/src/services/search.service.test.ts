@@ -6,6 +6,7 @@ const fakeIndex = {
   updateSettings: vi.fn().mockResolvedValue({ taskUid: 1 }),
   addDocuments: vi.fn().mockResolvedValue({ taskUid: 2 }),
   deleteDocument: vi.fn().mockResolvedValue({ taskUid: 3 }),
+  search: vi.fn().mockResolvedValue({ hits: [] }),
 };
 
 const fakeMeili = {
@@ -21,10 +22,14 @@ vi.mock("../lib/meilisearch.js", () => ({
 // db is only used by indexPackage/indexAgency; default to "not found".
 const findUniquePackage = vi.fn();
 const findUniqueAgency = vi.fn();
+const findUniqueTrekker = vi.fn();
+const findManyBooking = vi.fn();
 vi.mock("@funtush/database", () => ({
   db: {
     trekPackage: { findUnique: (...a: unknown[]) => findUniquePackage(...a) },
     agency: { findUnique: (...a: unknown[]) => findUniqueAgency(...a) },
+    trekker: { findUnique: (...a: unknown[]) => findUniqueTrekker(...a) },
+    booking: { findMany: (...a: unknown[]) => findManyBooking(...a) },
   },
 }));
 
@@ -34,6 +39,7 @@ import {
   configureIndexes,
   indexPackage,
   removePackage,
+  searchMarketplacePackages,
   PACKAGE_INDEX,
   AGENCY_INDEX,
 } from "./search.service.js";
@@ -58,7 +64,7 @@ describe("toPackageDocument", () => {
     difficulty: "CHALLENGING",
     status: "PUBLISHED",
     createdAt: new Date("2026-06-16T00:00:00.000Z"),
-    agency: { name: "Himalaya Treks" },
+    agency: { name: "Himalaya Treks", tier: { name: "LARGE" } },
     destinations: [
       { name: "Everest", bestSeason: "Spring", altitudeM: 5364 },
       { name: "Khumbu", bestSeason: "Spring", altitudeM: 3440 },
@@ -74,6 +80,17 @@ describe("toPackageDocument", () => {
     expect(typeof doc.price).toBe("number");
     expect(doc.duration).toBe(14);
     expect(doc.createdAt).toBe(Math.floor(base.createdAt.getTime() / 1000));
+  });
+
+  it("maps the agency tier and its marketplace weight", () => {
+    expect(toPackageDocument(base).tier).toBe("LARGE");
+    expect(toPackageDocument(base).tierWeight).toBe(100);
+  });
+
+  it("defaults a missing tier to SMALL weight", () => {
+    const doc = toPackageDocument({ ...base, agency: { name: "X" } });
+    expect(doc.tier).toBe("SMALL");
+    expect(doc.tierWeight).toBe(20);
   });
 
   it("takes the highest altitude across destinations and itinerary days", () => {
@@ -190,5 +207,81 @@ describe("indexPackage / removePackage", () => {
   it("removePackage deletes by id", async () => {
     await removePackage("pkg-1");
     expect(fakeIndex.deleteDocument).toHaveBeenCalledWith("pkg-1");
+  });
+});
+
+/* ── Marketplace search ──────────────────────────────────────────────────── */
+describe("searchMarketplacePackages", () => {
+  // helper: a minimal hit as Meili would return it
+  const hit = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: "p", agencyId: "a", agencyName: "A", title: "t", description: "",
+    destination: [], season: [], difficulty: "EASY", price: 100, duration: 5,
+    altitude: 0, status: "PUBLISHED", slug: "t", tier: "SMALL", tierWeight: 20,
+    createdAt: 1000, _rankingScore: 1, ...over,
+  });
+
+  it("always filters to published, non-FREE packages", async () => {
+    fakeIndex.search.mockResolvedValueOnce({ hits: [] });
+    await searchMarketplacePackages({});
+    const filter = fakeIndex.search.mock.calls[0][1].filter;
+    expect(filter).toContain('status = "PUBLISHED"');
+    expect(filter).toContain('tier != "FREE"');
+  });
+
+  it("translates difficulty / price / season filters into a Meili filter string", async () => {
+    fakeIndex.search.mockResolvedValueOnce({ hits: [] });
+    await searchMarketplacePackages({
+      q: "everest",
+      filters: { difficulty: "MODERATE", priceMax: 1500, season: "Spring" },
+    });
+    const [query, opts] = fakeIndex.search.mock.calls[0];
+    expect(query).toBe("everest");
+    expect(opts.filter).toContain('difficulty = "MODERATE"');
+    expect(opts.filter).toContain("price <= 1500");
+    expect(opts.filter).toContain('season = "Spring"');
+  });
+
+  it("ranks higher tiers above lower tiers when relevance is equal", async () => {
+    fakeIndex.search.mockResolvedValueOnce({
+      hits: [
+        hit({ id: "small", agencyId: "s", tier: "SMALL", tierWeight: 20 }),
+        hit({ id: "large", agencyId: "l", tier: "LARGE", tierWeight: 100 }),
+      ],
+    });
+    const { data } = await searchMarketplacePackages({});
+    expect(data.map((d) => d.id)).toEqual(["large", "small"]);
+    // transient Meili field is stripped from the response
+    expect((data[0] as unknown as Record<string, unknown>)._rankingScore).toBeUndefined();
+  });
+
+  it("boosts agencies the logged-in trekker booked before", async () => {
+    findUniqueTrekker.mockResolvedValue({ id: "trk-1" });
+    findManyBooking.mockResolvedValue([{ agencyId: "fav" }]);
+    // two equal-tier packages: the one from a previously-booked agency wins
+    fakeIndex.search.mockResolvedValueOnce({
+      hits: [
+        hit({ id: "stranger", agencyId: "other" }),
+        hit({ id: "favourite", agencyId: "fav" }),
+      ],
+    });
+    const { data } = await searchMarketplacePackages({ trekkerUserId: "user-1" });
+    expect(data.map((d) => d.id)).toEqual(["favourite", "stranger"]);
+  });
+
+  it("does not personalize for anonymous (no token) requests", async () => {
+    fakeIndex.search.mockResolvedValueOnce({ hits: [] });
+    await searchMarketplacePackages({});
+    expect(findManyBooking).not.toHaveBeenCalled();
+  });
+
+  it("paginates and reports meta.total / meta.pages", async () => {
+    fakeIndex.search.mockResolvedValueOnce({
+      hits: Array.from({ length: 25 }, (_, i) => hit({ id: `p${i}`, createdAt: i })),
+    });
+    const { data, meta } = await searchMarketplacePackages({ page: 2, limit: 10 });
+    expect(meta.total).toBe(25);
+    expect(meta.pages).toBe(3);
+    expect(meta.page).toBe(2);
+    expect(data.length).toBe(10);
   });
 });
