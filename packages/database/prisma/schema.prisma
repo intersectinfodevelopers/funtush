@@ -133,7 +133,7 @@ model Agency {
   bookings          Booking[]
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
-  reviews Review[]
+  reviews           Review[]
 
   @@map("agencies")
 }
@@ -150,7 +150,7 @@ model AgencyUser {
 
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
-  reviewResponses ReviewResponse[]
+  reviewResponses   ReviewResponse[]
 
   @@unique([agencyId, userId])
   @@map("agency_users")
@@ -204,7 +204,7 @@ model Trekker {
   preference        TrekkerPreference?
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
-  reviews Review[]
+  reviews           Review[]
 
   @@map("trekker")
 }
@@ -441,6 +441,7 @@ model Booking {
   addOns          BookingAddOn[]
   paymentLink     PaymentLink?
   review          Review?
+
   @@index([agencyId, status])
   @@index([trekkerId])
   @@map("bookings")
@@ -535,52 +536,49 @@ model Subscription {
 }
 
 model Review {
-  id         String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  bookingId  String   @unique @map("booking_id")
-  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String  @unique @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
-  trekkerId  String   @map("trekker_id")
-  trekker    Trekker  @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+  trekkerId String  @map("trekker_id")
+  trekker   Trekker @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
 
-  agencyId   String   @map("agency_id")
-  agency     Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  agencyId String @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
-  guideId    String?  @map("guide_id")
-  guide      Guide?   @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  assignedGuideId String? @map("assigned_guide_id")
 
-  rating     Int
-  text       String
-  photos     String[] @default([])
+  rating Int
+  text   String
+  photos String[] @default([])
 
-  verified   Boolean  @default(true)
+  verified Boolean @default(true)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  response   ReviewResponse?
-  flags      ReviewFlag[]
+  response ReviewResponse?
+  flags    ReviewFlag[]
 
   @@index([agencyId])
   @@index([trekkerId])
   @@index([bookingId])
-  @@index([guideId])
-
   @@map("reviews")
 }
 
 model ReviewResponse {
-  id             String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  reviewId       String   @unique @map("review_id")
-  review         Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reviewId String @unique @map("review_id")
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
-  agencyUserId   String   @map("agency_user_id")
-  agencyUser     AgencyUser  @relation(fields: [agencyUserId], references: [id], onDelete: Cascade)
+  agencyUserId String     @map("agency_user_id")
+  agencyUser   AgencyUser @relation(fields: [agencyUserId], references: [id], onDelete: Cascade)
 
-  responseText   String @map("response_text")
+  responseText String @map("response_text")
 
-  respondedAt    DateTime @default(now()) @map("responded_at")
+  respondedAt DateTime @default(now()) @map("responded_at")
 
   @@index([reviewId])
   @@index([agencyUserId])
@@ -588,17 +586,17 @@ model ReviewResponse {
 }
 
 model ReviewFlag {
-  id          String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  reviewId    String   @map("review_id")
-  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reviewId String @map("review_id")
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
-  reason      String
+  reason String
 
-  flaggedBy   String   @map("flagged_by")
-  status      ReviewFlagStatus @default(PENDING)
+  flaggedBy String           @map("flagged_by")
+  status    ReviewFlagStatus @default(PENDING)
 
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([reviewId])
   @@index([status])
