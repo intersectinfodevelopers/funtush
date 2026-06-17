@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { db } from "@funtush/database";
 import bcrypt from "bcrypt";
 
-// Middleware to authenticate via refresh token
+// Middleware to authenticate via refresh token -> from registration
 export const authenticateWithRefreshToken = async (req: Request, res: Response, next: NextFunction) => {
     try {
 
@@ -22,16 +22,28 @@ export const authenticateWithRefreshToken = async (req: Request, res: Response, 
 
             if (isValid) {
                 // Look up the user by userId from token
-                const user = await db.agencyUser.findUnique({
-                    where: { id: t.userId },
+                const agencyUser = await db.agencyUser.findFirst({
+                    where: {
+                        userId: t.userId,
+                    },
                 });
 
-                if (!user) {
+                if (!agencyUser) {
                     return res.status(401).json({ message: "User not found" });
                 }
 
                 // Attach only the user ID to the request
-                req.agencyId = user.agencyId ?? undefined;
+                req.agencyId = agencyUser.agencyId ?? undefined;
+                // req.user = {
+                //     userId: t.userId,
+                //     role: "STAFF",
+                //     roleType: "TENANT"
+                // };
+                req.tenantId = agencyUser.id;
+
+                if (!agencyUser.agencyId) {
+                    return res.status(401).json({ message: "Agency not linked" });
+                }
 
                 return next();
             }

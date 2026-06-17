@@ -42,13 +42,20 @@ export const createCustomerNote = async (
 
   try {
     const agencyId = req.agencyId as string; // agency which staff belongs to
-    const staffId = req.user?.userId;         //staff
+    const staffId = req.tenantId as string;         //staff
     const customerId = req.params.id as string;
+
+    if (!agencyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
     if (!staffId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized",
+        message: "Unauthorized staff",
       });
     }
 

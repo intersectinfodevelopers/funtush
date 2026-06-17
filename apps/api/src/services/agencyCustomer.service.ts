@@ -24,7 +24,6 @@ export const agencyCustomerListService = async (agencyId: string, query: custome
     sortOrder = "desc",
   } = query;
 
-
   const bookingWhere: Prisma.BookingWhereInput = {
     agencyId,
   };
@@ -129,6 +128,10 @@ export const agencyCustomerListService = async (agencyId: string, query: custome
     const trekker = trekkerMap.get(customer.trekkerId);
 
     const totalBookings = customer._count.id;
+    const totalSpending = customer._sum.totalPrice
+      ? Number(customer._sum.totalPrice)
+      : 0;
+    const lastBookingDate = customer._max.createdAt;
 
     return {
       trekkerId: customer.trekkerId,
@@ -139,14 +142,11 @@ export const agencyCustomerListService = async (agencyId: string, query: custome
       country: trekker?.country ?? null,
 
       totalBookings,
-
-      totalSpending: Number(
-        customer._sum.totalPrice ?? 0,
-      ),
-
-      lastBookingDate: customer._max.createdAt,
+      totalSpending,
+      lastBookingDate,
 
       repeatVisitor: totalBookings > 1,
+      isNewCustomer: totalBookings === 1,
     };
   });
 
@@ -193,34 +193,27 @@ export const agencyCustomerListService = async (agencyId: string, query: custome
    * Sorting
    */
   customers.sort((a, b) => {
-    let result = 0;
 
     switch (sortBy) {
       case "totalBookings":
-        result =
-          a.totalBookings - b.totalBookings;
-        break;
+        return a.totalBookings - b.totalBookings;
 
       case "totalSpending":
-        result =
-          a.totalSpending - b.totalSpending;
-        break;
+        return a.totalSpending - b.totalSpending;
 
       case "lastBookingDate":
       default:
-        result =
-          new Date(
-            a.lastBookingDate ?? 0,
-          ).getTime() -
-          new Date(
-            b.lastBookingDate ?? 0,
-          ).getTime();
+        return (
+          new Date(a.lastBookingDate ?? 0).getTime() -
+          new Date(b.lastBookingDate ?? 0).getTime()
+        );
     }
-
-    return sortOrder === "asc"
-      ? result
-      : result * -1;
   });
+
+  if (sortOrder === "desc") {
+    customers.reverse();
+  }
+
 
   /**
    * STEP 7
@@ -228,7 +221,7 @@ export const agencyCustomerListService = async (agencyId: string, query: custome
    */
   const total = customers.length;
 
-  const start = (page - 1) * limit;
+  const start = Number(page - 1) * Number(limit);
 
   const paginatedCustomers = customers.slice(
     start,
@@ -269,8 +262,8 @@ export const customerNoteService = async (
     data: {
       trekkerId: customerId,
       staffId,
-      agencyId,
       noteText,
+      agencyId,
     },
   });
 
@@ -323,9 +316,14 @@ export const agencyGetCustomersProfileService = async (
   agencyId: string
 ) => {
 
-  const customer = await db.trekker.findUnique({
+  const customer = await db.trekker.findFirst({
     where: {
       id: customerId,
+      bookings: {
+        some: {
+          agencyId,
+        },
+      },
     },
     include: {
       user: {
@@ -337,9 +335,9 @@ export const agencyGetCustomersProfileService = async (
     },
   });
 
-  if (!customer) {
-    throw new Error("Customer not found");
-  }
+  // if (!customer) {
+  //   throw new Error("Customer not found");
+  // }
 
 
   const bookings = await db.booking.findMany({
@@ -359,6 +357,11 @@ export const agencyGetCustomersProfileService = async (
           },
         },
       },
+      paymentLink: {
+        select: {
+          id: true
+        }
+      }
     },
     orderBy: {
       createdAt: "desc",
@@ -367,7 +370,7 @@ export const agencyGetCustomersProfileService = async (
 
 
   if (!bookings.length) {
-    throw new Error("Customer not found");
+    throw new Error("Booking not found");
   }
 
   const notes = await db.customerNote.findMany({
@@ -423,7 +426,6 @@ export const agencyGetCustomersProfileService = async (
 
   const loyalityFlag = visitCount >= 3;
 
-
   return {
     success: true,
     message: "Customer profile fetched successfully",
@@ -454,46 +456,34 @@ export const customerAnalyticsService = async (  //— top customers by spending
   agencyId: string
 ) => {
 
-  const bookings = await db.booking.findMany({
+  const trekkers = await db.trekker.findMany({
     where: {
-      agencyId,
+      bookings: {
+        some: {
+          agencyId,
+        },
+      },
     },
     include: {
-      trekker: true,
+      bookings: {
+        where: { agencyId },
+        select: {
+          totalPrice: true,
+          createdAt: true,
+        },
+      },
     },
   });
 
-  const customerMap = new Map();
+  const totalCustomers = trekkers.length;
 
-  bookings.forEach((booking) => {
-    const trekkerId = booking.trekkerId;
-
-    if (!customerMap.has(trekkerId)) {
-      customerMap.set(trekkerId, {
-        trekkerId,
-        name: booking.trekker?.fullName,
-        totalSpent: 0,
-        bookingCount: 0,
-      });
-    }
-
-    const customer = customerMap.get(trekkerId);
-
-    customer.totalSpent += Number(booking.totalPrice || 0);
-    customer.bookingCount += 1;
-  });
-
-  const customers = [...customerMap.values()];
-
-  const returningCustomers = customers.filter(
-    (customer) => customer.bookingCount > 1
+  const newCustomers = trekkers.filter(
+    (t) => t.bookings.length === 1
   );
 
-  const newCustomers = customers.filter(
-    (customer) => customer.bookingCount === 1
+  const returningCustomers = trekkers.filter(
+    (t) => t.bookings.length > 1
   );
-
-  const totalCustomers = customers.length;
 
   const repeatRate =
     totalCustomers > 0
@@ -505,9 +495,25 @@ export const customerAnalyticsService = async (  //— top customers by spending
       ? `${newCustomers.length}:${returningCustomers.length}`
       : `${newCustomers.length}:0`;
 
-  const topCustomersBySpending = customers
+  const topCustomersBySpending = trekkers
+    .map((t) => {
+      const totalSpent = (t.bookings || []).reduce(
+        (sum, b) => sum + Number(b.totalPrice || 0),
+        0
+      );
+
+      const bookingCount = t.bookings.length
+
+      return {
+        trekkerId: t.id,
+        name: t.fullName,
+        totalSpent,
+        bookingCount,
+      };
+    })
     .sort((a, b) => b.totalSpent - a.totalSpent)
     .slice(0, 10);
+
 
   return {
     data: {
@@ -518,7 +524,6 @@ export const customerAnalyticsService = async (  //— top customers by spending
       repeatRate: repeatRate,
       newVsReturningRatio: newVsReturningRatio,
       topCustomersBySpending: topCustomersBySpending,
-
     },
   };
 };

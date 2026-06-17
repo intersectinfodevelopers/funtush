@@ -187,10 +187,32 @@ async function main() {
     },
   });
 
+
+  const testBooking = await prisma.booking.upsert({
+    where: { id: "00000000-0000-0000-0000-000000000111" },
+    update: {},
+    create:
+    {
+      agencyId: "6c34f8d4-77ba-4c55-80f6-897e10277dd0",
+      trekkerId: "f3b41def-1fea-414c-aeb2-a1e5d980c204",
+      packageId: testPackage.id,
+      departureDateId: departureDate.id,
+      groupSize: 7,
+      totalPrice: 1700,
+      status: "CONFIRMED",
+      trekkerName: "John Doe",
+      trekkerEmail: "john@test.com",
+      trekkerPhone: "1111111111",
+    },
+
+  });
+
+
   console.log("seed completed");
   console.log("Test package ID:", testPackage.id);
   console.log("Test departure date ID:", departureDate.id);
   console.log("Test agency ID:", testPackage.agencyId);
+  console.log("Test bookings ID:", testBooking.id);
 }
 
 main()
