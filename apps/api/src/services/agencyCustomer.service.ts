@@ -214,7 +214,6 @@ export const agencyCustomerListService = async (agencyId: string, query: custome
     customers.reverse();
   }
 
-
   /**
    * STEP 7
    * Pagination

@@ -25,6 +25,31 @@ import { getMeili, isSearchEnabled } from "../lib/meilisearch.js";
 export const PACKAGE_INDEX = "packages";
 export const AGENCY_INDEX = "agencies";
 
+/* ── Tier visibility (Week 3 · Day 2) ────────────────────────────────────────
+ *
+ * Marketplace ranking gives bigger tiers more exposure (Backend Guide §6 & §14):
+ *   Large  → highest weight, Medium → medium, Small → low, Free → HIDDEN.
+ *
+ * The weight is baked into each package document at index time so the search
+ * query can rank purely on data it already holds. FREE-tier packages are still
+ * indexed, but the marketplace query filters them out (`tier != "FREE"`), so
+ * they never appear publicly — they only exist for the agency's own dashboard.
+ */
+export const TIER_WEIGHTS: Record<string, number> = {
+  LARGE: 100,
+  MEDIUM: 50,
+  SMALL: 20,
+  FREE: 0,
+};
+
+/** Tiers that must never be listed on the public marketplace. */
+export const HIDDEN_TIERS = ["FREE"];
+
+/** Look up a tier's weight, defaulting unknown tiers to the lowest visible weight. */
+function tierWeight(tierName: string | undefined): number {
+  return TIER_WEIGHTS[tierName ?? "SMALL"] ?? TIER_WEIGHTS.SMALL;
+}
+
 /* ── Document shapes ─────────────────────────────────────────────────────── */
 
 export interface PackageDocument {
@@ -43,6 +68,10 @@ export interface PackageDocument {
   altitude: number;
   status: string;
   slug: string;
+  // tier of the owning agency + its precomputed marketplace weight. Drives
+  // visibility ranking and the FREE-tier hide rule (Day 2).
+  tier: string;
+  tierWeight: number;
   createdAt: number; // unix seconds — sortable
 }
 
@@ -80,8 +109,8 @@ export async function configureIndexes(): Promise<void> {
     await meili.index(PACKAGE_INDEX).updateSettings({
       // order matters: earlier attributes weigh more in relevance ranking
       searchableAttributes: ["title", "description", "destination", "agencyName"],
-      filterableAttributes: ["difficulty", "price", "duration", "season", "altitude", "status", "agencyId"],
-      sortableAttributes: ["price", "duration", "altitude", "createdAt"],
+      filterableAttributes: ["difficulty", "price", "duration", "season", "altitude", "status", "agencyId", "tier"],
+      sortableAttributes: ["price", "duration", "altitude", "createdAt", "tierWeight"],
       // Typo tolerance: "Anapurna" → "Annapurna", "Everst" → "Everest".
       // Enabled by default in Meili; we set it explicitly so the contract is
       // visible and protected against server-default changes.
@@ -121,7 +150,7 @@ type PackageWithRelations = {
   difficulty: string;
   status: string;
   createdAt: Date;
-  agency: { name: string };
+  agency: { name: string; tier?: { name: string } | null };
   destinations: { name: string; bestSeason: string | null; altitudeM: number | null }[];
   itineraries: { altitudeM: number | null }[];
 };
@@ -137,6 +166,8 @@ export function toPackageDocument(pkg: PackageWithRelations): PackageDocument {
   // dedupe seasons across destinations, dropping nulls
   const season = [...new Set(pkg.destinations.map((d) => d.bestSeason).filter(Boolean) as string[])];
 
+  const tier = pkg.agency.tier?.name ?? "SMALL";
+
   return {
     id: pkg.id,
     agencyId: pkg.agencyId,
@@ -151,6 +182,8 @@ export function toPackageDocument(pkg: PackageWithRelations): PackageDocument {
     altitude,
     status: pkg.status,
     slug: pkg.slug,
+    tier,
+    tierWeight: tierWeight(tier),
     createdAt: Math.floor(pkg.createdAt.getTime() / 1000),
   };
 }
@@ -200,7 +233,7 @@ export async function indexPackage(packageId: string): Promise<void> {
     const pkg = await db.trekPackage.findUnique({
       where: { id: packageId },
       include: {
-        agency: { select: { name: true } },
+        agency: { select: { name: true, tier: { select: { name: true } } } },
         destinations: { select: { name: true, bestSeason: true, altitudeM: true } },
         itineraries: { select: { altitudeM: true } },
       },
@@ -298,4 +331,161 @@ export async function reindexAll(): Promise<{ packages: number; agencies: number
 
   console.log(`[search] Reindexed ${packages.length} packages, ${agencies.length} agencies`);
   return { packages: packages.length, agencies: agencies.length };
+}
+
+/* ── Marketplace search (Week 3 · Day 2) ─────────────────────────────────────
+ *
+ * Public-facing search for `GET /marketplace/packages`. Implements:
+ *   • full-text search (q) with typo tolerance, via Meilisearch
+ *   • filters: difficulty, price range, duration range, season, destination, altitude
+ *   • tier visibility: Large > Medium > Small, Free hidden
+ *   • personalization: logged-in trekkers get a boost on agencies they booked before
+ *   • pagination with meta.total / meta.pages
+ *
+ * Ranking strategy
+ * ────────────────
+ * Meilisearch is excellent at TEXT relevance but cannot apply our custom,
+ * per-request visibility score (tier weight + "have I booked this agency?").
+ * So we use the standard "fetch then re-rank" pattern:
+ *   1. Ask Meili for a generous candidate set, already filtered + relevance-ranked,
+ *      asking it to attach its own `_rankingScore` (0..1) to every hit.
+ *   2. Re-rank those candidates in app code with a composite score that folds in
+ *      tier weight and the personalization boost.
+ *   3. Paginate the re-ranked list ourselves.
+ *
+ * Because text relevance is multiplied by a large weight, it dominates when the
+ * user typed a query; when `q` is empty every hit has the same relevance, so
+ * tier weight + personalization + recency decide the order — i.e. "sorted by
+ * relevance/visibility score" as the spec requires.
+ */
+
+/** Weight applied to Meili's 0..1 text-relevance score. Large so text match wins when a query is present. */
+const RELEVANCE_WEIGHT = 1000;
+/** Bonus added to packages whose agency the logged-in trekker has booked before. */
+const PERSONALIZATION_BOOST = 40;
+/** How many candidates to pull from Meili before re-ranking. Bounds worst-case work. */
+const CANDIDATE_LIMIT = 1000;
+/** Hard cap on page size so a caller can't request an unbounded page. */
+const MAX_LIMIT = 50;
+
+const VALID_DIFFICULTIES = new Set(["EASY", "MODERATE", "CHALLENGING", "DIFFICULT"]);
+
+export interface MarketplaceFilters {
+  difficulty?: string;
+  priceMin?: number;
+  priceMax?: number;
+  durationMin?: number;
+  durationMax?: number;
+  altitudeMax?: number;
+  season?: string;
+  destination?: string;
+}
+
+export interface MarketplaceSearchParams {
+  q?: string;
+  filters?: MarketplaceFilters;
+  page?: number;
+  limit?: number;
+  /** User id from a logged-in trekker's access token, if any. Drives personalization. */
+  trekkerUserId?: string;
+}
+
+export interface MarketplaceSearchResult {
+  data: PackageDocument[];
+  meta: { total: number; page: number; limit: number; pages: number };
+}
+
+/** Strip characters that would break out of a Meilisearch quoted filter literal. */
+function sanitizeFilterValue(value: string): string {
+  return value.replace(/["\\]/g, "").trim();
+}
+
+/**
+ * Find the set of agency ids a trekker has booked with before. Used to boost
+ * those agencies in this trekker's marketplace results. Returns an empty set if
+ * the user isn't a trekker / has no bookings — personalization is opt-in by login.
+ */
+async function bookedAgencyIdsFor(trekkerUserId: string): Promise<Set<string>> {
+  const trekker = await db.trekker.findUnique({
+    where: { userId: trekkerUserId },
+    select: { id: true },
+  });
+  if (!trekker) return new Set();
+
+  const bookings = await db.booking.findMany({
+    where: { trekkerId: trekker.id },
+    select: { agencyId: true },
+    distinct: ["agencyId"],
+  });
+  return new Set(bookings.map((b) => b.agencyId));
+}
+
+export async function searchMarketplacePackages(
+  params: MarketplaceSearchParams
+): Promise<MarketplaceSearchResult> {
+  const page = Math.max(1, Math.floor(params.page ?? 1));
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(params.limit ?? 20)));
+  const emptyMeta = { total: 0, page, limit, pages: 0 };
+
+  if (!isSearchEnabled()) {
+    console.warn("[search] MEILI_HOST not configured — marketplace search returns empty");
+    return { data: [], meta: emptyMeta };
+  }
+
+  const f = params.filters ?? {};
+
+  // Always-on gates: only published packages, never FREE-tier (hidden) agencies.
+  const filterParts: string[] = ['status = "PUBLISHED"'];
+  for (const tier of HIDDEN_TIERS) filterParts.push(`tier != "${tier}"`);
+
+  if (f.difficulty && VALID_DIFFICULTIES.has(f.difficulty)) {
+    filterParts.push(`difficulty = "${f.difficulty}"`);
+  }
+  if (typeof f.priceMin === "number") filterParts.push(`price >= ${f.priceMin}`);
+  if (typeof f.priceMax === "number") filterParts.push(`price <= ${f.priceMax}`);
+  if (typeof f.durationMin === "number") filterParts.push(`duration >= ${f.durationMin}`);
+  if (typeof f.durationMax === "number") filterParts.push(`duration <= ${f.durationMax}`);
+  if (typeof f.altitudeMax === "number") filterParts.push(`altitude <= ${f.altitudeMax}`);
+  if (f.season) filterParts.push(`season = "${sanitizeFilterValue(f.season)}"`);
+  if (f.destination) filterParts.push(`destination = "${sanitizeFilterValue(f.destination)}"`);
+
+  let hits: (PackageDocument & { _rankingScore?: number })[];
+  try {
+    const result = await getMeili().index(PACKAGE_INDEX).search(params.q ?? "", {
+      filter: filterParts.join(" AND "),
+      limit: CANDIDATE_LIMIT,
+      showRankingScore: true,
+    });
+    hits = result.hits as (PackageDocument & { _rankingScore?: number })[];
+  } catch (err) {
+    console.error("[search] Marketplace search failed:", (err as Error).message);
+    return { data: [], meta: emptyMeta };
+  }
+
+  // Personalization: which agencies has this trekker booked before?
+  const boostedAgencies = params.trekkerUserId
+    ? await bookedAgencyIdsFor(params.trekkerUserId)
+    : new Set<string>();
+
+  // Composite re-rank: text relevance (dominant) + tier weight + personalization + recency tiebreaker.
+  const ranked = hits
+    .map((hit) => {
+      const relevance = (hit._rankingScore ?? 1) * RELEVANCE_WEIGHT;
+      const personal = boostedAgencies.has(hit.agencyId) ? PERSONALIZATION_BOOST : 0;
+      const recency = hit.createdAt / 1e10; // tiny: only breaks ties between otherwise-equal packages
+      return { hit, score: relevance + (hit.tierWeight ?? 0) + personal + recency };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const total = ranked.length;
+  const pages = Math.ceil(total / limit);
+  const start = (page - 1) * limit;
+  const data = ranked.slice(start, start + limit).map(({ hit }) => {
+    // drop the transient Meili-only field before returning to the client
+    const { _rankingScore, ...doc } = hit;
+    void _rankingScore;
+    return doc as PackageDocument;
+  });
+
+  return { data, meta: { total, page, limit, pages } };
 }

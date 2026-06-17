@@ -8,6 +8,7 @@ import packageRoutes from "./routes/package.routes.js";
 import bookingRoutes from "./routes/booking.routes.js";
 import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
+import marketplaceRoutes from "./routes/marketplace.routes.js";
 
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
@@ -33,6 +34,7 @@ app.use('/', agencyRoutes);
 app.use('/', agencyCustomerRoutes);
 app.use('/', trekkerRoutes);
 app.use("/", packageRoutes);
+app.use("/marketplace", marketplaceRoutes);
 app.use("/bookings", bookingRoutes);
 app.use("/auth", authRoutes);
 

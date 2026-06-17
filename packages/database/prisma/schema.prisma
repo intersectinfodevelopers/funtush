@@ -89,6 +89,12 @@ enum CommunicationDirection {
   OUTBOUND
 }
 
+enum ReviewFlagStatus {
+  PENDING
+  DISMISSED
+  REMOVED
+}
+
 // Core: Agency & Users
 
 model SubscriptionTier {
@@ -127,6 +133,7 @@ model Agency {
   bookings          Booking[]
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
+  reviews           Review[]
 
   @@map("agencies")
 }
@@ -143,6 +150,7 @@ model AgencyUser {
 
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
+  reviewResponses   ReviewResponse[]
 
   @@unique([agencyId, userId])
   @@map("agency_users")
@@ -196,6 +204,7 @@ model Trekker {
   preference        TrekkerPreference?
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
+  reviews           Review[]
 
   @@map("trekker")
 }
@@ -431,6 +440,7 @@ model Booking {
   departureDate   TrekDepartureDate @relation(fields: [departureDateId], references: [id])
   addOns          BookingAddOn[]
   paymentLink     PaymentLink?
+  review          Review?
 
   @@index([agencyId, status])
   @@index([trekkerId])
@@ -523,4 +533,72 @@ model Subscription {
   tier      SubscriptionTier   @relation(fields: [tierId], references: [id])
 
   @@map("subscriptions")
+}
+
+model Review {
+  id String @id @default(uuid())
+
+  bookingId String  @unique @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  trekkerId String  @map("trekker_id")
+  trekker   Trekker @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+
+  agencyId String @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  assignedGuideId String? @map("assigned_guide_id")
+
+  rating Int
+  text   String
+  photos String[] @default([])
+
+  verified Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  response ReviewResponse?
+  flags    ReviewFlag[]
+
+  @@index([agencyId])
+  @@index([trekkerId])
+  @@index([bookingId])
+  @@map("reviews")
+}
+
+model ReviewResponse {
+  id String @id @default(uuid())
+
+  reviewId String @unique @map("review_id")
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  agencyUserId String     @map("agency_user_id")
+  agencyUser   AgencyUser @relation(fields: [agencyUserId], references: [id], onDelete: Cascade)
+
+  responseText String @map("response_text")
+
+  respondedAt DateTime @default(now()) @map("responded_at")
+
+  @@index([reviewId])
+  @@index([agencyUserId])
+  @@map("review_responses")
+}
+
+model ReviewFlag {
+  id String @id @default(uuid())
+
+  reviewId String @map("review_id")
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  reason String
+
+  flaggedBy String           @map("flagged_by")
+  status    ReviewFlagStatus @default(PENDING)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([reviewId])
+  @@index([status])
+  @@map("review_flags")
 }

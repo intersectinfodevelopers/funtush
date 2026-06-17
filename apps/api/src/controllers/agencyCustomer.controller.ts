@@ -7,7 +7,7 @@ export const getAgencyCustomers = async (
 ) => {
 
   try {
-    const agencyId = req.agencyId;
+    const agencyId = req.agencyId as string;
 
     if (!agencyId) {
       return res.status(401).json({
@@ -88,7 +88,7 @@ export const getCustomerNote = async (
 ) => {
 
   try {
-    const agencyId = req.agencyId;
+    const agencyId = req.agencyId as string;
     const customerId = req.params.id as string;
 
     if (!agencyId) {
