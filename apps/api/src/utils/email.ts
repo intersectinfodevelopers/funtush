@@ -284,3 +284,39 @@ Funtush Team
   });
 };
 
+
+export const sendReviewInvitationEmail = async (
+  email: string,
+  name: string,
+  invitationLink: string,
+) => {
+  try {
+    await transporter.sendMail({
+      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "Review Invitation - Share Your Trek Experience",
+      html: `
+      <h2>Hello ${name},</h2>
+
+      <p>
+        Congratulations on completing your trek.
+      </p>
+
+      <p>
+        We'd love to hear about your experience.
+      </p>
+
+      <a href=${invitationLink}">
+        Leave Review
+      </a>
+
+      <p>
+        Thank you for choosing Funtush.
+      </p>
+    `,
+    });
+  } catch (error) {
+    console.error("Email sending failed:", error);
+    throw error;
+  }
+};
