@@ -1,8 +1,9 @@
+import { db } from "@funtush/database";
 import { prisma } from "../packages/database/prisma.js";
 import { cacheGet, cacheSet } from "./redis.service.js";
 import crypto from "crypto";
 
-const DASHBOARD_TTL = 60; 
+const DASHBOARD_TTL = 60;
 
 
 
@@ -16,7 +17,7 @@ export async function getDashboardStats() {
 
   const [agenciesByTier, activeSubscriptions, monthlyRevenue, activeTreks] =
     await Promise.all([
-   
+
       prisma.agency.groupBy({
         by: ["tier"],
         _count: { _all: true },
@@ -26,7 +27,7 @@ export async function getDashboardStats() {
         where: { status: "ACTIVE" },
       }),
 
-     
+
       prisma.invoice.aggregate({
         _sum: { amount: true },
         where: {
@@ -35,17 +36,17 @@ export async function getDashboardStats() {
         },
       }),
 
-      
+
       prisma.trek.count({
         where: { status: "LIVE" },
       }),
     ]);
 
   const stats = {
-agenciesByTier: (agenciesByTier as Array<{ tier: string; _count: { _all: number } }>).reduce((acc: Record<string, number>, row) => {
-  acc[row.tier] = row._count._all;
-  return acc;
-}, {} as Record<string, number>),
+    agenciesByTier: (agenciesByTier as Array<{ tier: string; _count: { _all: number } }>).reduce((acc: Record<string, number>, row) => {
+      acc[row.tier] = row._count._all;
+      return acc;
+    }, {} as Record<string, number>),
     totalActiveSubscriptions: activeSubscriptions,
     revenueThisMonth: monthlyRevenue._sum.amount ?? 0,
     activeTreksLive: activeTreks,
@@ -67,17 +68,17 @@ export interface AgencyListFilter {
 }
 
 export async function listAgencies(filters: AgencyListFilter) {
-  const page  = Math.max(1, filters.page  ?? 1);
+  const page = Math.max(1, filters.page ?? 1);
   const limit = Math.min(100, Math.max(1, filters.limit ?? 20));
-  const skip  = (page - 1) * limit;
+  const skip = (page - 1) * limit;
 
   const where: Record<string, unknown> = {};
-  if (filters.tier)    where.tier    = filters.tier;
-  if (filters.status)  where.status  = filters.status;
+  if (filters.tier) where.tier = filters.tier;
+  if (filters.status) where.status = filters.status;
   if (filters.country) where.country = filters.country;
   if (filters.search) {
     where.OR = [
-      { name:  { contains: filters.search, mode: "insensitive" } },
+      { name: { contains: filters.search, mode: "insensitive" } },
       { email: { contains: filters.search, mode: "insensitive" } },
     ];
   }
@@ -123,13 +124,13 @@ export async function getAgencyProfile(id: string) {
   const [bookingSummary, financialSummary] = await Promise.all([
     prisma.booking.aggregate({
       _count: { _all: true },
-      _sum:   { totalAmount: true },
-      where:  { agencyId: id },
+      _sum: { totalAmount: true },
+      where: { agencyId: id },
     }),
     prisma.invoice.aggregate({
-      _sum:   { amount: true },
+      _sum: { amount: true },
       _count: { _all: true },
-      where:  { agencyId: id, status: "PAID" },
+      where: { agencyId: id, status: "PAID" },
     }),
   ]);
 
@@ -137,11 +138,11 @@ export async function getAgencyProfile(id: string) {
     ...agency,
     bookingSummary: {
       totalBookings: bookingSummary._count._all,
-      totalRevenue:  bookingSummary._sum.totalAmount ?? 0,
+      totalRevenue: bookingSummary._sum.totalAmount ?? 0,
     },
     financialSummary: {
       totalInvoicesPaid: financialSummary._count._all,
-      totalPaidAmount:   financialSummary._sum.amount ?? 0,
+      totalPaidAmount: financialSummary._sum.amount ?? 0,
     },
   };
 }
@@ -156,7 +157,7 @@ export async function updateAgencyStatus(
     where: { id },
     data: {
       status,
-      statusReason:   reason,
+      statusReason: reason,
       statusUpdatedAt: new Date(),
     },
     select: { id: true, status: true, statusReason: true, statusUpdatedAt: true },
@@ -167,15 +168,15 @@ export async function updateAgencyStatus(
 export async function updateAgencyTier(id: string, tier: string) {
   return prisma.agency.update({
     where: { id },
-    data:  { tier },
+    data: { tier },
     select: { id: true, tier: true },
   });
 }
 
-const BREAK_GLASS_TTL_SECONDS = 30 * 60; 
+const BREAK_GLASS_TTL_SECONDS = 30 * 60;
 
 export async function issueBreakGlassToken(agencyId: string, issuedByIp: string) {
-  const token     = crypto.randomBytes(32).toString("hex");
+  const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + BREAK_GLASS_TTL_SECONDS * 1000);
 
 
@@ -209,4 +210,88 @@ async function notifyAgencyAdminOfBreakGlass(agencyId: string, expiresAt: Date) 
   console.log(
     `[break-glass] NOTIFY ${agency.email}: Emergency access granted to ${agency.name} — expires ${expiresAt.toISOString()}`
   );
+}
+
+
+export const getFlaggedAgencyService = async () => {
+  const flaggedReviews = await db.reviewFlag.findMany({
+    include: {
+      review: {
+        include: {
+          trekker: {
+            select: {
+              fullName: true,
+            },
+          },
+          agency: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return {
+    flaggedReviews
+  }
+}
+
+export const removeReviewWithContentViolation = async (reviewId: string) => {
+
+  const review = await db.review.findUnique({
+    where: {
+      id: reviewId,
+    },
+  });
+
+  if (!review) {
+    throw new Error("Review not found");
+  }
+
+  await db.review.delete({
+    where: {
+      id: reviewId,
+    },
+  });
+
+  return {
+    message: "Review removed successfully",
+  };
+
+};
+
+
+export const dismissFlagService = async (reviewId: string) => {
+
+  const review = await db.review.findUnique({
+    where: {
+      id: reviewId,
+    },
+  });
+
+  if (!review) {
+    throw new Error("Review not found");
+  }
+
+  await db.reviewFlag.updateMany({
+    where: {
+      reviewId,
+      status: "PENDING",
+    },
+    data: {
+      status: "DISMISSED"
+    },
+  });
+
+  return {
+    message: "Flag dismissed. Review remains published.",
+  };
+
 }
