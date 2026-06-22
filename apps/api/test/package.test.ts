@@ -18,6 +18,16 @@ vi.mock("@funtush/database", () => {
   return { db: client, prisma: client };
 });
 
+// publishPackageService / archivePackageService fire-and-forget search indexing
+// (`void indexPackage(...)`). Those calls hit Meilisearch + the DB, which aren't
+// available under test. Stub them so publish/archive run without the real
+// side-effect logging errors to stderr — the unit under test isn't search.
+vi.mock("../src/services/search.service.js", () => ({
+  indexPackage: vi.fn().mockResolvedValue(undefined),
+  indexAgency: vi.fn().mockResolvedValue(undefined),
+  removePackage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import {
   createPackageService,
   updatePackageService,
