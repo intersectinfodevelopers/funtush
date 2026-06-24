@@ -74,13 +74,13 @@ export const reviewResponse = async (
 ) => {
     try {
 
-        const agencyId = req.agencyId as string;
+        const agencyUserId = req.tenantId as string;
         const reviewId = req.params.id as string;
         const { responseText } = req.body;
 
 
         const response = await respondToReviewService(
-            agencyId, reviewId, responseText
+            agencyUserId, reviewId, responseText
         );
 
         return res.status(201).json({
@@ -102,13 +102,13 @@ export const flagReview = async (
 ) => {
     try {
 
-        const agencyId = req.agencyId as string;
+        const agencyUserId = req.tenantId as string;
         const reviewId = req.params.id as string;
         const { reason } = req.body;
 
 
         const flaggedReview = await flagReviewService(
-            agencyId, reviewId, reason
+            agencyUserId, reviewId, reason
         );
 
         return res.status(201).json({
@@ -116,10 +116,10 @@ export const flagReview = async (
             data: flaggedReview,
         });
 
-    } catch (err) {
+    } catch (err: any) {
         return res.status(400).json({
             success: false,
-            message: err,
+            message: err.message,
         });
     }
 };

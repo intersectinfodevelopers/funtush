@@ -181,14 +181,14 @@ export const getAgencyReview = async (slug: string) => {
 
 
 export const respondToReviewService = async (
+    agencyUserId: string,
     reviewId: string,
-    agencyId: string,
     responseText: string
 ) => {
     const review = await db.review.findFirst({
         where: {
             id: reviewId,
-            agencyId: agencyId,
+            // agencyId: agencyId,
         },
         include: {
             response: true,
@@ -206,7 +206,7 @@ export const respondToReviewService = async (
     return db.reviewResponse.create({
         data: {
             reviewId,
-            agencyUserId: agencyId, 
+            agencyUserId, 
             responseText,
         },
     });
@@ -215,8 +215,8 @@ export const respondToReviewService = async (
 
 
 export const flagReviewService = async (
+    agencyUserId: string,
     reviewId: string,
-    agencyId: string,
     reason: string
 ) => {
     const review = await db.review.findFirst({
@@ -229,15 +229,15 @@ export const flagReviewService = async (
         throw new Error("Review not found");
     }
 
-    if (review?.agencyId !== agencyId) {
-        throw new Error("Not allowed to flag this review");
-    }
+    // if (review?.agencyId !== agencyUserId.a) {
+    //     throw new Error("Not allowed to flag this review");
+    // }
 
 
     const existingFlag = await db.reviewFlag.findFirst({
         where: {
             reviewId,
-            flaggedBy: agencyId,
+            flaggedBy: agencyUserId,
         },
     });
 
@@ -249,7 +249,7 @@ export const flagReviewService = async (
         data: {
             reviewId,
             reason,
-            flaggedBy: agencyId,
+            flaggedBy: agencyUserId,
         },
     });
 };
