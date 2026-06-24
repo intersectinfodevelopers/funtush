@@ -1,6 +1,6 @@
 import express from "express";
 import { dismissReviewFlag, getFlaggedAgency, removeReview } from "src/controllers/admin.controller";
-import { requireAdmin } from "src/middleware/requireAdmin.middleware";
+// import { requireAdmin } from "src/middleware/requireAdmin.middleware";
 // import { approveAgencyKYC, rejectAgencyKYC } from "../controllers/agency.adminController.js";
 
 
@@ -13,12 +13,12 @@ const router = express.Router();
 //     .patch(rejectAgencyKYC);
 
 router.route("/admin/reviews/flagged")
-    .get(getFlaggedAgency);
+    .get( getFlaggedAgency);
 
 router.route("/admin/reviews/:id/remove")
-    .patch(requireAdmin, removeReview);
+    .patch( removeReview);
 
 router.route("/admin/reviews/:id/dismiss-flag")
-    .patch(requireAdmin, dismissReviewFlag);
+    .patch( dismissReviewFlag);
 
 export default router;

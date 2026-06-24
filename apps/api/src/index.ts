@@ -9,6 +9,7 @@ import bookingRoutes from "./routes/booking.routes.js";
 import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
 import marketplaceRoutes from "./routes/marketplace.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
@@ -40,6 +41,7 @@ app.use("/auth", authRoutes);
 
 app.use("/agencies/me/staff", staffRoutes);
 
+app.use("/", adminRoutes);
 
 
 // Liveness probe consumed by Prometheus / the load balancer.
