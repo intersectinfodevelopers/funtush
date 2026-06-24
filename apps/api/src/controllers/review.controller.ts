@@ -1,6 +1,8 @@
 import { uploadFile } from "@funtush/storage";
 import type { Request, Response } from "express";
 import { createReviewService, flagReviewService, getAgencyReview, respondToReviewService } from "src/services/review.service";
+import { dismissFlagService, getFlaggedAgencyService, removeReviewWithContentViolation } from "src/services/review.service";
+
 
 export const createReview = async (
     req: Request,
@@ -34,7 +36,6 @@ export const createReview = async (
         });
     }
 };
-
 
 export const getReviews = async (
     req: Request,
@@ -95,7 +96,6 @@ export const reviewResponse = async (
     }
 };
 
-
 export const flagReview = async (
     req: Request,
     res: Response
@@ -123,3 +123,71 @@ export const flagReview = async (
         });
     }
 };
+
+export const getFlaggedAgency = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const result = await getFlaggedAgencyService();
+
+        return res.status(200).json({
+            success: true,
+            data: result,
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: "error",
+            message: err
+        });
+    }
+};
+
+export const removeReview = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const reviewId = req.params.id as string;
+
+        const result = await removeReviewWithContentViolation(reviewId);
+
+        return res.status(200).json({
+            success: true,
+            data: result,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            success: false,
+            message:
+                err instanceof Error
+                    ? err.message
+                    : "Unknown error",
+        });
+    }
+};
+
+export const dismissReviewFlag = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const reviewId = req.params.id as string;
+
+        const result = await dismissFlagService(reviewId);
+
+        return res.status(200).json({
+            success: true,
+            data: result,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            success: false,
+            message:
+                err instanceof Error
+                    ? err.message
+                    : "Unknown error",
+        });
+    }
+};
+
