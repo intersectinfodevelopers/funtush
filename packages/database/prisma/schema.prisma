@@ -106,6 +106,7 @@ model SubscriptionTier {
 }
 
 model Agency {
+  adCampaigns AdCampaign[]
   id                String             @id @default(uuid())
   name              String
   email             String             @unique
@@ -523,4 +524,40 @@ model Subscription {
   tier      SubscriptionTier   @relation(fields: [tierId], references: [id])
 
   @@map("subscriptions")
+}
+
+
+enum AdCampaignStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  PAUSED
+}
+
+model AdCampaign {
+  id              String           @id @default(cuid())
+  agencyId        String
+  agency          Agency           @relation(fields: [agencyId], references: [id])
+  status          AdCampaignStatus @default(PENDING)
+
+  imageUrls       String[]
+  copyText        String
+  targetingParams Json
+
+  impressions     Int     @default(0)
+  clicks          Int     @default(0)
+  spend           Decimal @default(0) @db.Decimal(12, 2)
+
+  metaCampaignId   String?
+  googleCampaignId String?
+  rejectionReason  String?
+
+  createdAt  DateTime  @default(now())
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  pausedAt   DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status])
+  @@index([agencyId])
 }

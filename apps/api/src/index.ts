@@ -8,37 +8,26 @@ import packageRoutes from "./routes/package.routes.js";
 import bookingRoutes from "./routes/booking.routes.js";
 import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
-
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
-
-import { db, redis , connectMongo} from "@funtush/database";
-
+import { db, redis, connectMongo } from "@funtush/database";
 import staffRoutes from "./routes/staff.routes";
 
-
-
-
 const app = express();
-// app.use(express.json())
 const port = Number(process.env.PORT ?? 4000);
 
-//Middleware
-
+// Middleware
 app.use(express.json());
 
-//Routes
+// Routes
 app.use("/", uploadRoutes);
-app.use('/', agencyRoutes);
-app.use('/', agencyCustomerRoutes);
-app.use('/', trekkerRoutes);
+app.use("/", agencyRoutes);
+app.use("/", agencyCustomerRoutes);
+app.use("/", trekkerRoutes);
 app.use("/", packageRoutes);
 app.use("/bookings", bookingRoutes);
 app.use("/auth", authRoutes);
-
 app.use("/agencies/me/staff", staffRoutes);
-
-
 
 // Liveness probe consumed by Prometheus / the load balancer.
 app.get("/health", async (_req: Request, res: Response) => {
@@ -70,9 +59,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   connectMongo().catch(console.error);
   startSubscriptionCron();
-  // Ensure Meilisearch indexes + settings exist on boot (idempotent, non-blocking).
   configureIndexes().catch(console.error);
-
 
   app.listen(port, () => {
     console.log(`Funtush API listening on port ${port}`);
