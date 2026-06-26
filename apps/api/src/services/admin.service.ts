@@ -1,4 +1,3 @@
-import { db } from "@funtush/database";
 import { prisma } from "../packages/database/prisma.js";
 import { cacheGet, cacheSet } from "./redis.service.js";
 import crypto from "crypto";

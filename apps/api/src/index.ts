@@ -75,7 +75,7 @@ if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   connectMongo().catch(console.error);
   startSubscriptionCron();
   // Ensure Meilisearch indexes + settings exist on boot (idempotent, non-blocking).
-  // configureIndexes().catch(console.error);
+  configureIndexes().catch(console.error);
 
 
   app.listen(port, () => {
