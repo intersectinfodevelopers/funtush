@@ -9,6 +9,7 @@ import bookingRoutes from "./routes/booking.routes.js";
 import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
 import marketplaceRoutes from "./routes/marketplace.routes.js";
+import reviewRoutes from "./routes/review.route.js";
 
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
@@ -40,6 +41,7 @@ app.use("/auth", authRoutes);
 
 app.use("/agencies/me/staff", staffRoutes);
 
+app.use("/", reviewRoutes);
 
 
 // Liveness probe consumed by Prometheus / the load balancer.
@@ -73,7 +75,7 @@ if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   connectMongo().catch(console.error);
   startSubscriptionCron();
   // Ensure Meilisearch indexes + settings exist on boot (idempotent, non-blocking).
-  configureIndexes().catch(console.error);
+  // configureIndexes().catch(console.error);
 
 
   app.listen(port, () => {

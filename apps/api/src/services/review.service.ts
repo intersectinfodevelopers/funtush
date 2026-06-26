@@ -181,14 +181,14 @@ export const getAgencyReview = async (slug: string) => {
 
 
 export const respondToReviewService = async (
+    agencyUserId: string,
     reviewId: string,
-    agencyId: string,
     responseText: string
 ) => {
     const review = await db.review.findFirst({
         where: {
             id: reviewId,
-            agencyId: agencyId,
+            // agencyId: agencyId,
         },
         include: {
             response: true,
@@ -206,17 +206,16 @@ export const respondToReviewService = async (
     return db.reviewResponse.create({
         data: {
             reviewId,
-            agencyUserId: agencyId, 
+            agencyUserId, 
             responseText,
         },
     });
 };
 
 
-
 export const flagReviewService = async (
+    agencyUserId: string,
     reviewId: string,
-    agencyId: string,
     reason: string
 ) => {
     const review = await db.review.findFirst({
@@ -229,15 +228,15 @@ export const flagReviewService = async (
         throw new Error("Review not found");
     }
 
-    if (review?.agencyId !== agencyId) {
-        throw new Error("Not allowed to flag this review");
-    }
+    // if (review?.agencyId !== agencyUserId.a) {
+    //     throw new Error("Not allowed to flag this review");
+    // }
 
 
     const existingFlag = await db.reviewFlag.findFirst({
         where: {
             reviewId,
-            flaggedBy: agencyId,
+            flaggedBy: agencyUserId,
         },
     });
 
@@ -249,7 +248,90 @@ export const flagReviewService = async (
         data: {
             reviewId,
             reason,
-            flaggedBy: agencyId,
+            flaggedBy: agencyUserId,
         },
     });
 };
+
+export const getFlaggedAgencyService = async () => {
+  const flaggedReviews = await db.reviewFlag.findMany({
+    include: {
+      review: {
+        include: {
+          trekker: {
+            select: {
+              fullName: true,
+            },
+          },
+          agency: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return {
+    flaggedReviews
+  }
+}
+
+export const removeReviewWithContentViolation = async (reviewId: string) => {
+
+  const review = await db.review.findUnique({
+    where: {
+      id: reviewId,
+    },
+  });
+
+  if (!review) {
+    throw new Error("Review not found");
+  }
+
+  await db.review.delete({
+    where: {
+      id: reviewId,
+    },
+  });
+
+  return {
+    message: "Review removed successfully",
+  };
+
+};
+
+
+export const dismissFlagService = async (reviewId: string) => {
+
+  const review = await db.review.findUnique({
+    where: {
+      id: reviewId,
+    },
+  });
+
+  if (!review) {
+    throw new Error("Review not found");
+  }
+
+  await db.reviewFlag.updateMany({
+    where: {
+      reviewId,
+      status: "PENDING",
+    },
+    data: {
+      status: "DISMISSED"
+    },
+  });
+
+  return {
+    message: "Flag dismissed. Review remains published.",
+  };
+
+}

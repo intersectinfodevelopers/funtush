@@ -206,6 +206,22 @@ async function main() {
     },
 
   });
+  
+  const testReview = await prisma.review.upsert({
+    where: { id: "00000000-0000-0000-0000-000000000222" },
+    update: {},
+    create:
+    {
+      agencyId: "6c34f8d4-77ba-4c55-80f6-897e10277dd0",
+      bookingId: "e1b6433f-719b-42ea-9f88-5e5b909d2a66",
+      trekkerId: "f3b41def-1fea-414c-aeb2-a1e5d980c204",
+      assignedGuideId: "00000000-0000-0000-0000-000000000221",
+      rating: 4,
+      text: "Had a great time.",
+      photos: [],
+    },
+
+  });
 
 
   console.log("seed completed");
@@ -213,6 +229,7 @@ async function main() {
   console.log("Test departure date ID:", departureDate.id);
   console.log("Test agency ID:", testPackage.agencyId);
   console.log("Test bookings ID:", testBooking.id);
+  console.log("Test Review ID:", testReview.id);
 }
 
 main()
