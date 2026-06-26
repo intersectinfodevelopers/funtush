@@ -116,10 +116,10 @@ export const flagReview = async (
             data: flaggedReview,
         });
 
-    } catch (err: any) {
+    } catch (err) {
         return res.status(400).json({
             success: false,
-            message: err.message,
+            message: err,
         });
     }
 };
