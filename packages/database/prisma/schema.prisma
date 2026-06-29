@@ -541,7 +541,6 @@ model Subscription {
   @@map("subscriptions")
 }
 
-<<<<<<< HEAD
 model Review {
   id String @id @default(uuid())
 
@@ -625,7 +624,7 @@ model ReviewInvitation {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("review_invitations")
-=======
+}
 
 enum AdCampaignStatus {
   PENDING
@@ -660,5 +659,4 @@ model AdCampaign {
 
   @@index([status])
   @@index([agencyId])
->>>>>>> 879c878 (feat(admin): ad campaign queue — list/approve/reject/pause endpoints, service, schema + tests)
 }
