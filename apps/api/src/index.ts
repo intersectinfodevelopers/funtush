@@ -13,6 +13,9 @@ import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
 import { db, redis, connectMongo } from "@funtush/database";
 import staffRoutes from "./routes/staff.routes";
+import fraudRouter from "./fraud.route.js";
+// ...
+router.use("/fraud", fraudRouter);
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
