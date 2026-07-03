@@ -139,8 +139,26 @@ model Agency {
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
   reviews           Review[]
+  visibilityScore   AgencyVisibilityScore?
+
 
   @@map("agencies")
+}
+
+model AgencyVisibilityScore {
+  id             String   @id @default(uuid())
+  agencyId       String   @unique @map("agency_id")
+  agency         Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  baseScore      Int      @default(0) @map("base_score")     // from tier.name: FREE=0, SMALL=25, MEDIUM=50, LARGE=100
+  qualityBonus   Int      @default(0) @map("quality_bonus")  // rating(+20) + recentBooking(+5) + profileComplete(+10)
+  finalScore     Int      @default(0) @map("final_score")    // baseScore + qualityBonus + agency.priorityOverride
+
+  calculatedAt   DateTime @default(now()) @map("calculated_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([finalScore])
+  @@map("agency_visibility_scores")
 }
 
 model AgencyUser {

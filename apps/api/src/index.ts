@@ -10,6 +10,7 @@ import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
 import marketplaceRoutes from "./routes/marketplace.routes.js";
 import reviewRoutes from "./routes/review.route.js";
+import { startVisibilityScoreCron } from "./jobs/visibilityScore.job.js";
 
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
@@ -66,6 +67,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   connectMongo().catch(console.error);
   startSubscriptionCron();
+  startVisibilityScoreCron();
+
   // Ensure Meilisearch indexes + settings exist on boot (idempotent, non-blocking).
   configureIndexes().catch(console.error);
 
