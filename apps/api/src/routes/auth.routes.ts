@@ -1,7 +1,7 @@
 import express from "express";
 import { adminLogin, agencyLogin, getMe, logoutService, refreshTokenService, registerTrekker, requireAuth, resendOtpService, trekkerLogin, verifyOtp } from "@funtush/auth";
 
-import { validate } from "../middlewares/validate";
+import { validate } from "../middleware/validate";
 import { loginSchema } from "../validations/auth.validation";
 import { prisma } from "@funtush/database";
 

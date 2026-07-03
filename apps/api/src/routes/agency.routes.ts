@@ -1,7 +1,7 @@
 import express from "express";
 import { agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyDomain, updateAgencyProfile } from "../controllers/agency.controller";
-import { authenticateWithRefreshToken } from "src/middlewares/refreshTokenAuthentication";
-import { checkAgencyStatus, isPaidTier } from "src/middlewares/agencyAccess.middleware";
+import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
+import { checkAgencyStatus, isPaidTier } from "src/middleware/agencyAccess.middleware";
 import { upload } from "@funtush/storage";
 
 const router = express.Router();
