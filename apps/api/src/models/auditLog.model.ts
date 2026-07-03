@@ -14,20 +14,21 @@ export const AUDIT_ACTIONS = [
   "KYC_APPROVED",
   "KYC_REJECTED",
   "BREAK_GLASS_ISSUED",
+  "AGENCY_VISIBILITY_OVERRIDE_CHANGED",
 ] as const;
 
 export type AuditAction = typeof AUDIT_ACTIONS[number];
 
 export interface AuditLogEntry {
-  _id?:        ObjectId;
-  action:      AuditAction;
-  actor_id:    string;        // admin user id
-  actor_ip:    string;
+  _id?: ObjectId;
+  action: AuditAction;
+  actor_id: string;        // admin user id
+  actor_ip: string;
   target_type: string;        // e.g. "agency"
-  target_id:   string;        // e.g. agency id
-  reason:      string | null; // mandatory for status changes
-  metadata:    Record<string, unknown>;
-  timestamp:   Date;
+  target_id: string;        // e.g. agency id
+  reason: string | null; // mandatory for status changes
+  metadata: Record<string, unknown>;
+  timestamp: Date;
 }
 
 export async function getAuditCollection() {

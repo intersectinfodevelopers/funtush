@@ -16,6 +16,7 @@ import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
 import { db, redis, connectMongo } from "@funtush/database";
 import staffRoutes from "./routes/staff.routes";
+import adminRoutes from "./routes/admin/index.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -29,6 +30,7 @@ app.use("/", agencyRoutes);
 app.use("/", agencyCustomerRoutes);
 app.use("/", trekkerRoutes);
 app.use("/", packageRoutes);
+app.use("/admin", adminRoutes);
 app.use("/marketplace", marketplaceRoutes);
 app.use("/bookings", bookingRoutes);
 app.use("/auth", authRoutes);
