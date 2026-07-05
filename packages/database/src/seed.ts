@@ -152,7 +152,7 @@ async function main() {
       },
     });
     console.log("Created departure date");
-  } catch (e) {
+  } catch (_e) {
     // If it exists, just fetch one
     const existing = await prisma.trekDepartureDate.findFirst({
       where: { packageId: packages[0].id },
@@ -180,15 +180,15 @@ async function main() {
     console.log("Created booking for loyalty boost test");
       console.log(`Booking ID: ${booking.id}`);
 
-  } catch (e) {
+  } catch (_e) {
     console.log("Booking already exists, skipping");
   }
 
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
+  .catch((_e) => {
+    console.error(_e);
     process.exit(1);
   })
   .finally(async () => {
