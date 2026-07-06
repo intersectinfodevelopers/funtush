@@ -1,12 +1,7 @@
 import { prisma } from "@funtush/database";
 import { startOfDay, subDays } from "date-fns";
 
-/**
- * Record an impression for an agency on the current date.
- * Called when search results are returned and agency is displayed to trekker.
- * 
- * Non-blocking: failures log but don't interrupt the search response.
- */
+
 export async function recordImpression(agencyId: string) {
   const today = startOfDay(new Date());
 
@@ -34,14 +29,7 @@ export async function recordImpression(agencyId: string) {
   return impression;
 }
 
-/**
- * Record a click on an agency card in search results.
- * Called before navigation to agency profile.
- * 
- * Updates:
- * 1. Increments clickCount in today's MarketplaceImpression
- * 2. Creates a granular click event in MarketplaceClick (for conversion attribution)
- */
+
 export async function recordClick(
   agencyId: string,
   treklerId: string | null | undefined,
@@ -157,17 +145,10 @@ export async function getAgencyMarketplaceImpressions(
       totalConversions,
       conversionRate: `${conversionRate}%`,
     },
-    byDay: impressions, // Daily breakdown for charting
+    byDay: impressions, 
   };
 }
 
-/**
- * Fetch clicks that converted to inquiries.
- * Links MarketplaceClick events to actual Booking records created shortly after.
- * 
- * Uses a 24-hour window: if inquiry/booking created within 24h of click by same trekker,
- * it's considered a conversion. Adjust window as needed for your UX.
- */
 export async function getAgencyMarketplaceConversions(agencyId: string, windowHours: number = 24) {
   const thirtyDaysAgo = subDays(new Date(), 30);
 
@@ -205,12 +186,15 @@ export async function getAgencyMarketplaceConversions(agencyId: string, windowHo
   const windowMs = windowHours * 3600000;
   const conversions = clicks
     .map((click: typeof clicks[number]) => {
-      const linkedBooking = bookings.find(
-        (booking: typeof bookings[number]) =>
-          booking.trekkerId === click.treklerId && // Same trekker
-          booking.createdAt.getTime() - click.timestamp.getTime() >= 0 && // Booking after click
-          booking.createdAt.getTime() - click.timestamp.getTime() <= windowMs // Within conversion window
-      );
+      const linkedBooking = click.treklerId
+        ? bookings.find(
+            (booking: typeof bookings[number]) =>
+              booking.trekkerId !== null &&
+              booking.trekkerId === click.treklerId && // Same trekker, both non-null
+              booking.createdAt.getTime() - click.timestamp.getTime() >= 0 && // Booking after click
+              booking.createdAt.getTime() - click.timestamp.getTime() <= windowMs // Within conversion window
+          )
+        : undefined; // anonymous click — cannot be attributed to any booking
 
       return {
         clickId: click.id,

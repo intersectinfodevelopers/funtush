@@ -35,11 +35,6 @@ function asNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/**
- * If the request carries a valid trekker access token, return that trekker's
- * user id. Never throws — an absent/expired/invalid token just yields undefined
- * because this endpoint is open to the public.
- */
 function optionalTrekkerUserId(req: Request): string | undefined {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) return undefined;
@@ -51,20 +46,12 @@ function optionalTrekkerUserId(req: Request): string | undefined {
   }
 }
 
-/**
- * DAY 1-3: Search marketplace + ranking by visibility score
- * 
- * NEW IN DAY 4:
- * - For each returned agency, record an impression (non-blocking)
- * - Return sponsor badge based on priorityOverride
- */
 export const searchMarketplace = async (req: Request, res: Response) => {
   try {
     const q = asString(req.query.q);
     const trekkerUserId = optionalTrekkerUserId(req);
 
-    // difficulty is case-insensitive in the API (?difficulty=moderate) but the
-    // index stores the enum value (MODERATE).
+
     const difficultyRaw = asString(req.query.difficulty)?.toUpperCase();
     if (difficultyRaw && !VALID_DIFFICULTIES.has(difficultyRaw)) {
       return res.status(400).json({
@@ -90,21 +77,17 @@ export const searchMarketplace = async (req: Request, res: Response) => {
       },
     });
 
-    // ─── NEW: Record impressions for each returned agency (non-blocking) ───
-    const impressionPromises = (result.data || []).map((pkg) =>
-      recordImpression(pkg.agencyId)
-        .catch((err) => {
-          // Non-blocking: log but don't fail the search
-          console.error(`Failed to record impression for agency ${pkg.agencyId}:`, err);
-        })
+    const uniqueAgencyIds = [...new Set((result.data || []).map((pkg) => pkg.agencyId))];
+    const impressionPromises = uniqueAgencyIds.map((agencyId) =>
+      recordImpression(agencyId).catch((err) => {
+        // Non-blocking: log but don't fail the search
+        console.error(`Failed to record impression for agency ${agencyId}:`, err);
+      })
     );
 
-    // Fire and forget: don't await, let impressions record in background
     Promise.all(impressionPromises).catch(() => {
-      // Silently catch any promise errors
     });
 
-    // ─── Add sponsor badge based on priorityOverride (Days 3-4) ───
     const enrichedData = (result.data || []).map((pkg) => ({
       ...pkg,
     }));
@@ -120,12 +103,6 @@ export const searchMarketplace = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * DAY 4: Record click on an agency card in search results.
- * 
- * Called before navigation to agency profile.
- * Increments clickCount in today's impression + logs click event.
- */
 export const recordMarketplaceClick = async (req: Request, res: Response) => {
   try {
     const { agencyId, destination, searchQuery } = req.body;
@@ -163,20 +140,6 @@ export const recordMarketplaceClick = async (req: Request, res: Response) => {
   }
 };
 
-/* ── Agency directory (Week 3 · Day 3) ───────────────────────────────────────
- *
- * All four handlers below are PUBLIC (no auth) and read-only. They power the
- * browse-by-hand directory pages, backed by Postgres via the directory service.
- */
-
-/**
- * GET /marketplace/agencies — list listable agencies.
- * Query params: search, tier, region, min_rating, page, limit.
- *
- * FIX: previously called listAgencies() with no arguments at all, silently
- * dropping every query param a client sent — filters/pagination existed in
- * the service's documented interface but nothing ever wired req.query to it.
- */
 export const getAgencies = async (req: Request, res: Response) => {
   try {
     const result = await listAgencies({
@@ -208,12 +171,6 @@ export const getAgency = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * GET /marketplace/destinations — list master destinations.
- * Query params: region, altitude_min, altitude_max, season, page, limit.
- *
- * FIX: same gap as getAgencies — query params were previously dropped.
- */
 export const getDestinations = async (req: Request, res: Response) => {
   try {
     const result = await listDestinations({
@@ -244,11 +201,6 @@ export const getDestination = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message });
   }
 };
-
-/* ── Curated homepage sections (Week 3 · Day 4) ───────────────────────────────
- *
- * Out of scope for Day 3 — left untouched.
- */
 
 /** GET /marketplace/featured — Sponsored + highest-rated + most-booked-this-month mix. */
 export const featured = async (_req: Request, res: Response) => {
