@@ -43,7 +43,6 @@ jobs:
           cat > .env << EOF
           DATABASE_URL="postgresql://test_user:test_password@localhost:5432/funtush_test"
           EOF
-
       - name: Run Prisma migrations
         working-directory: packages/database
         run: pnpm prisma migrate deploy
