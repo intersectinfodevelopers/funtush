@@ -3,7 +3,7 @@ import request from "supertest";
 import express, { type Express } from "express";
 
 // vi.mock is hoisted to the top, so the objects its factories reference must be
-// created with vi.hoisted (also hoisted) — otherwise they''re not initialized yet.
+// created with vi.hoisted (also hoisted) ï¿½ otherwise they''re not initialized yet.
 const { mockPrisma, queueEmailMock } = vi.hoisted(() => ({
   mockPrisma: {
     fraudFlag: {
