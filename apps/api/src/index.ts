@@ -20,7 +20,6 @@ import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
 import { db, redis, connectMongo } from "@funtush/database";
 
-
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
