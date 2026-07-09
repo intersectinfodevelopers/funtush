@@ -12,17 +12,10 @@ import {
   getTrending,
   getSeasonal,
 } from "../services/marketplaceCuration.service.js";
-
-/**
- * ── Marketplace search controller (Week 3 · Day 2) ──────────────────────────
- *
- * Public endpoint: GET /marketplace/packages
- *
- * Parses + validates the query string, optionally identifies a logged-in
- * trekker (for personalization), then delegates ranking/pagination to the
- * search service. The endpoint is PUBLIC — anyone can browse the marketplace —
- * so a missing or invalid token is fine; it just means "no personalization".
- */
+import {
+  recordImpression,
+  recordClick,
+} from "../services/marketplaceAnalytics.service.js";
 
 const VALID_DIFFICULTIES = new Set(["EASY", "MODERATE", "CHALLENGING", "DIFFICULT"]);
 
@@ -42,11 +35,6 @@ function asNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/**
- * If the request carries a valid trekker access token, return that trekker's
- * user id. Never throws — an absent/expired/invalid token just yields undefined
- * because this endpoint is open to the public.
- */
 function optionalTrekkerUserId(req: Request): string | undefined {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) return undefined;
@@ -61,9 +49,9 @@ function optionalTrekkerUserId(req: Request): string | undefined {
 export const searchMarketplace = async (req: Request, res: Response) => {
   try {
     const q = asString(req.query.q);
+    const trekkerUserId = optionalTrekkerUserId(req);
 
-    // difficulty is case-insensitive in the API (?difficulty=moderate) but the
-    // index stores the enum value (MODERATE).
+
     const difficultyRaw = asString(req.query.difficulty)?.toUpperCase();
     if (difficultyRaw && !VALID_DIFFICULTIES.has(difficultyRaw)) {
       return res.status(400).json({
@@ -76,7 +64,7 @@ export const searchMarketplace = async (req: Request, res: Response) => {
       q,
       page: asNumber(req.query.page),
       limit: asNumber(req.query.limit),
-      trekkerUserId: optionalTrekkerUserId(req),
+      trekkerUserId, // For loyalty boost (Day 3)
       filters: {
         difficulty: difficultyRaw,
         priceMin: asNumber(req.query.price_min),
@@ -89,24 +77,80 @@ export const searchMarketplace = async (req: Request, res: Response) => {
       },
     });
 
-    return res.json({ success: true, ...result });
+    const uniqueAgencyIds = [...new Set((result.data || []).map((pkg) => pkg.agencyId))];
+    const impressionPromises = uniqueAgencyIds.map((agencyId) =>
+      recordImpression(agencyId).catch((err) => {
+        // Non-blocking: log but don't fail the search
+        console.error(`Failed to record impression for agency ${agencyId}:`, err);
+      })
+    );
+
+    Promise.all(impressionPromises).catch(() => {
+    });
+
+    const enrichedData = (result.data || []).map((pkg) => ({
+      ...pkg,
+    }));
+
+    return res.json({
+      success: true,
+      ...result,
+      data: enrichedData,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Search failed";
     return res.status(500).json({ success: false, message });
   }
 };
 
-/* ── Agency directory (Week 3 · Day 3) ───────────────────────────────────────
- *
- * All four handlers below are PUBLIC (no auth) and read-only. They power the
- * browse-by-hand directory pages, backed by Postgres via the directory service.
- */
-
-/** GET /marketplace/agencies — list all listable agencies. */
-export const getAgencies = async (_req: Request, res: Response) => {
+export const recordMarketplaceClick = async (req: Request, res: Response) => {
   try {
-    const data = await listAgencies();
-    return res.json({ success: true, data, meta: { total: data.length } });
+    const { agencyId, destination, searchQuery } = req.body;
+    const trekkerUserId = optionalTrekkerUserId(req);
+
+    if (!agencyId) {
+      return res.status(400).json({
+        success: false,
+        message: "agencyId is required",
+      });
+    }
+
+    if (!destination) {
+      return res.status(400).json({
+        success: false,
+        message: "destination is required (e.g. 'agency-profile', 'inquiry-form')",
+      });
+    }
+
+    const click = await recordClick(
+      agencyId,
+      trekkerUserId,
+      destination,
+      searchQuery
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Click recorded",
+      clickId: click.id,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to record click";
+    return res.status(500).json({ success: false, message });
+  }
+};
+
+export const getAgencies = async (req: Request, res: Response) => {
+  try {
+    const result = await listAgencies({
+      search: asString(req.query.search),
+      tier: asString(req.query.tier),
+      region: asString(req.query.region),
+      minRating: asNumber(req.query.min_rating),
+      page: asNumber(req.query.page),
+      limit: asNumber(req.query.limit),
+    });
+    return res.json({ success: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load agencies";
     return res.status(500).json({ success: false, message });
@@ -127,11 +171,17 @@ export const getAgency = async (req: Request, res: Response) => {
   }
 };
 
-/** GET /marketplace/destinations — list all master destinations. */
-export const getDestinations = async (_req: Request, res: Response) => {
+export const getDestinations = async (req: Request, res: Response) => {
   try {
-    const data = await listDestinations();
-    return res.json({ success: true, data, meta: { total: data.length } });
+    const result = await listDestinations({
+      region: asString(req.query.region),
+      altitudeMin: asNumber(req.query.altitude_min),
+      altitudeMax: asNumber(req.query.altitude_max),
+      season: asString(req.query.season),
+      page: asNumber(req.query.page),
+      limit: asNumber(req.query.limit),
+    });
+    return res.json({ success: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load destinations";
     return res.status(500).json({ success: false, message });
@@ -151,13 +201,6 @@ export const getDestination = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message });
   }
 };
-
-/* ── Curated homepage sections (Week 3 · Day 4) ───────────────────────────────
- *
- * All three handlers are PUBLIC (no auth) and read-only. They return the curated
- * content the marketplace homepage renders: a Featured block, a Trending row, and
- * a Seasonal row. Curation logic lives in the curation service.
- */
 
 /** GET /marketplace/featured — Sponsored + highest-rated + most-booked-this-month mix. */
 export const featured = async (_req: Request, res: Response) => {

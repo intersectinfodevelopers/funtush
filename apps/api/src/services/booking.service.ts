@@ -5,6 +5,7 @@ import { sendAlternativeDateEmail, sendBookingAcceptedEmail, sendBookingRejected
 import { sendInquiryConfirmationEmail, sendAgencyInquiryAlertEmail } from "../utils/email";
 import { notifyAgencyAdmins, notifyTrekker } from "./notification.service.js";
 import { confirmSlotsForBooking } from "./departureDate.service.js";
+import { recordConversion } from "./marketplaceAnalytics.service.js";
 
 //Types
 export interface InquiryInput {
@@ -22,7 +23,7 @@ export interface InquiryInput {
 // Redis key helpers
 const otpKey = (token: string) => `inquiry:otp:${token}`;
 const dataKey = (token: string) => `inquiry:data:${token}`;
-const TTL = 15 * 60; 
+const TTL = 15 * 60;
 
 //  validate, store temp, send OTP 
 export async function submitInquiry(input: InquiryInput) {
@@ -168,6 +169,15 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
       departureDate: true,
     },
   });
+  // Record marketplace conversion 
+  try {
+    await recordConversion(data.agencyId);
+  } catch (err) {
+    console.error(
+      `Failed to record marketplace conversion for agency ${data.agencyId}:`,
+      err
+    );
+  }
 
   // Save add-ons snapshot
   if (data.addOns?.length) {

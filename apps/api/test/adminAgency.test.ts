@@ -16,7 +16,10 @@ vi.mock("../src/lib/mongo", () => ({
 }));
 
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
-vi.mock("../src/packages/database/prisma", () => ({
+// IMPORTANT: mock the same specifier the service imports ("@funtush/database"),
+// not the internal relative path — otherwise vitest never intercepts the real
+// client and the service hits a live (unmocked) Prisma instance.
+vi.mock("@funtush/database", () => ({
   prisma: {
     agency: {
       count:      vi.fn().mockResolvedValue(0),
@@ -24,9 +27,21 @@ vi.mock("../src/packages/database/prisma", () => ({
       findUnique: vi.fn(),
       update:     vi.fn(),
     },
-    booking:       { aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 }, _sum: { totalAmount: null } }) },
-    invoice:       { aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 }, _sum: { amount: null } }) },
-    kYCSubmission: { findFirst: vi.fn().mockResolvedValue(null) },
+    subscriptionTier: {
+      findUnique: vi.fn().mockResolvedValue({ id: "tier_large" }),
+    },
+    // NOTE: lowercase "k" — matches prisma.kycSubmission in the service.
+    // The old mock used `kYCSubmission`, which silently never got hit.
+    kycSubmission: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    booking: {
+      // NOTE: service reads `_sum.totalPrice`, not `_sum.totalAmount`.
+      aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 }, _sum: { totalPrice: null } }),
+    },
+    invoice: {
+      aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 }, _sum: { amount: null } }),
+    },
   },
 }));
 
@@ -46,7 +61,7 @@ import {
   issueImpersonationToken,
 } from "../src/services/adminAgency.service";
 import { writeAuditLog } from "../src/services/auditLog.service";
-import { prisma } from "../src/packages/database/prisma";
+import { prisma } from "@funtush/database";
 
 describe("listAgencies()", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -96,7 +111,9 @@ describe("getAgencyProfile()", () => {
 
   it("includes staffCount, bookingCount, kycStatus", async () => {
     vi.mocked(prisma.agency.findUnique).mockResolvedValue({
-      id: "a1", name: "Test", _count: { bookings: 5, agencyUsers: 3 },
+      // NOTE: service selects `_count: { bookings, users }` (relation is
+      // `users`, not `agencyUsers`) and reads `_count.users` for staffCount.
+      id: "a1", name: "Test", _count: { bookings: 5, users: 3 },
     } as never);
     const result = await getAgencyProfile("a1") as Record<string, unknown>;
     expect(result.staffCount).toBe(3);
@@ -109,9 +126,16 @@ describe("updateAgencyTier()", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("updates tier immediately", async () => {
-    vi.mocked(prisma.agency.update).mockResolvedValue({ id: "a1", tier: "LARGE" } as never);
+    vi.mocked(prisma.subscriptionTier.findUnique).mockResolvedValue({ id: "tier_large" } as never);
+    vi.mocked(prisma.agency.update).mockResolvedValue({ id: "a1", tier: { name: "LARGE" } } as never);
     const result = await updateAgencyTier("a1", "LARGE") as Record<string, unknown>;
-    expect(result.tier).toBe("LARGE");
+    const tier = result.tier as Record<string, unknown>;
+    expect(tier.name).toBe("LARGE");
+  });
+
+  it("throws for an unknown tier", async () => {
+    vi.mocked(prisma.subscriptionTier.findUnique).mockResolvedValue(null);
+    await expect(updateAgencyTier("a1", "NOT_A_TIER")).rejects.toThrow("Unknown tier");
   });
 });
 
@@ -122,7 +146,7 @@ describe("updateAgencyStatus()", () => {
     vi.mocked(prisma.agency.update).mockResolvedValue({
       id: "a1", status: "SUSPENDED", statusReason: "fraud", statusUpdatedAt: new Date(),
     } as never);
-    const result = await updateAgencyStatus("a1", "SUSPENDED", "fraud") as Record<string, unknown>;
+    const result = await updateAgencyStatus("a1", "SUSPENDED") as Record<string, unknown>;
     expect(result.status).toBe("SUSPENDED");
     expect(result.statusReason).toBe("fraud");
   });

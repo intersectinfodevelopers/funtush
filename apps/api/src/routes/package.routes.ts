@@ -1,5 +1,5 @@
 import express from "express";
-import { authenticateWithRefreshToken } from "../middlewares/refreshTokenAuthentication.js";
+import { authenticateWithRefreshToken } from "../middleware/refreshTokenAuthentication.js";
 import { createPackage, updatePackage, listPackages, publishPackage,
          duplicatePackage, archivePackage } from "../controllers/package.controller.js";
 import { addItineraryDay, updateItineraryDay, deleteItineraryDay,

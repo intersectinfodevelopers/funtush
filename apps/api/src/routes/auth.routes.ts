@@ -1,7 +1,7 @@
 import express from "express";
 import { adminLogin, agencyLogin, getMe, logoutService, refreshTokenService, registerTrekker, requireAuth, resendOtpService, trekkerLogin, verifyOtp } from "@funtush/auth";
 
-import { validate } from "../middlewares/validate";
+import { validate } from "../middleware/validate";
 import { loginSchema } from "../validations/auth.validation";
 import { prisma } from "@funtush/database";
 
@@ -79,7 +79,7 @@ router.post("/verify-otp", async (req, res) => {
 router.get("/me", requireAuth, (req, res) => {
   return res.json({
     success: true,
-    user: getMe(req.user),
+    user: getMe(req.user!),
   });
 });
 
@@ -148,8 +148,10 @@ router.post("/fcm-token", requireAuth, async (req, res) => {
     }
 
     await prisma.user.update({
-      where: { id: req.user.userId },
-      data:  { fcmToken },
+      where: {
+        id: req.user!.userId,
+      },
+       data: { fcmToken },
     });
 
     return res.status(200).json({ success: true, message: "FCM token registered" });

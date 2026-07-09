@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { agencyGetCustomerProfile, createCustomerNote, getAgencyCustomers, getCustomerAnalytics, getCustomerNote } from "src/controllers/agencyCustomer.controller.js";
-import { authenticateWithRefreshToken } from "src/middlewares/refreshTokenAuthentication";
+import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 
 const router = Router();
 

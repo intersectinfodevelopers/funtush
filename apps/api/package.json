@@ -21,6 +21,7 @@
     "@funtush/storage": "workspace:*",
     "@prisma/client": "^7.8.0",
     "bcrypt": "^6.0.0",
+    "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
     "express": "^4.22.2",
     "firebase-admin": "^14.0.0",

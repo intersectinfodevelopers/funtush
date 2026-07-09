@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { MulterError } from "multer";
+
 import uploadRoutes from "./routes/upload.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import agencyRoutes from "./routes/agency.routes.js";
@@ -10,14 +11,14 @@ import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
 import marketplaceRoutes from "./routes/marketplace.routes.js";
 import reviewRoutes from "./routes/review.route.js";
+import staffRoutes from "./routes/staff.routes";
+import adminRoutes from "./routes/admin/index.js";
+import agencyAnalyticsRoutes from "./routes/agencyAnalytics.routes.js";
 
+import { startVisibilityScoreCron } from "./jobs/visibilityScore.job.js";
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
 import { db, redis, connectMongo } from "@funtush/database";
-import staffRoutes from "./routes/staff.routes";
-import fraudRouter from "./fraud.route.js";
-// ...
-router.use("/fraud", fraudRouter);
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -35,11 +36,13 @@ app.use("/marketplace", marketplaceRoutes);
 app.use("/bookings", bookingRoutes);
 app.use("/auth", authRoutes);
 app.use("/agencies/me/staff", staffRoutes);
+app.use("/admin", adminRoutes);
+
+// Analytics Routes
+app.use("/", agencyAnalyticsRoutes);
 
 app.use("/", reviewRoutes);
 
-
-// Liveness probe consumed by Prometheus / the load balancer.
 app.get("/health", async (_req: Request, res: Response) => {
   const [dbOk, redisOk] = await Promise.all([
     db.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
@@ -59,19 +62,23 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof MulterError && err.code === "LIMIT_FILE_SIZE") {
     return res.status(400).json({ error: "File too large. Max 10MB allowed." });
   }
+
   const message = err instanceof Error ? err.message : "Internal server error";
+
   if (message.includes("Invalid file type")) {
     return res.status(400).json({ error: message });
   }
+
   return res.status(500).json({ error: message });
 });
 
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   connectMongo().catch(console.error);
   startSubscriptionCron();
+  startVisibilityScoreCron();
+
   // Ensure Meilisearch indexes + settings exist on boot (idempotent, non-blocking).
   configureIndexes().catch(console.error);
-
 
   app.listen(port, () => {
     console.log(`Funtush API listening on port ${port}`);

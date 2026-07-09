@@ -139,8 +139,28 @@ model Agency {
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
   reviews           Review[]
+  visibilityScore   AgencyVisibilityScore?
+  
+  marketplaceImpressions MarketplaceImpression[]
+  marketplaceClicks      MarketplaceClick[]
 
   @@map("agencies")
+}
+
+model AgencyVisibilityScore {
+  id             String   @id @default(uuid())
+  agencyId       String   @unique @map("agency_id")
+  agency         Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  baseScore      Int      @default(0) @map("base_score")     // from tier.name: FREE=0, SMALL=25, MEDIUM=50, LARGE=100
+  qualityBonus   Int      @default(0) @map("quality_bonus")  // rating(+20) + recentBooking(+5) + profileComplete(+10)
+  finalScore     Int      @default(0) @map("final_score")    // baseScore + qualityBonus + agency.priorityOverride
+
+  calculatedAt   DateTime @default(now()) @map("calculated_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([finalScore])
+  @@map("agency_visibility_scores")
 }
 
 model AgencyUser {
@@ -211,6 +231,8 @@ model Trekker {
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
   reviews           Review[]
+
+  marketplaceClicks      MarketplaceClick[]
 
   @@map("trekker")
 }
@@ -660,4 +682,36 @@ model AdCampaign {
 
   @@index([status])
   @@index([agencyId])
+}
+
+model MarketplaceImpression {
+  id              String   @id @default(cuid())
+  agencyId        String   @map("agency_id")
+  date            DateTime @db.Date
+  impressionCount Int      @default(0) @map("impression_count")
+  clickCount      Int      @default(0) @map("click_count")
+  conversionCount Int      @default(0) @map("conversion_count")
+  agency          Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  @@unique([agencyId, date])
+  @@index([agencyId])
+  @@index([date])
+  @@map("marketplace_impressions")
+}
+
+model MarketplaceClick {
+  id            String   @id @default(cuid())
+  agencyId      String   @map("agency_id")
+  treklerId     String?  @map("trekker_id")
+  destination   String
+  searchQuery   String?  @map("search_query")
+  timestamp     DateTime @default(now())
+  agency        Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  trekker       Trekker? @relation(fields: [treklerId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@index([agencyId])
+  @@index([treklerId])
+  @@index([timestamp])
+  @@map("marketplace_clicks")
 }

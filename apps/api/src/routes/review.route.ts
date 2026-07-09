@@ -2,7 +2,7 @@ import { upload } from "@funtush/storage";
 import { Router } from "express";
 import { dismissReviewFlag, getFlaggedAgency, removeReview } from "src/controllers/review.controller";
 import { createReview, flagReview, getReviews, reviewResponse } from "src/controllers/review.controller";
-import { authenticateWithRefreshToken } from "src/middlewares/refreshTokenAuthentication";
+import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 
 const router = Router();
 

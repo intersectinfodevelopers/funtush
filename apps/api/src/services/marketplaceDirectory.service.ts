@@ -26,6 +26,13 @@ import { db } from "@funtush/database";
  * explicitly "not listed" on the marketplace, and the FREE tier has
  * `features.marketplace = false`. Every query in this file therefore filters
  * through `LISTABLE_AGENCY` so we never leak a non-public agency.
+ *
+ * NOTE (flagged, not fixed here): per Core Concept Doc v1.1 Fix 1, the "Free
+ * Tier" concept is eliminated — trial agencies are Small tier with
+ * AgencyStatus.TRIAL, not a separate FREE tier. `status: "ACTIVE"` already
+ * correctly excludes TRIAL/LOCKED agencies on its own; the `tier.name != FREE`
+ * clause is legacy and harmless (additive), but should be removed once the
+ * FREE tier is fully retired platform-wide.
  */
 
 /**
@@ -66,18 +73,41 @@ export interface AgencyListItem {
   description: string | null;
   rating: { average: number | null; count: number };
   topDestinations: string[];
-  // True when a Super Admin has boosted this agency above its tier baseline.
-  // Correction #2: this label is mandatory and can never be hidden.
   sponsored: boolean;
 }
 
-/**
- * List every marketplace-listable agency with its tier, review rating and a few
- * "top destination" tags (the destinations it runs the most packages in).
- */
-export async function listAgencies(): Promise<AgencyListItem[]> {
+export interface AgencyDirectoryFilters {
+  search?: string;
+  tier?: string;
+  region?: string;
+  minRating?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface AgencyListResult {
+  data: AgencyListItem[];
+  meta: { total: number; page: number; limit: number; pages: number };
+}
+
+
+export async function listAgencies(filters: AgencyDirectoryFilters = {}): Promise<AgencyListResult> {
+  const page = Math.max(1, Math.floor(filters.page ?? 1));
+  const limit = Math.min(100, Math.max(1, Math.floor(filters.limit ?? 20)));
+
+  const where: Record<string, unknown> = { ...LISTABLE_AGENCY };
+  if (filters.tier) {
+    where.tier = { name: filters.tier };
+  }
+  if (filters.search) {
+    where.OR = [
+      { name: { contains: filters.search, mode: "insensitive" } },
+      { profile: { description: { contains: filters.search, mode: "insensitive" } } },
+    ];
+  }
+
   const agencies = await db.agency.findMany({
-    where: LISTABLE_AGENCY,
+    where,
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -85,16 +115,13 @@ export async function listAgencies(): Promise<AgencyListItem[]> {
       slug: true,
       priorityOverride: true,
       tier: { select: { name: true } },
-      profile: { select: { logo: true, description: true } },
+      profile: { select: { logo: true, description: true, regions: true } },
       destinations: {
-        // each destination + how many packages reference it (ranking signal)
         select: { name: true, _count: { select: { packages: true } } },
       },
     },
   });
 
-  // One grouped query gets the rating average + count for every agency at once,
-  // instead of N per-agency queries.
   const ratings = await db.review.groupBy({
     by: ["agencyId"],
     _avg: { rating: true },
@@ -102,14 +129,21 @@ export async function listAgencies(): Promise<AgencyListItem[]> {
   });
   const ratingByAgency = new Map(ratings.map((r) => [r.agencyId, r]));
 
-  return agencies.map((a) => {
+  let mapped = agencies.map((a) => {
     const r = ratingByAgency.get(a.id);
     const topDestinations = [...a.destinations]
-      .sort((x, y) => y._count.packages - x._count.packages) // busiest destinations first
+      .sort((x, y) => y._count.packages - x._count.packages)
       .slice(0, 5)
       .map((d) => d.name);
 
-    return {
+    const rawRegions = a.profile?.regions as unknown;
+    const regions = Array.isArray(rawRegions)
+      ? (rawRegions.filter((v) => typeof v === "string") as string[])
+      : typeof rawRegions === "string"
+        ? [rawRegions]
+        : [];
+
+    const item: AgencyListItem = {
       id: a.id,
       name: a.name,
       slug: a.slug,
@@ -120,17 +154,29 @@ export async function listAgencies(): Promise<AgencyListItem[]> {
       topDestinations,
       sponsored: a.priorityOverride > 0,
     };
+
+    return { item, regions, ratingAverage: r?._avg.rating ?? null };
   });
+
+  if (filters.region) {
+    const needle = filters.region.toLowerCase();
+    mapped = mapped.filter((m) => m.regions.some((r) => r.toLowerCase() === needle));
+  }
+  if (typeof filters.minRating === "number") {
+    const minRating = filters.minRating;
+    mapped = mapped.filter((m) => (m.ratingAverage ?? 0) >= minRating);
+  }
+
+  const total = mapped.length;
+  const pages = Math.ceil(total / limit);
+  const start = (page - 1) * limit;
+  const data = mapped.slice(start, start + limit).map((m) => m.item);
+
+  return { data, meta: { total, page, limit, pages } };
 }
 
 /* ── 2. Agency public profile ────────────────────────────────────────────── */
 
-/**
- * Full public profile for one agency, addressed by its slug. Bundles the
- * published packages, recent reviews and computed badges that the public agency
- * page renders. Returns null if the slug doesn't resolve to a listable agency
- * (so the controller can answer 404).
- */
 export async function getAgencyProfile(slug: string) {
   const agency = await db.agency.findFirst({
     where: { slug, ...LISTABLE_AGENCY },
@@ -172,8 +218,6 @@ export async function getAgencyProfile(slug: string) {
           destinations: { select: { name: true } },
         },
       },
-      // Only show genuine, non-removed reviews on the public profile. Reviews are
-      // verified-by-default (gated on Completed bookings); a REMOVED flag hides one.
       reviews: {
         where: { verified: true, flags: { none: { status: "REMOVED" } } },
         orderBy: { createdAt: "desc" },
@@ -193,8 +237,6 @@ export async function getAgencyProfile(slug: string) {
 
   if (!agency) return null;
 
-  // Rating summary over ALL public reviews (not just the 20 we return), so the
-  // headline number is accurate even when the list is truncated.
   const ratingAgg = await db.review.aggregate({
     where: { agencyId: agency.id, verified: true, flags: { none: { status: "REMOVED" } } },
     _avg: { rating: true },
@@ -204,13 +246,9 @@ export async function getAgencyProfile(slug: string) {
   const averageRating = roundRating(ratingAgg._avg.rating);
   const reviewCount = ratingAgg._count.rating;
 
-  // Badges — derived purely from data we already hold.
   const badges: string[] = [];
   if (agency.kyc?.status === "APPROVED") badges.push("Verified");
   if (averageRating !== null && averageRating >= 4.5 && reviewCount >= 5) badges.push("Top Rated");
-  // "Sponsored" badge (Correction #2): applied automatically whenever a Super
-  // Admin sets priority_override above the tier baseline (0). It is mandatory
-  // and cannot be hidden, so it lives here in derived data, not a toggle.
   if (agency.priorityOverride > 0) badges.push("Sponsored");
 
   const p = agency.profile;
@@ -221,7 +259,6 @@ export async function getAgencyProfile(slug: string) {
     tier: agency.tier.name,
     memberSince: agency.createdAt,
     badges,
-    // Honour the per-field "show on website" toggles the agency configured.
     profile: p
       ? {
           logo: p.logoShowOnWebsite ? p.logo : null,
@@ -259,18 +296,6 @@ export async function getAgencyProfile(slug: string) {
 
 /* ── 3. Destination directory ────────────────────────────────────────────── */
 
-/**
- * Destinations in this codebase are stored per-agency (each agency creates its
- * own `TrekDestination` rows). The marketplace, however, presents ONE master
- * page per destination that aggregates every agency operating there — and the
- * Day 3 spec notes these master pages are conceptually owned by the Super Admin
- * team, not individual agencies.
- *
- * Until a dedicated master-destination table exists, we synthesize those master
- * pages by grouping the per-agency rows by their slugified name. So three
- * agencies that each have an "Everest Base Camp" destination collapse into a
- * single master destination with slug `everest-base-camp`.
- */
 export interface DestinationListItem {
   slug: string;
   name: string;
@@ -281,7 +306,26 @@ export interface DestinationListItem {
   agencyCount: number;
 }
 
-export async function listDestinations(): Promise<DestinationListItem[]> {
+export interface DestinationDirectoryFilters {
+  region?: string;
+  altitudeMin?: number;
+  altitudeMax?: number;
+  season?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface DestinationListResult {
+  data: DestinationListItem[];
+  meta: { total: number; page: number; limit: number; pages: number };
+}
+
+export async function listDestinations(
+  filters: DestinationDirectoryFilters = {}
+): Promise<DestinationListResult> {
+  const page = Math.max(1, Math.floor(filters.page ?? 1));
+  const limit = Math.min(100, Math.max(1, Math.floor(filters.limit ?? 20)));
+
   const rows = await db.trekDestination.findMany({
     where: { agency: LISTABLE_AGENCY },
     select: {
@@ -290,12 +334,10 @@ export async function listDestinations(): Promise<DestinationListItem[]> {
       altitudeM: true,
       bestSeason: true,
       agencyId: true,
-      // only published packages count toward the public package tally
       packages: { where: { status: "PUBLISHED" }, select: { id: true } },
     },
   });
 
-  // Fold the per-agency rows into master destinations keyed by slug.
   const masters = new Map<
     string,
     {
@@ -310,7 +352,7 @@ export async function listDestinations(): Promise<DestinationListItem[]> {
 
   for (const row of rows) {
     const slug = slugify(row.name);
-    if (!slug) continue; // skip un-sluggable names (e.g. all punctuation)
+    if (!slug) continue;
 
     let master = masters.get(slug);
     if (!master) {
@@ -324,7 +366,6 @@ export async function listDestinations(): Promise<DestinationListItem[]> {
       };
       masters.set(slug, master);
     }
-    // backfill any descriptive field the first row left null
     master.region ??= row.region;
     master.altitudeM ??= row.altitudeM;
     master.bestSeason ??= row.bestSeason;
@@ -332,30 +373,46 @@ export async function listDestinations(): Promise<DestinationListItem[]> {
     for (const pkg of row.packages) master.packageIds.add(pkg.id);
   }
 
-  return [...masters.entries()]
-    .map(([slug, m]) => ({
-      slug,
-      name: m.name,
-      region: m.region,
-      altitudeM: m.altitudeM,
-      bestSeason: m.bestSeason,
-      packageCount: m.packageIds.size,
-      agencyCount: m.agencyIds.size,
-    }))
-    .sort((a, b) => b.packageCount - a.packageCount || a.name.localeCompare(b.name));
+  let items: DestinationListItem[] = [...masters.entries()].map(([slug, m]) => ({
+    slug,
+    name: m.name,
+    region: m.region,
+    altitudeM: m.altitudeM,
+    bestSeason: m.bestSeason,
+    packageCount: m.packageIds.size,
+    agencyCount: m.agencyIds.size,
+  }));
+
+  if (filters.region) {
+    const needle = filters.region.toLowerCase();
+    items = items.filter((d) => d.region?.toLowerCase() === needle);
+  }
+  if (typeof filters.altitudeMin === "number") {
+    const min = filters.altitudeMin;
+    items = items.filter((d) => d.altitudeM !== null && d.altitudeM >= min);
+  }
+  if (typeof filters.altitudeMax === "number") {
+    const max = filters.altitudeMax;
+    items = items.filter((d) => d.altitudeM !== null && d.altitudeM <= max);
+  }
+  if (filters.season) {
+    const needle = filters.season.toLowerCase();
+    items = items.filter((d) => d.bestSeason?.toLowerCase() === needle);
+  }
+
+  items.sort((a, b) => b.packageCount - a.packageCount || a.name.localeCompare(b.name));
+
+  const total = items.length;
+  const pages = Math.ceil(total / limit);
+  const start = (page - 1) * limit;
+  const data = items.slice(start, start + limit);
+
+  return { data, meta: { total, page, limit, pages } };
 }
 
 /* ── 4. Master destination page ──────────────────────────────────────────── */
 
-/**
- * One master destination page: the destination's stats plus every listable
- * agency operating there, each with the published packages it runs in that
- * destination. Returns null if no listable agency has a destination with this
- * slug (controller answers 404).
- */
 export async function getDestinationBySlug(slug: string) {
-  // We can't filter by slug in SQL (the slug isn't stored), so fetch the
-  // destination rows for listable agencies and match the slug in app code.
   const rows = await db.trekDestination.findMany({
     where: { agency: LISTABLE_AGENCY },
     select: {
@@ -389,13 +446,11 @@ export async function getDestinationBySlug(slug: string) {
   const matching = rows.filter((row) => slugify(row.name) === slug);
   if (matching.length === 0) return null;
 
-  // Canonical destination facts: take the first non-null we encounter.
   let name = matching[0].name;
   let region: string | null = null;
   let altitudeM: number | null = null;
   let bestSeason: string | null = null;
 
-  // Group the published packages by the agency that runs them.
   const agencyMap = new Map<
     string,
     {
@@ -438,7 +493,6 @@ export async function getDestinationBySlug(slug: string) {
     }
   }
 
-  // Drop agencies that, after filtering to published packages, run nothing here.
   const agencies = [...agencyMap.values()].filter((a) => a.packages.length > 0);
   const packageCount = agencies.reduce((sum, a) => sum + a.packages.length, 0);
 

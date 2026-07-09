@@ -1,15 +1,15 @@
-import { prisma } from "../packages/database/prisma";
+import { prisma } from "@funtush/database";
 import crypto from "crypto";
 import { cacheSet } from "./redis.service";
+import { calculateAndPersistVisibilityScore } from "./visibility.service";
+import { reindexAgencyPackages } from "./search.service";
 
-// ── List agencies with filters + pagination ────────────────────────────────────
 
 export interface AgencyListFilter {
-  tier?:       string;
-  status?:     string;
-  country?:    string;
+  tier?:       string;  
+  status?:     string;  
   search?:     string;
-  joinedFrom?: string;  // YYYY-MM-DD
+  joinedFrom?: string;  
   joinedTo?:   string;
   page?:       number;
   limit?:      number;
@@ -21,9 +21,8 @@ export async function listAgencies(filters: AgencyListFilter) {
   const skip  = (page - 1) * limit;
 
   const where: Record<string, unknown> = {};
-  if (filters.tier)    where.tier    = filters.tier;
-  if (filters.status)  where.status  = filters.status;
-  if (filters.country) where.country = filters.country;
+  if (filters.tier)   where.tier   = { name: filters.tier };
+  if (filters.status) where.status = filters.status;
   if (filters.search) {
     where.OR = [
       { name:  { contains: filters.search, mode: "insensitive" } },
@@ -45,8 +44,9 @@ export async function listAgencies(filters: AgencyListFilter) {
       take: limit,
       orderBy: { createdAt: "desc" },
       select: {
-        id: true, name: true, email: true, tier: true,
-        status: true, country: true, createdAt: true, slug: true,
+        id: true, name: true, email: true,
+        tier: { select: { name: true } },
+        status: true, createdAt: true, slug: true,
       },
     }),
   ]);
@@ -57,78 +57,73 @@ export async function listAgencies(filters: AgencyListFilter) {
   };
 }
 
-// ── Full agency profile ─────────────────────────────────────────────────────────
-
+// Full agency profile 
 export async function getAgencyProfile(id: string) {
   const agency = await prisma.agency.findUnique({
     where: { id },
     include: {
-      subscription:   true,
-      settings:       true,
-      _count: { select: { bookings: true, agencyUsers: true } },
+      subscriptions: true,
+      _count: { select: { bookings: true, users: true } }, // FIX: relation is `users`, not `agencyUsers`
     },
   });
   if (!agency) return null;
 
-  const [bookingSummary, financialSummary, kyc] = await Promise.all([
+  const [bookingSummary, kyc] = await Promise.all([
     prisma.booking.aggregate({
       _count: { _all: true },
-      _sum:   { totalAmount: true },
+      _sum:   { totalPrice: true }, // FIX: field is `totalPrice`, not `totalAmount`
       where:  { agencyId: id },
     }),
-    prisma.invoice.aggregate({
-      _sum:   { amount: true },
-      _count: { _all: true },
-      where:  { agencyId: id, status: "PAID" },
-    }),
-    prisma.kYCSubmission.findFirst({
-      where:   { agencyId: id },
-      orderBy: { submittedAt: "desc" },
-      select:  { status: true, submittedAt: true, reviewedAt: true },
+    prisma.kycSubmission.findUnique({
+      where:  { agencyId: id },
+      select: { status: true, submittedAt: true, reviewedAt: true },
     }),
   ]);
 
   return {
     ...agency,
-    staffCount:    (agency as unknown as { _count: { agencyUsers: number } })._count.agencyUsers,
+    staffCount:    (agency as unknown as { _count: { users: number } })._count.users,
     bookingCount:  bookingSummary._count._all,
     bookingSummary: {
       totalBookings: bookingSummary._count._all,
-      totalRevenue:  bookingSummary._sum.totalAmount ?? 0,
-    },
-    financialSummary: {
-      totalInvoicesPaid: financialSummary._count._all,
-      totalPaidAmount:   financialSummary._sum.amount ?? 0,
+      totalRevenue:  bookingSummary._sum.totalPrice ?? 0,
     },
     kycStatus: kyc?.status ?? "NONE",
   };
 }
 
-// ── Change tier (immediate) ──────────────────────────────────────────────────
+// Change tier (immediate) 
+export async function updateAgencyTier(id: string, tierName: string) {
 
-export async function updateAgencyTier(id: string, tier: string) {
+  const tier = await prisma.subscriptionTier.findUnique({
+    where: { name: tierName },
+    select: { id: true },
+  });
+  if (!tier) throw new Error(`Unknown tier: ${tierName}`);
+
   return prisma.agency.update({
     where: { id },
-    data:  { tier },
-    select: { id: true, tier: true },
+    data:  { tierId: tier.id },
+    select: { id: true, tier: { select: { name: true } } },
   });
 }
 
-// ── Change status (with mandatory reason) ──────────────────────────────────────
-
+// Change status
 export async function updateAgencyStatus(
   id: string,
   status: "ACTIVE" | "SUSPENDED" | "LOCKED",
-  reason: string
+  reason?: string
 ) {
   return prisma.agency.update({
     where: { id },
-    data:  { status, statusReason: reason, statusUpdatedAt: new Date() },
+    data:  {
+      status,
+      statusReason:    reason ?? null,
+      statusUpdatedAt: new Date(),
+    },
     select: { id: true, status: true, statusReason: true, statusUpdatedAt: true },
   });
 }
-
-// ── Impersonation token (short-lived) ──────────────────────────────────────────
 
 const IMPERSONATE_TTL_SECONDS = 15 * 60; // 15 minutes
 
@@ -152,3 +147,42 @@ export async function issueImpersonationToken(agencyId: string, adminId: string)
 }
 
 export { IMPERSONATE_TTL_SECONDS };
+
+export interface PriorityOverrideResult {
+  agencyId: string;
+  priorityOverride: number;
+  finalScore: number;
+  sponsored: boolean;
+}
+
+export async function updateAgencyPriorityOverride(
+  agencyId: string,
+  priorityOverride: number
+): Promise<PriorityOverrideResult> {
+  if (!Number.isInteger(priorityOverride) || priorityOverride < 0) {
+    throw new Error("priorityOverride must be a non-negative integer");
+  }
+
+  const agency = await prisma.agency.findUnique({
+    where: { id: agencyId },
+    select: { id: true },
+  });
+  if (!agency) throw new Error("Agency not found");
+
+  await prisma.agency.update({
+    where: { id: agencyId },
+    data: { priorityOverride },
+  });
+
+  // Recompute base + quality + NEW override, persist immediately.
+  const scoreResult = await calculateAndPersistVisibilityScore(agencyId);
+
+  await reindexAgencyPackages(agencyId);
+
+  return {
+    agencyId,
+    priorityOverride,
+    finalScore: scoreResult.finalScore,
+    sponsored: priorityOverride > 0,
+  };
+}
