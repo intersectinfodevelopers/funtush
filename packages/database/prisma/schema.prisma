@@ -121,13 +121,11 @@ model Agency {
   tierId            String             @map("tier_id")
   customDomain      String?            @map("custom_domain")
   mapsUrl           String?            @map("maps_url")
-  // Super-Admin-set marketplace boost. 0 = tier baseline (no boost). Any value
-  // > 0 raises this agency in marketplace ranking AND forces a mandatory,
-  // un-hideable "Sponsored" label (Backend Guide §6 + Correction #2).
   priorityOverride  Int                @default(0) @map("priority_override")
   trialExpiresAt    DateTime?          @map("trial_expires_at")
   createdAt         DateTime           @default(now()) @map("created_at")
   tier              SubscriptionTier   @relation(fields: [tierId], references: [id])
+
   users             AgencyUser[]
   agencyStaffs      AgencyStaff[]
   profile           AgencyProfile?
@@ -144,7 +142,25 @@ model Agency {
   marketplaceImpressions MarketplaceImpression[]
   marketplaceClicks      MarketplaceClick[]
 
+  paymentMethods AgencyPaymentMethod[]
+
   @@map("agencies")
+}
+
+model AgencyPaymentMethod {
+  id                    String   @id @default(cuid())
+  agencyId              String   @map("agency_id")
+  provider              String   // "stripe", "khalti", "esewa", "fonepay", "connectips", "nabil"
+  credentialsEncrypted  String   @map("credentials_encrypted") // AES-256-GCM encrypted JSON
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, provider])
+  @@index([agencyId])
+  @@map("agency_payment_methods")
 }
 
 model AgencyVisibilityScore {
