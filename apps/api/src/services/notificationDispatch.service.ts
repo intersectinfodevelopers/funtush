@@ -1,4 +1,4 @@
-import type { Db } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 import nodemailer, { type Transporter } from "nodemailer";
 import { NOTIFICATION_MATRIX, DND_SUPPRESSIBLE } from "../config/notificationMatrix";
 import { sendPush } from "../lib/firebase";
@@ -15,8 +15,8 @@ import type {
  * Notification dispatch service.
  *
  * Usage (wire once at boot in src/index.ts / app.ts):
- *   import { initNotificationService } from "./services/notification.service";
- *   initNotificationService(db);          // db = connected Db from @funtush/database
+ *   import { initNotificationService } from "./services/notificationDispatch.service";
+ *   initNotificationService(db);          // db = connected Mongo Db from @funtush/database
  *
  * Then anywhere:
  *   await notifyUser(userId, "BOOKING_CONFIRMED", { title, body, data });
@@ -54,6 +54,11 @@ export async function ensureNotificationIndexes(): Promise<void> {
   await col.createIndex({ status: 1, created_at: -1 });
 }
 
+/** Users collection may key _id as ObjectId or string depending on tenant — try both. */
+function toIdQuery(id: string): ObjectId | string {
+  return ObjectId.isValid(id) ? new ObjectId(id) : id;
+}
+
 /** Is the recipient currently in Do Not Disturb? Reads users.notification_prefs. */
 async function isDndActive(userId: string): Promise<boolean> {
   const user = await db()
@@ -74,17 +79,6 @@ async function isDndActive(userId: string): Promise<boolean> {
   const start = sh * 60 + sm;
   const end = eh * 60 + em;
   return start <= end ? cur >= start && cur < end : cur >= start || cur < end; // handles overnight windows
-}
-
-/** Users collection may key _id as ObjectId or string depending on tenant — try both. */
-function toIdQuery(id: string): unknown {
-  try {
-    // Lazy import avoids hard dependency in tests that mock the db.
-    const { ObjectId } = require("mongodb") as typeof import("mongodb");
-    return ObjectId.isValid(id) ? new ObjectId(id) : id;
-  } catch {
-    return id;
-  }
 }
 
 async function deliverEmail(userId: string, payload: NotifyPayload): Promise<ChannelResult> {
