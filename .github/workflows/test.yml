@@ -13,16 +13,51 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/funtush_test
+      REDIS_URL: redis://localhost:6379
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      NODE_ENV: test
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     steps:
       - uses: actions/checkout@v4
+      
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+      
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      
+      - name: Run lint
+        run: pnpm run lint
+      
       - name: Run tests
         run: pnpm run test
