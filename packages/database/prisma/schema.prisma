@@ -143,6 +143,8 @@ model Agency {
   marketplaceClicks      MarketplaceClick[]
 
   paymentMethods AgencyPaymentMethod[]
+  accounts       Account[]
+  journalEntries JournalEntry[]
 
   @@map("agencies")
 }
@@ -192,6 +194,7 @@ model AgencyUser {
   customerNotes     CustomerNote[]
   communicationLogs CommunicationLog[]
   reviewResponses   ReviewResponse[]
+  journalEntries    JournalEntry[]
 
   @@unique([agencyId, userId])
   @@map("agency_users")
@@ -663,6 +666,76 @@ model ReviewInvitation {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("review_invitations")
+}
+
+// Accounting: double-entry bookkeeping (Phase 4, Backend Guide §7/§17)
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Account {
+  id       String      @id @default(uuid())
+  agencyId String      @map("agency_id")
+  code     String
+  name     String
+  type     AccountType
+  parentId String?     @map("parent_id")
+  isActive Boolean     @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  agency       Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  parent       Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children     Account[]     @relation("AccountHierarchy")
+  journalLines JournalLine[]
+
+  // Account codes are unique per agency, not globally — every tenant gets the
+  // same default chart (1000 Cash, 4000 Trek Revenue, …) without collisions.
+  @@unique([agencyId, code])
+  @@index([agencyId, type])
+  @@map("accounts")
+}
+
+model JournalEntry {
+  id          String   @id @default(uuid())
+  agencyId    String   @map("agency_id")
+  entryDate   DateTime @map("entry_date") @db.Date
+  description String
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  agency  Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  creator AgencyUser?   @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  lines   JournalLine[]
+
+  @@index([agencyId, entryDate])
+  @@map("journal_entries")
+}
+
+// Lines must balance per entry: SUM(debit) = SUM(credit). Enforced at the
+// database level by a deferred constraint trigger (see the migration SQL) —
+// Prisma cannot express triggers, so it lives only in the migration. Lines
+// must therefore always be written inside a transaction together with their
+// entry; a lone unbalanced insert is rejected at COMMIT.
+model JournalLine {
+  id             String  @id @default(uuid())
+  journalEntryId String  @map("journal_entry_id")
+  accountId      String  @map("account_id")
+  debit          Decimal @default(0) @db.Decimal(12, 2)
+  credit         Decimal @default(0) @db.Decimal(12, 2)
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@map("journal_lines")
 }
 
 enum AdCampaignStatus {
