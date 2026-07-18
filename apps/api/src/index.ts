@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { MulterError } from "multer";
 
@@ -14,12 +14,16 @@ import reviewRoutes from "./routes/review.route.js";
 import staffRoutes from "./routes/staff.routes";
 import adminRoutes from "./routes/admin/index.js";
 import agencyAnalyticsRoutes from "./routes/agencyAnalytics.routes.js";
+import fraudRouter from "./routes/admin/fraud.route.js";
 
 import { startVisibilityScoreCron } from "./jobs/visibilityScore.job.js";
 import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
 import { configureIndexes } from "./services/search.service.js";
+import {
+  initNotificationService,
+  ensureNotificationIndexes,
+} from "./services/notificationDispatch.service";
 import { db, redis, connectMongo } from "@funtush/database";
-
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -38,6 +42,7 @@ app.use("/bookings", bookingRoutes);
 app.use("/auth", authRoutes);
 app.use("/agencies/me/staff", staffRoutes);
 app.use("/admin", adminRoutes);
+app.use("/fraud", fraudRouter);
 
 // Analytics Routes
 app.use("/", agencyAnalyticsRoutes);
@@ -74,7 +79,19 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
-  connectMongo().catch(console.error);
+  void (async () => {
+    try {
+      // Notification service needs the *Mongo* Db (not the Prisma client `db`).
+      // If connectMongo() doesn't return the Db, swap in the actual Mongo
+      // export from @funtush/database here.
+      const mongoDb = await connectMongo();
+      initNotificationService(mongoDb);
+      await ensureNotificationIndexes();
+    } catch (err) {
+      console.error("Notification service init failed:", err);
+    }
+  })();
+
   startSubscriptionCron();
   startVisibilityScoreCron();
 
