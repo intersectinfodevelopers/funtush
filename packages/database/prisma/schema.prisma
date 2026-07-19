@@ -504,6 +504,7 @@ model Booking {
   paymentLink      PaymentLink?
   review           Review?
   reviewInvitation ReviewInvitation?
+  journalEntries   JournalEntry[]
 
   @@index([agencyId, status])
   @@index([trekkerId])
@@ -722,14 +723,21 @@ model JournalEntry {
   agencyId    String   @map("agency_id")
   entryDate   DateTime @map("entry_date") @db.Date
   description String
+  // Multi-currency (Day 2): a journal entry is one financial transaction, so
+  // the currency lives here — both of its lines are always the same currency.
+  currencyCode String  @default("NPR") @map("currency_code")
+  // Income entries can trace back to the booking whose payment they record.
+  bookingId   String?  @map("booking_id")
   createdBy   String?  @map("created_by")
   createdAt   DateTime @default(now()) @map("created_at")
 
   agency  Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  booking Booking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   creator AgencyUser?   @relation(fields: [createdBy], references: [id], onDelete: SetNull)
   lines   JournalLine[]
 
   @@index([agencyId, entryDate])
+  @@index([bookingId])
   @@map("journal_entries")
 }
 
