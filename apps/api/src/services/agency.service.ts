@@ -307,9 +307,6 @@ export const updateAgencyProfileService = async (
   // helper to safely store JSON in Prisma
   const toJson = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
-
-  /** 
-   * 
   let maps_url: string | undefined;
 
   // Build Google Maps URL
@@ -319,7 +316,6 @@ export const updateAgencyProfileService = async (
     )}&output=embed`;
   }
 
-    */
 
   // Map fields to db format (camelCase)
   if (data.logo !== undefined) updateData.logo = data.logo;
@@ -351,12 +347,12 @@ export const updateAgencyProfileService = async (
     updateData.regionsShowOnWebsite = data.regionsShowOnWebsite;
 
 
-  /** 
+
   // Add maps URL if address exists
   if (maps_url) {
     updateData.mapsUrl = maps_url;
   }
-*/
+
 
 
   if (Object.keys(updateData).length === 0) {
@@ -369,12 +365,12 @@ export const updateAgencyProfileService = async (
   console.log("agencyId:", agencyId);
   console.log("updateData:", updateData);
 
-  // await db.agency.update({
-  //   where: { id: agencyId },
-  //   data: {
-  //     maps_url,
-  //   }
-  // });
+  await db.agency.update({
+    where: { id: agencyId },
+    data: {
+      mapsUrl: maps_url,
+    }
+  });
 
   const result = await db.agencyProfile.upsert({
     where: {
@@ -383,7 +379,6 @@ export const updateAgencyProfileService = async (
 
     update: {
       ...updateData,
-      // mapsUrl: maps_url,
     },
 
     create: {
@@ -394,7 +389,6 @@ export const updateAgencyProfileService = async (
       },
 
       ...updateData,
-      // mapsUrl: maps_url,
     },
   });
 
@@ -441,7 +435,7 @@ export const AgencyKYCService = async (agencyId: string, kycDetails: KYCDetails)
       status: "SUBMITTED",
       submittedAt: new Date(),
     },
-    create: {
+    create: { 
       agencyId,
       status: "SUBMITTED",
     },

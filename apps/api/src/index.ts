@@ -11,6 +11,7 @@ import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
 import trekkerRoutes from "./routes/trekker.routes.js";
 import marketplaceRoutes from "./routes/marketplace.routes.js";
 import reviewRoutes from "./routes/review.route.js";
+import couponRoutes from "./routes/coupon.route.js";
 import staffRoutes from "./routes/staff.routes";
 import adminRoutes from "./routes/admin/index.js";
 import agencyAnalyticsRoutes from "./routes/agencyAnalytics.routes.js";
@@ -48,6 +49,7 @@ app.use("/fraud", fraudRouter);
 app.use("/", agencyAnalyticsRoutes);
 
 app.use("/", reviewRoutes);
+app.use("/", couponRoutes);
 
 app.get("/health", async (_req: Request, res: Response) => {
   const [dbOk, redisOk] = await Promise.all([

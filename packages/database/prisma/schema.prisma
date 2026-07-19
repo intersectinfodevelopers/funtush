@@ -95,6 +95,17 @@ enum ReviewFlagStatus {
   REMOVED
 }
 
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum CouponStatus {
+  ACTIVE
+  PAUSED
+  EXPIRED
+}
+
 // Core: Agency & Users
 
 model SubscriptionTier {
@@ -112,20 +123,22 @@ model SubscriptionTier {
 }
 
 model Agency {
-  adCampaigns AdCampaign[]
-  id                String             @id @default(uuid())
+  adCampaigns       AdCampaign[]
+  id                String                 @id @default(uuid())
   name              String
-  email             String             @unique
-  slug              String             @unique
-  status            AgencyStatus       @default(TRIAL)
-  tierId            String             @map("tier_id")
-  customDomain      String?            @map("custom_domain")
-  mapsUrl           String?            @map("maps_url")
-  priorityOverride  Int                @default(0) @map("priority_override")
-  trialExpiresAt    DateTime?          @map("trial_expires_at")
-  createdAt         DateTime           @default(now()) @map("created_at")
-  tier              SubscriptionTier   @relation(fields: [tierId], references: [id])
-
+  email             String                 @unique
+  slug              String                 @unique
+  status            AgencyStatus           @default(TRIAL)
+  tierId            String                 @map("tier_id")
+  customDomain      String?                @map("custom_domain")
+  mapsUrl           String?                @map("maps_url")
+  // Super-Admin-set marketplace boost. 0 = tier baseline (no boost). Any value
+  // > 0 raises this agency in marketplace ranking AND forces a mandatory,
+  // un-hideable "Sponsored" label (Backend Guide §6 + Correction #2).
+  priorityOverride  Int                    @default(0) @map("priority_override")
+  trialExpiresAt    DateTime?              @map("trial_expires_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  tier              SubscriptionTier       @relation(fields: [tierId], references: [id])
   users             AgencyUser[]
   agencyStaffs      AgencyStaff[]
   profile           AgencyProfile?
@@ -138,9 +151,10 @@ model Agency {
   communicationLogs CommunicationLog[]
   reviews           Review[]
   visibilityScore   AgencyVisibilityScore?
-  
+
   marketplaceImpressions MarketplaceImpression[]
   marketplaceClicks      MarketplaceClick[]
+  coupons                Coupon[]
 
   paymentMethods AgencyPaymentMethod[]
 
@@ -164,16 +178,16 @@ model AgencyPaymentMethod {
 }
 
 model AgencyVisibilityScore {
-  id             String   @id @default(uuid())
-  agencyId       String   @unique @map("agency_id")
-  agency         Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
-  baseScore      Int      @default(0) @map("base_score")     // from tier.name: FREE=0, SMALL=25, MEDIUM=50, LARGE=100
-  qualityBonus   Int      @default(0) @map("quality_bonus")  // rating(+20) + recentBooking(+5) + profileComplete(+10)
-  finalScore     Int      @default(0) @map("final_score")    // baseScore + qualityBonus + agency.priorityOverride
+  baseScore    Int @default(0) @map("base_score") // from tier.name: FREE=0, SMALL=25, MEDIUM=50, LARGE=100
+  qualityBonus Int @default(0) @map("quality_bonus") // rating(+20) + recentBooking(+5) + profileComplete(+10)
+  finalScore   Int @default(0) @map("final_score") // baseScore + qualityBonus + agency.priorityOverride
 
-  calculatedAt   DateTime @default(now()) @map("calculated_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  calculatedAt DateTime @default(now()) @map("calculated_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([finalScore])
   @@map("agency_visibility_scores")
@@ -210,12 +224,12 @@ model User {
   fcmToken      String?        @map("fcm_token")
   agencyUsers   AgencyUser[]
 
-  failedAttempts Int       @default(0)
-  
-  isLocked       Boolean   @default(false)
-  lockUntil      DateTime?
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  failedAttempts Int @default(0)
+
+  isLocked  Boolean   @default(false)
+  lockUntil DateTime?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@map("users")
 }
@@ -248,7 +262,7 @@ model Trekker {
   communicationLogs CommunicationLog[]
   reviews           Review[]
 
-  marketplaceClicks      MarketplaceClick[]
+  marketplaceClicks MarketplaceClick[]
 
   @@map("trekker")
 }
@@ -673,18 +687,18 @@ enum AdCampaignStatus {
 }
 
 model AdCampaign {
-  id              String           @id @default(cuid())
-  agencyId        String
-  agency          Agency           @relation(fields: [agencyId], references: [id])
-  status          AdCampaignStatus @default(PENDING)
+  id       String           @id @default(cuid())
+  agencyId String
+  agency   Agency           @relation(fields: [agencyId], references: [id])
+  status   AdCampaignStatus @default(PENDING)
 
   imageUrls       String[]
   copyText        String
   targetingParams Json
 
-  impressions     Int     @default(0)
-  clicks          Int     @default(0)
-  spend           Decimal @default(0) @db.Decimal(12, 2)
+  impressions Int     @default(0)
+  clicks      Int     @default(0)
+  spend       Decimal @default(0) @db.Decimal(12, 2)
 
   metaCampaignId   String?
   googleCampaignId String?
@@ -710,6 +724,7 @@ model MarketplaceImpression {
   agency          Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+
   @@unique([agencyId, date])
   @@index([agencyId])
   @@index([date])
@@ -717,17 +732,44 @@ model MarketplaceImpression {
 }
 
 model MarketplaceClick {
-  id            String   @id @default(cuid())
-  agencyId      String   @map("agency_id")
-  treklerId     String?  @map("trekker_id")
-  destination   String
-  searchQuery   String?  @map("search_query")
-  timestamp     DateTime @default(now())
-  agency        Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  trekker       Trekker? @relation(fields: [treklerId], references: [id], onDelete: SetNull)
-  createdAt     DateTime @default(now()) @map("created_at")
+  id          String   @id @default(cuid())
+  agencyId    String   @map("agency_id")
+  treklerId   String?  @map("trekker_id")
+  destination String
+  searchQuery String?  @map("search_query")
+  timestamp   DateTime @default(now())
+  agency      Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  trekker     Trekker? @relation(fields: [treklerId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
   @@index([agencyId])
   @@index([treklerId])
   @@index([timestamp])
   @@map("marketplace_clicks")
+}
+
+model Coupon {
+  id String @id @default(uuid())
+
+  agencyId String @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  code                 String
+  discountType         DiscountType @map("discount_type")
+  discountValue        Float        @map("discount_value")
+  applicablePackages   String[]     @map("applicable_packages")
+  minBookingValue      Float?       @map("min_booking_value")
+  validFrom            DateTime     @map("valid_from")
+  validUntil           DateTime     @map("valid_until")
+  maxRedemptions       Int          @default(0) @map("max_redemptions")
+  redemptionsUsed      Int          @default(0) @map("redemptions_used")
+  firstTimeTrekkerOnly Boolean      @default(false) @map("first_time_trekker_only")
+  minGroupSize         Int?         @map("min_group_size")
+  status               CouponStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([agencyId, code])
+  @@map("coupons")
 }

@@ -5,7 +5,6 @@ import crypto from "crypto";
 const DASHBOARD_TTL = 60;
 
 
-
 export async function getDashboardStats() {
   const cacheKey = "admin:dashboard";
   const cached = await cacheGet<object>(cacheKey);
@@ -118,6 +117,7 @@ export async function getAgencyProfile(id: string) {
     },
   });
 
+
   if (!agency) return null;
 
   const [bookingSummary, financialSummary] = await Promise.all([
@@ -145,6 +145,7 @@ export async function getAgencyProfile(id: string) {
     },
   };
 }
+
 
 
 export async function updateAgencyStatus(
@@ -198,6 +199,8 @@ export async function issueBreakGlassToken(agencyId: string, issuedByIp: string)
 
   return { token, expiresAt, recordId: record.id };
 }
+
+
 
 async function notifyAgencyAdminOfBreakGlass(agencyId: string, expiresAt: Date) {
   const agency = await prisma.agency.findUnique({

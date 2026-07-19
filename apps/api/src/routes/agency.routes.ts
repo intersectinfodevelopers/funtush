@@ -1,5 +1,5 @@
 import express from "express";
-import { agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyDomain, updateAgencyProfile } from "../controllers/agency.controller";
+import { agencyKYCStatus, agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyDomain, updateAgencyProfile } from "../controllers/agency.controller";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 import { checkAgencyStatus, isPaidTier } from "src/middleware/agencyAccess.middleware";
 import {
@@ -15,6 +15,7 @@ router.route("/register/agency")
   .post(registerAgency);
 
 router.route("/agencies/me/kyc")
+  .get(authenticateWithRefreshToken, agencyKYCStatus)
   .post(authenticateWithRefreshToken,
     upload.fields([
       { name: "business_registration", maxCount: 1 },

@@ -42,8 +42,6 @@ export const getReviews = async (
     res: Response
 ) => {
     try {
-        // const slug = req.params.slug as string;
-
         const { slug } = req.params;
 
         if (typeof slug !== "string") {

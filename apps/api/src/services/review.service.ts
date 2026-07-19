@@ -15,6 +15,12 @@ export const sendReviewInvitations = async () => {
                     user: true,
                 },
             },
+            agency: {
+                select:{
+                    name: true,
+                    slug: true,
+                }
+            }
         },
     });
 
@@ -39,8 +45,9 @@ export const sendReviewInvitations = async () => {
             },
         });
 
+
         const invitationLink =
-            `http://funtush.com/review?token=${token}`;
+            `http://funtush.com/${booking.agency.slug}review?token=${token}`;
         //   `${process.env.FRONTEND_URL}/review?token=${token}`;
 
         await sendReviewInvitationEmail(
