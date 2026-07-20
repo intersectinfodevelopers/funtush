@@ -162,6 +162,10 @@ model Agency {
   journalEntries JournalEntry[]
 
   stripeSubscription StripeSubscription?
+  khaltiTransactions        KhaltiTransaction[]
+  esewaTransactions         EsewaTransaction[]
+  connectIPSTransactions    ConnectIPSTransaction[]
+  nepaliPaymentVerifications NepaliPaymentVerification[]
 
   @@map("agencies")
 }
@@ -918,4 +922,78 @@ model StripeWebhookLog {
   @@index([eventType])
   @@index([status])
   @@map("stripe_webhook_logs")
+}
+
+
+model KhaltiTransaction {
+  id                String   @id @default(cuid())
+  agencyId          String   @map("agency_id")
+  tierId            String   @map("tier_id")
+  amount            Float
+  khaltiToken       String?  @map("khalti_token")
+  status            String   @default("pending") // pending, success, failed
+  verifiedAt        DateTime? @map("verified_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId])
+  @@index([status])
+  @@map("khalti_transactions")
+}
+
+model EsewaTransaction {
+  id                String   @id @default(cuid())
+  agencyId          String   @map("agency_id")
+  tierId            String   @map("tier_id")
+  amount            Float
+  esewaRefId        String?  @map("esewa_ref_id")
+  status            String   @default("pending") // pending, success, failed
+  verifiedAt        DateTime? @map("verified_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId])
+  @@index([status])
+  @@map("esewa_transactions")
+}
+
+model ConnectIPSTransaction {
+  id                String   @id @default(cuid())
+  agencyId          String   @map("agency_id")
+  tierId            String   @map("tier_id")
+  amount            Float
+  transferId        String   @unique @map("transfer_id")
+  bankCode          String   @map("bank_code")
+  accountNumber     String   @map("account_number")
+  status            String   @default("pending") // pending, success, failed
+  verifiedAt        DateTime? @map("verified_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId])
+  @@index([status])
+  @@map("connectips_transactions")
+}
+
+model NepaliPaymentVerification {
+  id                String   @id @default(cuid())
+  agencyId          String   @map("agency_id")
+  provider          String   // khalti, esewa, connectips
+  transactionId     String   @map("transaction_id")
+  status            String   // pending, success, failed
+  verifiedAt        DateTime @map("verified_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId])
+  @@index([provider])
+  @@index([status])
+  @@map("nepali_payment_verifications")
 }
