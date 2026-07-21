@@ -20,6 +20,7 @@
     "@funtush/shared": "workspace:*",
     "@funtush/storage": "workspace:*",
     "@prisma/client": "^7.8.0",
+    "@react-email/components": "^1.0.12",
     "bcrypt": "^6.0.0",
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
@@ -33,6 +34,9 @@
     "nodemailer": "^8.0.10",
     "pdfkit": "^0.19.1",
     "puppeteer": "^25.1.0",
+    "react-email": "^6.9.0",
+    "resend": "^6.17.2",
+    "twilio": "^6.0.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
