@@ -20,6 +20,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:accounting": "tsx prisma/accounting.seed.ts",
     "db:studio": "prisma studio",
     "build": "tsc -p tsconfig.json",
     "postinstall": "prisma generate"
