@@ -157,8 +157,6 @@ model Agency {
   coupons                Coupon[]
 
   paymentMethods AgencyPaymentMethod[]
-  branches       Branch[]
-
   accounts       Account[]
   journalEntries JournalEntry[]
 
