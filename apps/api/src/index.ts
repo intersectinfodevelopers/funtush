@@ -93,9 +93,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   void (async () => {
     try {
-      // Notification service needs the *Mongo* Db (not the Prisma client `db`).
-      // If connectMongo() doesn't return the Db, swap in the actual Mongo
-      // export from @funtush/database here.
+      // Notification service needs the *Mongo* Db instance from the Mongoose
+      // connection, not the Prisma client `db`.
       const mongoDb = await connectMongo();
       initNotificationService(mongoDb);
       await ensureNotificationIndexes();
