@@ -171,6 +171,9 @@ model Agency {
   fonepayQRCode       FonepayQRCode?
   fonepayTransactions FonepayTransaction[]
 
+  accounts       Account[]
+  journalEntries JournalEntry[]
+
   @@map("agencies")
 }
 
