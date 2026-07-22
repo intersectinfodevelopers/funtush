@@ -162,31 +162,36 @@ model Agency {
   journalEntries JournalEntry[]
 
   stripeSubscription StripeSubscription?
-  
-  khaltiTransactions        KhaltiTransaction[]
-  esewaTransactions         EsewaTransaction[]
-  connectIPSTransactions    ConnectIPSTransaction[]
-  nepaliPaymentVerifications NepaliPaymentVerification[] 
 
-  fonepayQRCode         FonepayQRCode?
-  fonepayTransactions   FonepayTransaction[]
+  khaltiTransactions         KhaltiTransaction[]
+  esewaTransactions          EsewaTransaction[]
+  connectIPSTransactions     ConnectIPSTransaction[]
+  nepaliPaymentVerifications NepaliPaymentVerification[]
+
+  fonepayQRCode       FonepayQRCode?
+  fonepayTransactions FonepayTransaction[]
 
   @@map("agencies")
 }
 
 model AgencyPaymentMethod {
-  id                   String   @id @default(cuid())
-  agencyId             String   @map("agency_id")
-  provider             String // "stripe", "khalti", "esewa", "fonepay", "connectips", "nabil"
-  credentialsEncrypted String   @map("credentials_encrypted") // AES-256-GCM encrypted JSON
-  isActive             Boolean  @default(true) @map("is_active")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  id       String @id @default(cuid())
+  agencyId String @map("agency_id")
+  provider String // STRIPE | KHALTI | ESEWA | CONNECTIPS | FONEPAY
+
+  credentialsEncrypted String @map("credentials_encrypted") // AES-256-GCM encrypted JSON
+
+  isActive  Boolean   @default(true) @map("is_active")
+  rotatedAt DateTime? @map("rotated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
   @@unique([agencyId, provider])
   @@index([agencyId])
+  @@index([provider])
   @@map("agency_payment_methods")
 }
 
@@ -572,16 +577,23 @@ model AgencyProfile {
 }
 
 model KycSubmission {
-  id              String        @id @default(uuid())
-  agencyId        String        @unique @map("agency_id")
-  status          KycStatus     @default(SUBMITTED)
-  rejectionReason String?       @map("rejection_reason")
-  submittedAt     DateTime      @default(now()) @map("submitted_at")
-  reviewedAt      DateTime?     @map("reviewed_at")
-  reviewedBy      String?       @map("reviewed_by")
-  agency          Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  documents       KycDocument[]
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
+  status          KycStatus @default(SUBMITTED)
+  submittedAt     DateTime  @default(now()) @map("submitted_at")
+  reviewedAt      DateTime? @map("reviewed_at")
+  reviewedBy      String?   @map("reviewed_by")
+  rejectionReason String?   @map("rejection_reason")
+
+  documents KycDocument[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([agencyId])
+  @@index([status])
   @@map("kyc_submissions")
 }
 
@@ -894,21 +906,28 @@ model Branch {
 }
 
 model StripeSubscription {
-  id                   String    @id @default(cuid())
-  agencyId             String    @unique @map("agency_id")
-  stripeCustomerId     String    @unique @map("stripe_customer_id")
-  stripeSubscriptionId String    @unique @map("stripe_subscription_id")
-  status               String    @default("active") // active, canceled, past_due, grace_period
-  currentPeriodEnd     DateTime  @map("current_period_end")
-  graceUntil           DateTime? @map("grace_until") // 7-day grace period
-  lastInvoiceId        String?   @map("last_invoice_id")
-  lastInvoiceStatus    String?   @map("last_invoice_status") // paid, failed, draft
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
+  id String @id @default(cuid())
 
-  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  stripeCustomerId     String @unique @map("stripe_customer_id")
+  stripeSubscriptionId String @unique @map("stripe_subscription_id")
+
+  status String @default("active") // active | past_due | canceled | grace_period
+
+  currentPeriodStart DateTime @map("current_period_start")
+  currentPeriodEnd   DateTime @map("current_period_end")
+
+  graceUntil        DateTime? @map("grace_until")
+  lastInvoiceId     String?   @map("last_invoice_id")
+  lastInvoiceStatus String?   @map("last_invoice_status") // paid | failed | draft
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([agencyId])
+  @@index([stripeCustomerId])
   @@index([status])
   @@map("stripe_subscriptions")
 }
@@ -928,17 +947,16 @@ model StripeWebhookLog {
   @@map("stripe_webhook_logs")
 }
 
-
 model KhaltiTransaction {
-  id                String   @id @default(cuid())
-  agencyId          String   @map("agency_id")
-  tierId            String   @map("tier_id")
-  amount            Float
-  khaltiToken       String?  @map("khalti_token")
-  status            String   @default("pending") // pending, success, failed
-  verifiedAt        DateTime? @map("verified_at")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id          String    @id @default(cuid())
+  agencyId    String    @map("agency_id")
+  tierId      String    @map("tier_id")
+  amount      Float
+  khaltiToken String?   @map("khalti_token")
+  status      String    @default("pending") // pending, success, failed
+  verifiedAt  DateTime? @map("verified_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -948,15 +966,15 @@ model KhaltiTransaction {
 }
 
 model EsewaTransaction {
-  id                String   @id @default(cuid())
-  agencyId          String   @map("agency_id")
-  tierId            String   @map("tier_id")
-  amount            Float
-  esewaRefId        String?  @map("esewa_ref_id")
-  status            String   @default("pending") // pending, success, failed
-  verifiedAt        DateTime? @map("verified_at")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id         String    @id @default(cuid())
+  agencyId   String    @map("agency_id")
+  tierId     String    @map("tier_id")
+  amount     Float
+  esewaRefId String?   @map("esewa_ref_id")
+  status     String    @default("pending") // pending, success, failed
+  verifiedAt DateTime? @map("verified_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -966,17 +984,17 @@ model EsewaTransaction {
 }
 
 model ConnectIPSTransaction {
-  id                String   @id @default(cuid())
-  agencyId          String   @map("agency_id")
-  tierId            String   @map("tier_id")
-  amount            Float
-  transferId        String   @unique @map("transfer_id")
-  bankCode          String   @map("bank_code")
-  accountNumber     String   @map("account_number")
-  status            String   @default("pending") // pending, success, failed
-  verifiedAt        DateTime? @map("verified_at")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id            String    @id @default(cuid())
+  agencyId      String    @map("agency_id")
+  tierId        String    @map("tier_id")
+  amount        Float
+  transferId    String    @unique @map("transfer_id")
+  bankCode      String    @map("bank_code")
+  accountNumber String    @map("account_number")
+  status        String    @default("pending") // pending, success, failed
+  verifiedAt    DateTime? @map("verified_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -986,13 +1004,13 @@ model ConnectIPSTransaction {
 }
 
 model NepaliPaymentVerification {
-  id                String   @id @default(cuid())
-  agencyId          String   @map("agency_id")
-  provider          String   // khalti, esewa, connectips
-  transactionId     String   @map("transaction_id")
-  status            String   // pending, success, failed
-  verifiedAt        DateTime @map("verified_at")
-  createdAt         DateTime @default(now()) @map("created_at")
+  id            String   @id @default(cuid())
+  agencyId      String   @map("agency_id")
+  provider      String // khalti, esewa, connectips
+  transactionId String   @map("transaction_id")
+  status        String // pending, success, failed
+  verifiedAt    DateTime @map("verified_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -1003,13 +1021,13 @@ model NepaliPaymentVerification {
 }
 
 model FonepayQRCode {
-  id                String   @id @default(cuid())
-  agencyId          String   @unique @map("agency_id")
-  qrCodeUrl         String   @map("qr_code_url")
-  qrType            String   @default("static") // "static" or "dynamic"
-  isActive          Boolean  @default(false) @map("is_active")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(cuid())
+  agencyId  String   @unique @map("agency_id")
+  qrCodeUrl String   @map("qr_code_url")
+  qrType    String   @default("static") // "static" or "dynamic"
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -1018,19 +1036,19 @@ model FonepayQRCode {
 }
 
 model FonepayTransaction {
-  id                String   @id @default(cuid())
-  agencyId          String   @map("agency_id")
-  trekkerEmail      String   @map("trekker_email")
-  bookingId         String?  @map("booking_id")
-  amount            Float
-  feePercentage     Float    @map("fee_percentage")
-  feeAmount         Float    @map("fee_amount")
-  netAmount         Float    @map("net_amount")
-  transactionId     String?  @map("transaction_id")
-  status            String   @default("pending") // pending, success, failed
-  verifiedAt        DateTime? @map("verified_at")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id            String    @id @default(cuid())
+  agencyId      String    @map("agency_id")
+  trekkerEmail  String    @map("trekker_email")
+  bookingId     String?   @map("booking_id")
+  amount        Float
+  feePercentage Float     @map("fee_percentage")
+  feeAmount     Float     @map("fee_amount")
+  netAmount     Float     @map("net_amount")
+  transactionId String?   @map("transaction_id")
+  status        String    @default("pending") // pending, success, failed
+  verifiedAt    DateTime? @map("verified_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -1040,11 +1058,11 @@ model FonepayTransaction {
 }
 
 model TransactionFee {
-  id                String   @id @default(cuid())
-  tierId            String   @unique @map("tier_id")
-  feePercentage     Float    @map("fee_percentage")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  tierId        String   @unique @map("tier_id")
+  feePercentage Float    @map("fee_percentage")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("transaction_fees")
 }
