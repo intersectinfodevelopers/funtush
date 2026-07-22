@@ -3,6 +3,7 @@ import { requireAdmin } from "../../middleware/requireAdmin.middleware.js";
 import dashboardRouter from "./dashboard.route.js";
 import agencyManagementRouter from "./agencyManagement.route.js";
 import adCampaignsRouter from "./adCampaigns.route.js";
+import fraudRouter from "./fraud.route.js";
 
 const router = Router();
 
@@ -12,5 +13,6 @@ router.use(requireAdmin);
 router.use("/dashboard", dashboardRouter);
 router.use("/agencies", agencyManagementRouter);
 router.use("/ad-campaigns", adCampaignsRouter);
+router.use("/fraud", fraudRouter);
 
 export default router;
