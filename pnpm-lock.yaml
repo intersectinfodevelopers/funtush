@@ -129,6 +129,9 @@ importers:
       resend:
         specifier: ^6.17.2
         version: 6.17.2(@react-email/render@2.1.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))
+      stripe:
+        specifier: ^22.3.2
+        version: 22.3.2(@types/node@25.9.2)
       twilio:
         specifier: ^6.0.2
         version: 6.0.2
@@ -163,6 +166,9 @@ importers:
       '@types/pdfkit':
         specifier: ^0.17.6
         version: 0.17.6
+      '@types/stripe':
+        specifier: ^8.0.417
+        version: 8.0.417(@types/node@25.9.2)
       '@types/supertest':
         specifier: ^7.2.0
         version: 7.2.0
@@ -1725,6 +1731,10 @@ packages:
 
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
+
+  '@types/stripe@8.0.417':
+    resolution: {integrity: sha512-PTuqskh9YKNENnOHGVJBm4sM0zE8B1jZw1JIskuGAPkMB+OH236QeN8scclhYGPA4nG6zTtPXgwpXdp+HPDTVw==}
+    deprecated: This is a stub types definition. stripe provides its own type definitions, so you do not need this installed.
 
   '@types/superagent@8.1.10':
     resolution: {integrity: sha512-nbt4IWXABhW0jGmmpRzCFNlbmwCTzZ2gTUsNIr+X+ItdqPms+PAJZbWsNzpS2USqXjcoNLQcO6nXo60zcPQiIg==}
@@ -3875,6 +3885,15 @@ packages:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
 
+  stripe@22.3.2:
+    resolution: {integrity: sha512-O13QOvgEIQvDlTy6Ubb5kB980wpbhmoZNsgCXKILjCMZS67f+bW+6w99k3gnSi/N1lkryoj1WYdpGT5Wc5edjg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   strnum@2.3.0:
     resolution: {integrity: sha512-ums3KNd42PGyx5xaoVTO1mjU1bH3NpY4vsrVlnv9PNGqQj8wd7rJ6nEypLrJ7z5vxK5RP0yMLo6J/Gsm62DI5Q==}
 
@@ -5682,6 +5701,12 @@ snapshots:
       '@types/node': 25.9.2
 
   '@types/stack-utils@2.0.3': {}
+
+  '@types/stripe@8.0.417(@types/node@25.9.2)':
+    dependencies:
+      stripe: 22.3.2(@types/node@25.9.2)
+    transitivePeerDependencies:
+      - '@types/node'
 
   '@types/superagent@8.1.10':
     dependencies:
@@ -8167,6 +8192,10 @@ snapshots:
   strip-bom@3.0.0: {}
 
   strip-json-comments@3.1.1: {}
+
+  stripe@22.3.2(@types/node@25.9.2):
+    optionalDependencies:
+      '@types/node': 25.9.2
 
   strnum@2.3.0: {}
 
