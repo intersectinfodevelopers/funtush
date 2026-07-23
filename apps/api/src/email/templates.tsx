@@ -16,11 +16,11 @@ import {
 // ===== WELCOME/REGISTRATION =====
 interface WelcomeProps {
   firstName: string;
-  email: string;
+  _email: string;
   verificationUrl: string;
 }
 
-export const WelcomeEmail = ({ firstName, email, verificationUrl }: WelcomeProps) => (
+export const WelcomeEmail = ({ firstName, _email, verificationUrl }: WelcomeProps) => (
   <Html>
     <Head />
     <Body style={main}>
@@ -496,14 +496,14 @@ export const BreakGlassInitiatedEmail = ({
 
 // ===== BREAK-GLASS CLOSED =====
 interface BreakGlassClosedProps {
-  firstName: string;
+  _firstName: string;
   incidentType: string;
   resolution: string;
   closedTime: string;
 }
 
 export const BreakGlassClosedEmail = ({
-  firstName,
+  _firstName,
   incidentType,
   resolution,
   closedTime,
@@ -519,9 +519,6 @@ export const BreakGlassClosedEmail = ({
         <Section style={content}>
           <Text style={greeting} style={{ color: '#059669' }}>
             Emergency Resolved
-          </Text>
-          <Text style={body}>
-            Hi {firstName},
           </Text>
           <Text style={body}>
             The emergency break-glass incident has been resolved.
@@ -805,6 +802,91 @@ export const SafetyWarningEmail = ({
     </Html>
   );
 };
+
+// ===== TREK START REMINDER =====
+interface TrekStartReminderProps {
+  firstName: string;
+  trekName: string;
+  startDate: string;
+  departureTime: string;
+  meetingLocation: string;
+  guidePhone: string;
+  checklist: string[];
+}
+
+export const TrekStartReminderEmail = ({
+  firstName,
+  trekName,
+  startDate,
+  departureTime,
+  meetingLocation,
+  guidePhone,
+  checklist,
+}: TrekStartReminderProps) => (
+  <Html>
+    <Head />
+    <Body style={main}>
+      <Container style={container}>
+        <Section style={header}>
+          <Img src="https://funtush.com/logo.png" width="120" height="40" alt="Funtush" />
+        </Section>
+
+        <Section style={content}>
+          <Text style={greeting}>Trek Starting Tomorrow: {trekName}</Text>
+          <Text style={body}>
+            Hi {firstName},
+          </Text>
+          <Text style={body}>
+            Your <strong>{trekName}</strong> adventure starts tomorrow!
+          </Text>
+
+          <Section style={detailsCard}>
+            <Row>
+              <Column style={{ width: '50%' }}>
+                <Text style={detailLabel}>Date</Text>
+                <Text style={detailValue}>{startDate}</Text>
+              </Column>
+              <Column style={{ width: '50%' }}>
+                <Text style={detailLabel}>Time</Text>
+                <Text style={detailValue}>{departureTime}</Text>
+              </Column>
+            </Row>
+            <Hr style={hr} />
+            <Row>
+              <Column>
+                <Text style={detailLabel}>Meeting Point</Text>
+                <Text style={detailValue}>{meetingLocation}</Text>
+              </Column>
+            </Row>
+            <Hr style={hr} />
+            <Row>
+              <Column>
+                <Text style={detailLabel}>Guide Contact</Text>
+                <Text style={detailValue}>{guidePhone}</Text>
+              </Column>
+            </Row>
+          </Section>
+
+          <Text style={body}>Pre-Trek Checklist:</Text>
+          <ul style={listStyle}>
+            {checklist.map((item: string, index: number) => (
+              <li key={index} style={listItem}>
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          <Text style={body}>Looking forward to seeing you on the trail!</Text>
+          <Hr style={hr} />
+        </Section>
+
+        <Section style={footer}>
+          <Text style={footerText}>© 2024 Funtush. All rights reserved.</Text>
+        </Section>
+      </Container>
+    </Body>
+  </Html>
+);
 
 // ===== STYLES =====
 const main = {
