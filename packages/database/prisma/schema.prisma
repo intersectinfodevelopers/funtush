@@ -132,9 +132,6 @@ model Agency {
   tierId            String                 @map("tier_id")
   customDomain      String?                @map("custom_domain")
   mapsUrl           String?                @map("maps_url")
-  // Super-Admin-set marketplace boost. 0 = tier baseline (no boost). Any value
-  // > 0 raises this agency in marketplace ranking AND forces a mandatory,
-  // un-hideable "Sponsored" label (Backend Guide §6 + Correction #2).
   priorityOverride  Int                    @default(0) @map("priority_override")
   trialExpiresAt    DateTime?              @map("trial_expires_at")
   createdAt         DateTime               @default(now()) @map("created_at")
@@ -170,9 +167,6 @@ model Agency {
 
   fonepayQRCode       FonepayQRCode?
   fonepayTransactions FonepayTransaction[]
-
-  accounts       Account[]
-  journalEntries JournalEntry[]
 
   @@map("agencies")
 }
