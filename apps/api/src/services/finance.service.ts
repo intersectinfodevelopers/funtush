@@ -12,7 +12,7 @@ import { db } from "@funtush/database";
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Account codes from the default chart of accounts (accounting.seed.ts).
-const CASH_ACCOUNT_CODE = "1010"; // Cash on Hand — default money in/out account
+export const CASH_ACCOUNT_CODE = "1010"; // Cash on Hand — default money in/out account
 const DEFAULT_REVENUE_ACCOUNT_CODE = "4000"; // Trek Package Revenue
 
 // Expense category (API surface) → expense account code in the seeded chart.
@@ -60,7 +60,9 @@ const MAX_PAGE_LIMIT = 100;
 
 // ── shared validation helpers ────────────────────────────────────────────────
 
-const validateAmount = (amount: unknown): number => {
+// Exported because payroll (Day 3) and the financial statements (Day 4) must
+// validate money, currency and dates exactly the same way this file does.
+export const validateAmount = (amount: unknown): number => {
     const value = Number(amount);
 
     if (!Number.isFinite(value) || value <= 0) {
@@ -78,7 +80,7 @@ const validateAmount = (amount: unknown): number => {
 
 // Multi-currency (Day 2): every transaction stores an ISO-4217 style 3-letter
 // currency code alongside its amount. Defaults to NPR (Nepali Rupee).
-const validateCurrencyCode = (currencyCode?: string): string => {
+export const validateCurrencyCode = (currencyCode?: string): string => {
     if (currencyCode === undefined || currencyCode === null || currencyCode === "") {
         return "NPR";
     }
@@ -92,7 +94,7 @@ const validateCurrencyCode = (currencyCode?: string): string => {
     return code;
 };
 
-const validateEntryDate = (entryDate?: string): Date => {
+export const validateEntryDate = (entryDate?: string): Date => {
     if (!entryDate) {
         return new Date();
     }
@@ -109,8 +111,14 @@ const validateEntryDate = (entryDate?: string): Date => {
 // Look up an account by its chart code, scoped to the agency. Every lookup
 // goes through here so no journal line can ever point at another tenant's
 // account.
-const getAccountOrThrow = async (agencyId: string, code: string) => {
-    const account = await db.account.findFirst({
+export const getAccountOrThrow = async (
+    agencyId: string,
+    code: string,
+    // Payroll and income/expense all post inside a transaction; pass the
+    // transaction client so the lookup joins that same transaction.
+    client: Pick<typeof db, "account"> = db
+) => {
+    const account = await client.account.findFirst({
         where: {
             agencyId,
             code,

@@ -37,6 +37,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS: {
 
   // ── Expenses ───────────────────────────────────────
   { code: "5000", name: "Guide Payroll", type: "EXPENSE" },
+  // Office/back-office staff are paid out of a separate account from guides so
+  // the P&L can show trek delivery cost apart from administrative cost (Day 3).
+  { code: "5050", name: "Staff Salaries", type: "EXPENSE" },
   { code: "5100", name: "Porter Wages", type: "EXPENSE" },
   { code: "5200", name: "Permit Fees", type: "EXPENSE" },
   { code: "5300", name: "Equipment Purchase & Maintenance", type: "EXPENSE" },
