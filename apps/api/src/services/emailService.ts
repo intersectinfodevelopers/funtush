@@ -91,8 +91,7 @@ class EmailService {
         timestamp: new Date(),
       };
     } catch (_error) {
-      const errorMessage =
-        _error instanceof Error ? _error.message : String(_error);
+      const errorMessage = _error instanceof Error ? _error.message : String(_error);
       console.error(`[EMAIL ERROR] ${options.template}:`, errorMessage);
 
       return {
@@ -102,6 +101,8 @@ class EmailService {
       };
     }
   }
+
+  // ===== EXISTING METHODS (DAYS 1-3) =====
 
   async sendInquiryReceived(
     to: string,
@@ -243,6 +244,260 @@ class EmailService {
     });
   }
 
+  // ===== DAY 4 NEW METHODS =====
+
+  async sendWelcomeEmail(
+    to: string,
+    data: {
+      firstName: string;
+      email: string;
+      verificationUrl: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'Welcome to Funtush',
+      template: 'welcome',
+      data,
+      priority: 'HIGH',
+    });
+  }
+
+  async sendKYCSubmittedEmail(
+    to: string,
+    data: {
+      firstName: string;
+      submissionDate: string;
+      referenceId: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'KYC Verification Submitted',
+      template: 'kyc-submitted',
+      data,
+      priority: 'NORMAL',
+    });
+  }
+
+  async sendKYCApprovedEmail(
+    to: string,
+    data: {
+      firstName: string;
+      approvalDate: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'KYC Verification Approved',
+      template: 'kyc-approved',
+      data,
+      priority: 'HIGH',
+    });
+  }
+
+  async sendKYCRejectedEmail(
+    to: string,
+    data: {
+      firstName: string;
+      reason: string;
+      resubmitUrl: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'KYC Verification - Action Required',
+      template: 'kyc-rejected',
+      data,
+      priority: 'HIGH',
+    });
+  }
+
+  async sendPaymentConfirmationEmail(
+    to: string,
+    data: {
+      firstName: string;
+      transactionId: string;
+      amount: string;
+      date: string;
+      invoiceUrl: string;
+      description: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'Payment Confirmed',
+      template: 'payment-confirmation',
+      data,
+      priority: 'HIGH',
+    });
+  }
+
+  async sendRenewalReminderEmail(
+    to: string,
+    data: {
+      firstName: string;
+      subscriptionType: string;
+      expiryDate: string;
+      daysRemaining: number;
+      renewalUrl: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: `Subscription Renewal Reminder - ${data.daysRemaining} days left`,
+      template: 'renewal-reminder',
+      data,
+      priority: 'NORMAL',
+    });
+  }
+
+  async sendPaymentFailedEmail(
+    to: string,
+    data: {
+      firstName: string;
+      amount: string;
+      reason: string;
+      retryUrl: string;
+      attemptDate: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'Payment Failed - Action Required',
+      template: 'payment-failed',
+      data,
+      priority: 'HIGH',
+    });
+  }
+
+  async sendBreakGlassInitiatedEmail(
+    to: string | string[],
+    data: {
+      firstName: string;
+      incidentType: string;
+      timestamp: string;
+      location: string;
+      statusUrl: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'EMERGENCY: Break-Glass Activated',
+      template: 'breakglass-initiated',
+      data,
+      priority: 'HIGH',
+      replyTo: process.env.EMERGENCY_EMAIL,
+    });
+  }
+
+  async sendBreakGlassClosedEmail(
+    to: string | string[],
+    data: {
+      firstName: string;
+      incidentType: string;
+      resolution: string;
+      closedTime: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: 'Emergency Resolved - Break-Glass Closed',
+      template: 'breakglass-closed',
+      data,
+      priority: 'NORMAL',
+    });
+  }
+
+  async sendBugStatusChangedEmail(
+    to: string,
+    data: {
+      firstName: string;
+      bugId: string;
+      title: string;
+      oldStatus: string;
+      newStatus: string;
+      changeTime: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: `Bug Report Status Updated: ${data.bugId}`,
+      template: 'bug-status-changed',
+      data,
+      priority: 'NORMAL',
+    });
+  }
+
+  async sendAdCampaignDecisionEmail(
+    to: string,
+    data: {
+      firstName: string;
+      campaignName: string;
+      status: 'APPROVED' | 'REJECTED';
+      feedback?: string;
+      decisionDate: string;
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: `Ad Campaign ${data.status}: ${data.campaignName}`,
+      template: 'ad-campaign-decision',
+      data,
+      priority: data.status === 'APPROVED' ? 'HIGH' : 'NORMAL',
+    });
+  }
+
+  async sendSafetyWarningEmail(
+    to: string | string[],
+    data: {
+      firstName: string;
+      warningType: string;
+      severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+      description: string;
+      actionRequired: string;
+      timestamp: string;
+    }
+  ): Promise<EmailResult> {
+    const priorityMap = {
+      LOW: 'NORMAL',
+      MEDIUM: 'NORMAL',
+      HIGH: 'HIGH',
+      CRITICAL: 'HIGH',
+    };
+
+    return this.send({
+      to,
+      subject: `Safety Warning: ${data.warningType}`,
+      template: 'safety-warning',
+      data,
+      priority: priorityMap[data.severity] as 'HIGH' | 'NORMAL',
+    });
+  }
+
+  async sendTrekStartReminderEmail(
+    to: string,
+    data: {
+      firstName: string;
+      trekName: string;
+      startDate: string;
+      departureTime: string;
+      meetingLocation: string;
+      guidePhone: string;
+      checklist: string[];
+    }
+  ): Promise<EmailResult> {
+    return this.send({
+      to,
+      subject: `Trek Starting Tomorrow: ${data.trekName}`,
+      template: 'trek-start-reminder',
+      data,
+      priority: 'HIGH',
+    });
+  }
+
+  // ===== TEMPLATE HTML RENDERER =====
+
   private getTemplateHTML(template: string, data: EmailTemplateData): string {
     const templates: { [key: string]: string } = {
       'inquiry-received': `
@@ -329,12 +584,163 @@ class EmailService {
         <hr>
         <p><small>This email contains sensitive information. Do not share publicly.</small></p>
       `,
+      'welcome': `
+        <h1>Welcome to Funtush, ${data.firstName}!</h1>
+        <p>We're thrilled to have you join our community of adventure seekers and experienced guides.</p>
+        <p>To get started, please verify your email address by clicking the button below:</p>
+        <a href="${data.verificationUrl}" style="background: #059669; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">Verify Email Address</a>
+        <p>If you didn't create this account, please ignore this email.</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'kyc-submitted': `
+        <h1>KYC Verification Submitted</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>We've received your Know Your Customer (KYC) verification documents.</p>
+        <p><strong>Submission Date:</strong> ${data.submissionDate}</p>
+        <p><strong>Reference ID:</strong> ${data.referenceId}</p>
+        <p>Our team will review your documents and get back to you within 24-48 hours.</p>
+        <p>You can track the status of your KYC verification in your account dashboard.</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'kyc-approved': `
+        <h1>KYC Verification Approved</h1>
+        <p>Hi ${data.firstName},</p>
+        <p><strong style="color: #059669;">Congratulations! Your KYC verification has been approved.</strong></p>
+        <p><strong>Approval Date:</strong> ${data.approvalDate}</p>
+        <p>You now have full access to all Funtush features and can:</p>
+        <ul>
+          <li>Create and publish trek listings</li>
+          <li>Accept bookings from trekkers</li>
+          <li>Process payments</li>
+          <li>Access analytics and reporting</li>
+        </ul>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'kyc-rejected': `
+        <h1>KYC Verification - Action Required</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>Unfortunately, your KYC verification could not be approved at this time.</p>
+        <p><strong>Reason:</strong> ${data.reason}</p>
+        <p>Please review the reason above and resubmit your documents. Make sure:</p>
+        <ul>
+          <li>Documents are clear and readable</li>
+          <li>All required fields are filled</li>
+          <li>Information matches your account details</li>
+        </ul>
+        <a href="${data.resubmitUrl}" style="background: #059669; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">Resubmit Documents</a>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'payment-confirmation': `
+        <h1>Payment Confirmed</h1>
+        <p>Hi ${data.firstName},</p>
+        <p><strong style="color: #059669;">Your payment has been successfully received.</strong></p>
+        <p><strong>Amount:</strong> ${data.amount}</p>
+        <p><strong>Date:</strong> ${data.date}</p>
+        <p><strong>Transaction ID:</strong> ${data.transactionId}</p>
+        <p><strong>Description:</strong> ${data.description}</p>
+        <a href="${data.invoiceUrl}" style="background: #059669; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">Download Invoice</a>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'renewal-reminder': `
+        <h1>Subscription Renewal Reminder</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>Your ${data.subscriptionType} subscription expires in ${data.daysRemaining} days.</p>
+        <p><strong>Subscription Type:</strong> ${data.subscriptionType}</p>
+        <p><strong>Expires On:</strong> ${data.expiryDate}</p>
+        <p>To avoid any service interruption, please renew your subscription now.</p>
+        <a href="${data.renewalUrl}" style="background: #059669; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">Renew Subscription</a>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'payment-failed': `
+        <h1>Payment Failed - Action Required</h1>
+        <p>Hi ${data.firstName},</p>
+        <p><strong style="color: #dc2626;">We couldn't process your payment on ${data.attemptDate}.</strong></p>
+        <p><strong>Amount:</strong> ${data.amount}</p>
+        <p><strong>Reason:</strong> ${data.reason}</p>
+        <p>Please update your payment method and try again to avoid service interruption.</p>
+        <a href="${data.retryUrl}" style="background: #059669; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">Retry Payment</a>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'breakglass-initiated': `
+        <h1 style="color: #dc2626;">EMERGENCY BREAK-GLASS ACTIVATED</h1>
+        <p>An emergency break-glass protocol has been activated.</p>
+        <p><strong>Incident Type:</strong> ${data.incidentType}</p>
+        <p><strong>Time:</strong> ${data.timestamp}</p>
+        <p><strong>Location:</strong> ${data.location}</p>
+        <a href="${data.statusUrl}" style="background: #dc2626; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">View Status</a>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'breakglass-closed': `
+        <h1 style="color: #059669;">Emergency Resolved</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>The emergency break-glass incident has been resolved.</p>
+        <p><strong>Incident Type:</strong> ${data.incidentType}</p>
+        <p><strong>Closed At:</strong> ${data.closedTime}</p>
+        <p><strong>Resolution:</strong> ${data.resolution}</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'bug-status-changed': `
+        <h1>Bug Report Status Updated</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>A bug you reported has been updated.</p>
+        <p><strong>Bug ID:</strong> ${data.bugId}</p>
+        <p><strong>Title:</strong> ${data.title}</p>
+        <p><strong>Previous Status:</strong> ${data.oldStatus}</p>
+        <p><strong>New Status:</strong> ${data.newStatus}</p>
+        <p><strong>Updated At:</strong> ${data.changeTime}</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'ad-campaign-decision': `
+        <h1>Ad Campaign ${data.status === 'APPROVED' ? 'Approved' : 'Rejected'}</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>Your ad campaign has been ${data.status === 'APPROVED' ? 'approved and is now live' : 'rejected'}.</p>
+        <p><strong>Campaign Name:</strong> ${data.campaignName}</p>
+        <p><strong>Status:</strong> <span style="color: ${data.status === 'APPROVED' ? '#059669' : '#dc2626'}">${data.status}</span></p>
+        ${data.feedback ? `<p><strong>Feedback:</strong> ${data.feedback}</p>` : ''}
+        <p><strong>Decision Date:</strong> ${data.decisionDate}</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'safety-warning': `
+        <h1 style="color: #ef4444;">Safety Warning: ${data.warningType}</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>We've detected a safety concern that requires your attention.</p>
+        <p><strong>Severity:</strong> ${data.severity}</p>
+        <p><strong>Detected At:</strong> ${data.timestamp}</p>
+        <p><strong>Description:</strong> ${data.description}</p>
+        <p><strong>Action Required:</strong> ${data.actionRequired}</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
+      'trek-start-reminder': `
+        <h1>Trek Starting Tomorrow: ${data.trekName}</h1>
+        <p>Hi ${data.firstName},</p>
+        <p>Your <strong>${data.trekName}</strong> adventure starts tomorrow!</p>
+        <p><strong>Date:</strong> ${data.startDate}</p>
+        <p><strong>Time:</strong> ${data.departureTime}</p>
+        <p><strong>Meeting Point:</strong> ${data.meetingLocation}</p>
+        <p><strong>Guide Contact:</strong> ${data.guidePhone}</p>
+        <h3>Pre-Trek Checklist:</h3>
+        <ul>
+          ${data.checklist.map((item: string) => `<li>${item}</li>`).join('')}
+        </ul>
+        <p>Looking forward to seeing you on the trail!</p>
+        <hr>
+        <p><small>© 2024 ${this.brandName}. All rights reserved.</small></p>
+      `,
     };
 
-    return (
-      templates[template] ||
-      `<p>Unknown template: ${template}</p>`
-    );
+    return templates[template] || `<p>Unknown template: ${template}</p>`;
   }
 }
 
