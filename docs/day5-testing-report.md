@@ -64,7 +64,7 @@ the service uses**. There are two Prisma paths in this repo:
 In the real module, `db` and `prisma` are the **same object** (`export const db = prisma`
 in `packages/database/src/db.ts`). So every mock factory returns one fake `client`
 object under **both** the `db` and `prisma` keys, and `redis` where needed. Getting this
-right is what stops a test from accidentally booting a real Prisma client.
+right is what stops a test from accidentally booting a real Prisma client.this is a test
 
 ```ts
 vi.mock("@funtush/database", () => {
