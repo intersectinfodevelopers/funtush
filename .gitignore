@@ -54,3 +54,14 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+
+
+
+
+
+# Certbot
+certbot/conf/
+certbot/www/
+
+# Environment secrets
+.env

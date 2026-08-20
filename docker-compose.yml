@@ -1,5 +1,5 @@
-
 services:
+
   postgres:
     image: postgres:16-alpine
     container_name: funtush-postgres
@@ -8,8 +8,6 @@ services:
       POSTGRES_USER: funtush
       POSTGRES_PASSWORD: funtush
       POSTGRES_DB: funtush
-    ports:
-      - "5432:5432"
     volumes:
       - funtush_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,13 +15,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
     container_name: funtush-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - funtush_redis_data:/data
     healthcheck:
@@ -31,20 +29,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - backend
 
   mongo:
     image: mongo:7
     container_name: funtush-mongo
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     volumes:
       - funtush_mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping')"
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - backend
 
   meilisearch:
     image: getmeili/meilisearch:v1.10
@@ -53,8 +60,6 @@ services:
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
       MEILI_NO_ANALYTICS: "true"
-    ports:
-      - "7700:7700"
     volumes:
       - funtush_meili_data:/meili_data
     healthcheck:
@@ -67,6 +72,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks:
+      - backend
 
   api:
     build:
@@ -74,6 +81,7 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: funtush-api
     restart: unless-stopped
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,8 +91,10 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+
     env_file:
       - .env
+
     environment:
       DATABASE_URL: postgresql://funtush:funtush@postgres:5432/funtush?schema=public
       REDIS_URL: redis://redis:6379
@@ -92,11 +102,56 @@ services:
       MEILI_HOST: http://meilisearch:7700
       PORT: 4000
       NODE_ENV: production
+
+    expose:
+      - "4000"
+
+    networks:
+      - backend
+      - frontend
+
+  nginx:
+    image: nginx:alpine
+    container_name: funtush-nginx
+    restart: unless-stopped
+
+    depends_on:
+      - api
+
     ports:
-      - "4000:4000"
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+
+    networks:
+      - frontend
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: funtush-certbot
+
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+
+    networks:
+      - frontend
+
 
 volumes:
   funtush_postgres_data:
   funtush_redis_data:
   funtush_mongo_data:
   funtush_meili_data:
+
+
+networks:
+  backend:
+    driver: bridge
+
+  frontend:
+    driver: bridge
