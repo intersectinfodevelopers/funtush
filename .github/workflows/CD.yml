@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     # Only continue when the workflow that triggered this run passed.
-    # Step 1 below verifies that all 3 workflows passed for the same commit.
+    # Step 1 verifies all 3 workflows passed for the same commit.
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     permissions:
@@ -113,7 +113,7 @@ jobs:
       # ============================================================
       # 4. Build Docker image
       #
-      # Dockerfile location:
+      # Dockerfile:
       # apps/api/Dockerfile
       #
       # Build context:
@@ -173,7 +173,7 @@ jobs:
           echo ""
           echo "Pushing:"
           echo "$IMAGE:latest"
-OBOBOB
+
           docker push "$IMAGE:latest"
 
           echo ""
@@ -222,6 +222,7 @@ jobs:
 
           APP_DIR="/home/rituraj/app/funtush"
           CONTAINER_NAME="funtush-api"
+          NGINX_CONTAINER="funtush-nginx"
 
           cd "$APP_DIR"
 
@@ -258,7 +259,7 @@ jobs:
 
 
           # ======================================================
-          # 9. Pull new image
+          # 9. Pull new image from Docker Hub
           # ======================================================
 
           echo ""
@@ -301,6 +302,19 @@ jobs:
 
           # ======================================================
           # 12. Health check
+          #
+          # Port 4000 is NOT exposed on the VPS.
+          #
+          # Therefore:
+          #
+          # Nginx container
+          #       ↓
+          # funtush-api:4000
+          #       ↓
+          # /health
+          #
+          # This verifies the same Docker networking path
+          # used by production Nginx.
           # ======================================================
 
           echo ""
@@ -308,11 +322,12 @@ jobs:
           echo "HEALTH CHECK"
           echo "=========================================="
 
-          if curl \
-            --fail \
-            --silent \
-            --show-error \
-            http://localhost:4000/health
+          if docker exec \
+              "$NGINX_CONTAINER" \
+              wget \
+              -qO- \
+              "http://$CONTAINER_NAME:4000/health" \
+              >/dev/null
           then
 
             echo ""
@@ -428,11 +443,12 @@ jobs:
             echo "ROLLBACK HEALTH CHECK"
             echo "=========================================="
 
-            if curl \
-              --fail \
-              --silent \
-              --show-error \
-              http://localhost:4000/health
+            if docker exec \
+                "$NGINX_CONTAINER" \
+                wget \
+                -qO- \
+                "http://$CONTAINER_NAME:4000/health" \
+                >/dev/null
             then
 
               echo ""
@@ -447,6 +463,7 @@ jobs:
                 -f '{{.Config.Image}}' \
                 "$CONTAINER_NAME"
 
+              # Deployment failed, but rollback succeeded.
               exit 1
 
             else
