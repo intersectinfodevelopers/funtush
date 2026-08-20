@@ -1,12 +1,29 @@
-**/node_modules
-**/.turbo
-**/dist
-**/coverage
-.git
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Git
+.git/
+.github/
+
+# Environment files
 .env
-**/.env
-!**/.env.example
-Dockerfile
-docker-compose.yml
-.dockerignore
+.env.*
+!.env.example
+
+# Production/runtime files
+certbot/
+nginx/
+monitoring/
+
+# Logs
+*.log
+
+# Documentation
 *.md
+
+# Build output
+dist/
+build/
+.next/
+coverage/

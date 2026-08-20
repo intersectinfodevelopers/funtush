@@ -4,40 +4,51 @@ services:
     image: postgres:16-alpine
     container_name: funtush-postgres
     restart: unless-stopped
+
     environment:
       POSTGRES_USER: funtush
       POSTGRES_PASSWORD: funtush
       POSTGRES_DB: funtush
+
     volumes:
       - funtush_postgres_data:/var/lib/postgresql/data
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U funtush -d funtush"]
       interval: 5s
       timeout: 5s
       retries: 10
+
     networks:
       - backend
+
 
   redis:
     image: redis:7-alpine
     container_name: funtush-redis
     restart: unless-stopped
+
     volumes:
       - funtush_redis_data:/data
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
+
     networks:
       - backend
+
 
   mongo:
     image: mongo:7
     container_name: funtush-mongo
     restart: unless-stopped
+
     volumes:
       - funtush_mongo_data:/data/db
+
     healthcheck:
       test:
         [
@@ -50,18 +61,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
     networks:
       - backend
+
 
   meilisearch:
     image: getmeili/meilisearch:v1.10
     container_name: funtush-meilisearch
     restart: unless-stopped
+
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
       MEILI_NO_ANALYTICS: "true"
+
     volumes:
       - funtush_meili_data:/meili_data
+
     healthcheck:
       test:
         [
@@ -72,13 +88,13 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
     networks:
       - backend
 
+
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    image: ${FUNTUSH_API_IMAGE:-funtush-api:latest}
     container_name: funtush-api
     restart: unless-stopped
 
@@ -110,6 +126,7 @@ services:
       - backend
       - frontend
 
+
   nginx:
     image: nginx:alpine
     container_name: funtush-nginx
@@ -129,6 +146,7 @@ services:
 
     networks:
       - frontend
+
 
   certbot:
     image: certbot/certbot:latest

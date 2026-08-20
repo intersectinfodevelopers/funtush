@@ -1,84 +1,483 @@
-name: Deploy to Production
+name: CD Production
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Type "deploy" to confirm production deployment'
-        required: true
-        default: ''
+  workflow_run:
+    workflows:
+      - "CI Tests"
+      - "Lint Check"
+      - "Test Check"
+    types:
+      - completed
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+
+    # Only continue when the workflow that triggered this run passed.
+    # Step 1 below verifies that all 3 workflows passed for the same commit.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    permissions:
+      actions: read
+      contents: read
 
     steps:
-      - name: Validate confirmation input
-        if: ${{ github.event.inputs.confirm != 'deploy' }}
-        run: |
-          echo "::error::You must type 'deploy' to confirm. Aborting."
-          exit 1
 
-      - name: Set up SSH key
+      # ============================================================
+      # 1. Verify all 3 workflows passed for the SAME commit
+      # ============================================================
+
+      - name: Verify CI, Lint and Test
+        env:
+          GH_TOKEN: ${{ github.token }}
+
         run: |
-          set -euo pipefail
+          set -e
+
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          REPO="${{ github.repository }}"
+
+          echo "=========================================="
+          echo "Checking commit"
+          echo "$SHA"
+          echo "=========================================="
+
+          get_status() {
+            gh run list \
+              --repo "$REPO" \
+              --workflow "$1" \
+              --commit "$SHA" \
+              --limit 1 \
+              --json status,conclusion \
+              --jq '
+                if length == 0
+                then "missing"
+                elif .[0].status != "completed"
+                then "running"
+                else .[0].conclusion
+                end
+              '
+          }
+
+          CI_STATUS=$(get_status "CI Tests")
+          LINT_STATUS=$(get_status "Lint Check")
+          TEST_STATUS=$(get_status "Test Check")
+
+          echo ""
+          echo "CI Tests:   $CI_STATUS"
+          echo "Lint Check: $LINT_STATUS"
+          echo "Test Check: $TEST_STATUS"
+          echo ""
+
+          if [ "$CI_STATUS" != "success" ]; then
+            echo "CI Tests did not pass."
+            exit 1
+          fi
+
+          if [ "$LINT_STATUS" != "success" ]; then
+            echo "Lint Check did not pass."
+            exit 1
+          fi
+
+          if [ "$TEST_STATUS" != "success" ]; then
+            echo "Test Check did not pass."
+            exit 1
+          fi
+
+          echo "=========================================="
+          echo "ALL 3 CHECKS PASSED"
+          echo "=========================================="
+
+
+      # ============================================================
+      # 2. Checkout exact commit that passed CI
+      # ============================================================
+
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+
+      # ============================================================
+      # 3. Login to Docker Hub
+      # ============================================================
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+
+      # ============================================================
+      # 4. Build Docker image
+      #
+      # Dockerfile location:
+      # apps/api/Dockerfile
+      #
+      # Build context:
+      # repository root
+      # ============================================================
+
+      - name: Build Docker image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+
+        run: |
+          set -e
+
+          IMAGE="$DOCKERHUB_USERNAME/funtush-api"
+
+          echo "=========================================="
+          echo "BUILDING DOCKER IMAGE"
+          echo "=========================================="
+
+          echo "Image:"
+          echo "$IMAGE:$SHA"
+
+          docker build \
+            -f apps/api/Dockerfile \
+            -t "$IMAGE:$SHA" \
+            -t "$IMAGE:latest" \
+            .
+
+
+      # ============================================================
+      # 5. Push Docker images to Docker Hub
+      #
+      # SHA image = immutable deployment version
+      # latest     = convenience tag
+      # ============================================================
+
+      - name: Push Docker image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+
+        run: |
+          set -e
+
+          IMAGE="$DOCKERHUB_USERNAME/funtush-api"
+
+          echo "=========================================="
+          echo "PUSHING DOCKER IMAGES"
+          echo "=========================================="
+
+          echo "Pushing:"
+          echo "$IMAGE:$SHA"
+
+          docker push "$IMAGE:$SHA"
+
+          echo ""
+          echo "Pushing:"
+          echo "$IMAGE:latest"
+OBOBOB
+          docker push "$IMAGE:latest"
+
+          echo ""
+          echo "Docker images pushed successfully."
+
+
+      # ============================================================
+      # 6. Setup SSH
+      # ============================================================
+
+      - name: Setup SSH
+        run: |
+          set -e
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy application
+          echo "${{ secrets.SERVER_SSH_KEY }}" \
+            > ~/.ssh/id_ed25519
+
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan -H \
+            "${{ secrets.SERVER_HOST }}" \
+            >> ~/.ssh/known_hosts
+
+
+      # ============================================================
+      # 7. Deploy to VPS
+      # ============================================================
+
+      - name: Deploy to VPS
         env:
-          SSH_HOST: ${{ secrets.SERVER_HOST }}
-          SSH_USER: ${{ secrets.SERVER_USER }}
-          APP_DIR: /home/rituraj/app/funtush
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/funtush-api
+          SHA: ${{ github.event.workflow_run.head_sha }}
+
         run: |
-          set -euo pipefail
+          set -e
 
-          ssh -i ~/.ssh/id_rsa \
-              -o ConnectTimeout=10 \
-              -o StrictHostKeyChecking=yes \
-              "$SSH_USER@$SSH_HOST" bash -s <<EOF
-            set -euo pipefail
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" \
+            "IMAGE='$IMAGE' SHA='$SHA' bash -s" <<'EOF'
 
-            echo "================================"
-            echo "Connected as: \$(whoami)"
-            echo "Host: \$(hostname)"
-            echo "================================"
+          set -e
 
-            cd "$APP_DIR"
+          APP_DIR="/home/rituraj/app/funtush"
+          CONTAINER_NAME="funtush-api"
 
-            echo "Pulling latest changes..."
-            git fetch origin main
-            git reset --hard origin/main
+          cd "$APP_DIR"
 
-            echo "Building containers..."
-            docker compose build
+          echo ""
+          echo "=========================================="
+          echo "FUNTUSH PRODUCTION DEPLOYMENT"
+          echo "=========================================="
 
-            echo "Starting services..."
-            docker compose up -d
+          echo ""
+          echo "New image:"
+          echo "$IMAGE:$SHA"
 
-            echo "Cleaning up dangling images..."
-            docker image prune -f
 
-            echo "================================"
-            echo "Deployment finished successfully"
-            echo "================================"
+          # ======================================================
+          # 8. Save currently running image
+          # ======================================================
+
+          echo ""
+          echo "=========================================="
+          echo "SAVING CURRENT IMAGE"
+          echo "=========================================="
+
+          CURRENT_IMAGE=$(docker inspect \
+            -f '{{.Config.Image}}' \
+            "$CONTAINER_NAME" \
+            2>/dev/null || true)
+
+          echo "Current image:"
+          echo "${CURRENT_IMAGE:-none}"
+
+          if [ -n "$CURRENT_IMAGE" ]; then
+            echo "$CURRENT_IMAGE" > .previous-image
+          fi
+
+
+          # ======================================================
+          # 9. Pull new image
+          # ======================================================
+
+          echo ""
+          echo "=========================================="
+          echo "PULLING NEW IMAGE"
+          echo "=========================================="
+
+          docker pull "$IMAGE:$SHA"
+
+
+          # ======================================================
+          # 10. Deploy ONLY API
+          #
+          # Nginx, PostgreSQL, Redis, MongoDB and Meilisearch
+          # are NOT stopped or recreated.
+          # ======================================================
+
+          echo ""
+          echo "=========================================="
+          echo "DEPLOYING API"
+          echo "=========================================="
+
+          export FUNTUSH_API_IMAGE="$IMAGE:$SHA"
+
+          docker compose up \
+            -d \
+            --no-deps \
+            api
+
+
+          # ======================================================
+          # 11. Wait for application
+          # ======================================================
+
+          echo ""
+          echo "Waiting for API..."
+
+          sleep 10
+
+
+          # ======================================================
+          # 12. Health check
+          # ======================================================
+
+          echo ""
+          echo "=========================================="
+          echo "HEALTH CHECK"
+          echo "=========================================="
+
+          if curl \
+            --fail \
+            --silent \
+            --show-error \
+            http://localhost:4000/health
+          then
+
+            echo ""
+            echo "=========================================="
+            echo "DEPLOYMENT SUCCESSFUL"
+            echo "=========================================="
+
+            echo ""
+            echo "Running container:"
+            docker ps --filter "name=$CONTAINER_NAME"
+
+            echo ""
+            echo "Running image:"
+
+            docker inspect \
+              -f '{{.Config.Image}}' \
+              "$CONTAINER_NAME"
+
+            exit 0
+
+          fi
+
+
+          # ======================================================
+          # 13. Health check failed
+          # ======================================================
+
+          echo ""
+          echo "=========================================="
+          echo "HEALTH CHECK FAILED"
+          echo "=========================================="
+
+          echo ""
+          echo "Recent API logs:"
+
+          docker logs \
+            --tail 100 \
+            "$CONTAINER_NAME" || true
+
+
+          # ======================================================
+          # 14. Stop failed API
+          # ======================================================
+
+          echo ""
+          echo "Stopping failed API..."
+
+          docker compose stop api || true
+
+          docker compose rm \
+            -f \
+            api || true
+
+
+          # ======================================================
+          # 15. Rollback to previous image
+          # ======================================================
+
+          if [ -n "$CURRENT_IMAGE" ]; then
+
+            echo ""
+            echo "=========================================="
+            echo "ROLLBACK"
+            echo "=========================================="
+
+            echo "Previous image:"
+            echo "$CURRENT_IMAGE"
+
+
+            # --------------------------------------------------
+            # Pull previous image
+            # --------------------------------------------------
+
+            echo ""
+            echo "Pulling previous image..."
+
+            docker pull "$CURRENT_IMAGE"
+
+
+            # --------------------------------------------------
+            # Set previous image for Compose
+            # --------------------------------------------------
+
+            export FUNTUSH_API_IMAGE="$CURRENT_IMAGE"
+
+
+            # --------------------------------------------------
+            # Start previous API
+            # --------------------------------------------------
+
+            echo ""
+            echo "Starting previous API..."
+
+            docker compose up \
+              -d \
+              --no-deps \
+              api
+
+
+            # --------------------------------------------------
+            # Wait for rollback
+            # --------------------------------------------------
+
+            sleep 10
+
+
+            # --------------------------------------------------
+            # Rollback health check
+            # --------------------------------------------------
+
+            echo ""
+            echo "=========================================="
+            echo "ROLLBACK HEALTH CHECK"
+            echo "=========================================="
+
+            if curl \
+              --fail \
+              --silent \
+              --show-error \
+              http://localhost:4000/health
+            then
+
+              echo ""
+              echo "=========================================="
+              echo "ROLLBACK SUCCESSFUL"
+              echo "=========================================="
+
+              echo ""
+              echo "Restored image:"
+
+              docker inspect \
+                -f '{{.Config.Image}}' \
+                "$CONTAINER_NAME"
+
+              exit 1
+
+            else
+
+              echo ""
+              echo "=========================================="
+              echo "ROLLBACK FAILED"
+              echo "=========================================="
+
+              echo ""
+              echo "API logs:"
+
+              docker logs \
+                --tail 100 \
+                "$CONTAINER_NAME" || true
+
+              exit 1
+
+            fi
+
+          else
+
+            echo ""
+            echo "=========================================="
+            echo "NO PREVIOUS IMAGE FOUND"
+            echo "=========================================="
+
+            echo "Automatic rollback is not possible."
+
+            exit 1
+
+          fi
+
           EOF
-
-      - name: Verify deployment health
-        env:
-          SSH_HOST: ${{ secrets.SERVER_HOST }}
-          SSH_USER: ${{ secrets.SERVER_USER }}
-        run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/id_rsa \
-              -o ConnectTimeout=10 \
-              "$SSH_USER@$SSH_HOST" \
-              "docker compose -f /home/rituraj/app/funtush/docker-compose.yml ps"
-
-      - name: Clean up SSH key
-        if: always()
-        run: rm -f ~/.ssh/id_rsa
