@@ -1,26 +1,48 @@
 name: Deploy to Production
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Type "deploy" to confirm production deployment'
-        required: true
-        default: ''
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
 
 jobs:
-  deploy:
+  build-and-push-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
-      - name: Validate confirmation input
-        if: ${{ github.event.inputs.confirm != 'deploy' }}
-        run: |
-          echo "::error::You must type 'deploy' to confirm. Aborting."
-          exit 1
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up SSH key
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push API image
+        env:
+          IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME || 'rituraj4164/funtush-api' }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build -f apps/api/Dockerfile -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .
+          docker push "$IMAGE_NAME:$IMAGE_TAG"
+          docker push "$IMAGE_NAME:latest"
+
+  deploy:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Set up SSH
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -29,56 +51,96 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy application
+      - name: Deploy application with minimal downtime and automatic rollback
         env:
           SSH_HOST: ${{ secrets.SERVER_HOST }}
           SSH_USER: ${{ secrets.SERVER_USER }}
-          APP_DIR: /home/rituraj/app/funtush
+          APP_DIR: ${{ vars.APP_DIR || '/home/rituraj/app/funtush' }}
+          HEALTH_URL: https://develop.shirijanga.com/health
+          IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME || 'rituraj4164/funtush-api' }}
         run: |
           set -euo pipefail
 
           ssh -i ~/.ssh/id_rsa \
-              -o ConnectTimeout=10 \
-              -o StrictHostKeyChecking=yes \
-              "$SSH_USER@$SSH_HOST" bash -s <<EOF
+            -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "APP_DIR='$APP_DIR' HEALTH_URL='$HEALTH_URL' IMAGE_NAME='$IMAGE_NAME' bash -s" <<'EOF'
             set -euo pipefail
 
-            echo "================================"
-            echo "Connected as: \$(whoami)"
-            echo "Host: \$(hostname)"
-            echo "================================"
+            echo "=================================="
+            echo "Connected as: $(whoami)"
+            echo "Host: $(hostname)"
+            echo "=================================="
+
+            if [ ! -d "$APP_DIR" ]; then
+              echo "App directory does not exist on the server: $APP_DIR"
+              exit 1
+            fi
 
             cd "$APP_DIR"
 
-            echo "Pulling latest changes..."
+            PREVIOUS_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+
+            rollback() {
+              echo "Deployment failed. Rolling back to the previous good version..."
+
+              if [ -n "${PREVIOUS_COMMIT:-}" ] && git rev-parse --verify "$PREVIOUS_COMMIT" >/dev/null 2>&1; then
+                git fetch origin main >/dev/null 2>&1 || true
+                git reset --hard "$PREVIOUS_COMMIT"
+                git clean -fd
+                docker compose up -d --no-deps --remove-orphans --force-recreate
+
+                if curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null 2>&1; then
+                  echo "Rollback succeeded. The application is healthy again."
+                  exit 0
+                fi
+              fi
+
+              echo "Rollback failed or no previous good commit was found."
+              exit 1
+            }
+
+            trap 'rollback' ERR
+
+            echo "Pulling newest code from the main branch..."
             git fetch origin main
             git reset --hard origin/main
+            git clean -fd
 
-            echo "Building containers..."
-            docker compose build
+            echo "Using image built by GitHub Actions: $IMAGE_NAME:latest"
+            docker pull "$IMAGE_NAME:latest"
 
-            echo "Starting services..."
-            docker compose up -d
+            echo "Minimal-downtime deployment: recreate API using the latest image..."
+            docker compose up -d --no-deps --remove-orphans --force-recreate api
 
-            echo "Cleaning up dangling images..."
-            docker image prune -f
+            echo "Waiting for the application to become healthy..."
+            HEALTHY=0
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null 2>&1; then
+                HEALTHY=1
+                break
+              fi
+              sleep 5
+            done
 
-            echo "================================"
-            echo "Deployment finished successfully"
-            echo "================================"
+            if [ "$HEALTHY" -ne 1 ]; then
+              echo "Health check failed after deployment."
+              rollback
+            fi
+
+            echo "Deployment health check passed."
+            trap - ERR
+
+            echo "Cleaning up dangling Docker images..."
+            docker image prune -f >/dev/null 2>&1 || true
+
+            echo "=================================="
+            echo "Deployment finished successfully with minimal downtime"
+            echo "=================================="
           EOF
-
-      - name: Verify deployment health
-        env:
-          SSH_HOST: ${{ secrets.SERVER_HOST }}
-          SSH_USER: ${{ secrets.SERVER_USER }}
-        run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/id_rsa \
-              -o ConnectTimeout=10 \
-              "$SSH_USER@$SSH_HOST" \
-              "docker compose -f /home/rituraj/app/funtush/docker-compose.yml ps"
 
       - name: Clean up SSH key
         if: always()
-        run: rm -f ~/.ssh/id_rsa
+        run: |
+          rm -f ~/.ssh/id_rsa
