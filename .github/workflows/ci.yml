@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/funtush_test
+      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/funtush
       ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     services:
       postgres:
