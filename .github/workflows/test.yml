@@ -48,6 +48,12 @@ jobs:
       
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+
+      - name: Debug env
+        run: |
+          echo "DATABASE_URL is: $DATABASE_URL"
+          echo "All env vars containing DATABASE:"
+          env | grep DATABASE || echo "none found"
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
