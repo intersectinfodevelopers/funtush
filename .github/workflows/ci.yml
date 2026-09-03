@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/funtush_test
+      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/funtush
       ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     services:
       postgres:
@@ -26,6 +26,12 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@v4
+
+      - name: Debug env
+        run: |
+          echo "DATABASE_URL is: $DATABASE_URL"
+          echo "All env vars containing DATABASE:"
+          env | grep DATABASE || echo "none found"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
