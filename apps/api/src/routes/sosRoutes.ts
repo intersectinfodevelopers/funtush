@@ -16,7 +16,7 @@ sosRoutes.post('/trigger', async (req: Request, res: Response) => {
 
     await emergencyService.triggerSOS({
       trekId,
-      guiderId: guiderId || req.user?.id,
+      guiderId: guiderId || req.user?.userId,
       trekkerIds: trekkerIds || [],
       sosType,
       location,
@@ -41,7 +41,8 @@ sosRoutes.post('/:sosId/cancel', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'reason is required' });
     }
 
-    await emergencyService.cancelSOS(req.params.sosId, reason);
+    const sosId = Array.isArray(req.params.sosId) ? req.params.sosId[0] : req.params.sosId;
+    await emergencyService.cancelSOS(sosId, reason);
 
     res.json({ success: true, message: 'SOS cancelled' });
   } catch (error) {

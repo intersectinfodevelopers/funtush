@@ -305,9 +305,9 @@ export async function getAgencyBookings(
   page = 1,
   limit = 20,
 ) {
-  const where = {
+  const where: Prisma.BookingWhereInput = {
     agencyId,
-    ...(status ? { status: status as string } : {}),
+    ...(status ? { status: status as Prisma.EnumBookingStatusFilter["equals"] } : {}),
   };
 
   const [bookings, total] = await Promise.all([
@@ -632,4 +632,195 @@ export async function checkOutBooking(bookingId: string, agencyId: string) {
   }
 
   return { bookingId, status: "COMPLETED" };
+}
+// ── Phase 2: agency-side manual booking creation ───────────────────────────────
+//
+// The trekker inquiry flow (submitInquiry → OTP → verifyInquiryOtp) is for the
+// public marketplace. Agencies also take bookings over the phone / in person and
+// need to enter them directly. This bypasses OTP but reuses the same capacity
+// guard (confirmSlotsForBooking) so a manual CONFIRMED booking can't overbook a
+// departure.
+
+export interface ManualBookingInput {
+  packageId: string;
+  departureDateId?: string;
+  /** ISO date — resolved to a departure of `packageId` starting that day. */
+  departureDate?: string;
+  groupSize: number;
+  trekkerName: string;
+  trekkerEmail: string;
+  trekkerPhone: string;
+  trekkerCountry?: string;
+  trekkerId?: string;
+  specialRequests?: string;
+  addOns?: { addOnId: string; quantity: number }[];
+  /** Optional guide to assign up front (validated against the agency's guides). */
+  guideRef?: string | null;
+  /** Explicit price override; otherwise computed from the package + add-ons. */
+  totalPrice?: number;
+  /** "INQUIRY" or "CONFIRMED" (default). CONFIRMED reserves the seats. */
+  status?: string;
+}
+
+const bookingErr = (status: number, message: string) => {
+  const e = new Error(message) as Error & { status?: number };
+  e.status = status;
+  return e;
+};
+
+export async function createManualBooking(agencyId: string, input: ManualBookingInput) {
+  const {
+    packageId,
+    groupSize,
+    trekkerName,
+    trekkerEmail,
+    trekkerPhone,
+  } = input;
+
+  if (!packageId) throw bookingErr(400, "packageId is required");
+  if (!trekkerName?.trim() || !trekkerEmail?.trim() || !trekkerPhone?.trim()) {
+    throw bookingErr(400, "trekkerName, trekkerEmail and trekkerPhone are required");
+  }
+  const size = Number(groupSize);
+  if (!Number.isInteger(size) || size < 1) throw bookingErr(400, "groupSize must be a positive integer");
+
+  const wantStatus = String(input.status ?? "CONFIRMED").toUpperCase();
+  if (!["INQUIRY", "CONFIRMED"].includes(wantStatus)) {
+    throw bookingErr(400, "status must be INQUIRY or CONFIRMED");
+  }
+
+  // Package must belong to the calling agency.
+  const pkg = await prisma.trekPackage.findFirst({
+    where: { id: packageId, agencyId },
+    select: { id: true, title: true, slug: true, pricePerPerson: true },
+  });
+  if (!pkg) throw bookingErr(404, "Package not found");
+
+  // Resolve the departure — by id, or by ISO date against this package.
+  let departure: Awaited<ReturnType<typeof prisma.trekDepartureDate.findUnique>> = null;
+  if (input.departureDateId) {
+    departure = await prisma.trekDepartureDate.findUnique({ where: { id: input.departureDateId } });
+    if (!departure || departure.packageId !== packageId) throw bookingErr(400, "Invalid departure date for this package");
+  } else if (input.departureDate) {
+    const day = new Date(input.departureDate);
+    if (Number.isNaN(day.getTime())) throw bookingErr(400, "Invalid departureDate");
+    const start = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()));
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    departure = await prisma.trekDepartureDate.findFirst({
+      where: { packageId, startDate: { gte: start, lt: end } },
+    });
+    if (!departure) throw bookingErr(400, "No departure date for this package on the given day");
+  } else {
+    throw bookingErr(400, "departureDateId or departureDate is required");
+  }
+
+  // Validate + price the add-ons (must belong to this package).
+  let addOnRows: { id: string; price: unknown; perPerson: boolean }[] = [];
+  const cleanAddOns = (input.addOns ?? []).filter((a) => a?.addOnId && Number(a.quantity) > 0);
+  if (cleanAddOns.length) {
+    const ids = cleanAddOns.map((a) => a.addOnId);
+    addOnRows = await prisma.trekAddOn.findMany({ where: { id: { in: ids }, packageId } });
+    if (addOnRows.length !== new Set(ids).size) throw bookingErr(400, "One or more add-ons are invalid for this package");
+  }
+
+  // Validate the guide up front if one was supplied.
+  const guideRef = input.guideRef ? String(input.guideRef) : null;
+  if (guideRef) {
+    const guide = await prisma.guideProfile.findFirst({
+      where: { agencyId, guideRef, isActive: true },
+      select: { id: true },
+    });
+    if (!guide) throw bookingErr(400, "Guide not found for this agency");
+  }
+
+  // Price: explicit override wins, else base + add-ons.
+  const addOnTotal = addOnRows.reduce((sum, row) => {
+    const line = cleanAddOns.find((a) => a.addOnId === row.id)!;
+    const qty = Number(line.quantity);
+    return sum + Number(row.price) * (row.perPerson ? size * qty : qty);
+  }, 0);
+  const computed = Number(pkg.pricePerPerson) * size + addOnTotal;
+  const price =
+    input.totalPrice !== undefined && input.totalPrice !== null && Number(input.totalPrice) >= 0
+      ? Number(input.totalPrice)
+      : computed;
+
+  const baseData = {
+    agencyId,
+    packageId,
+    departureDateId: departure.id,
+    trekkerId: input.trekkerId ?? null,
+    groupSize: size,
+    totalPrice: price,
+    trekkerName: trekkerName.trim(),
+    trekkerEmail: trekkerEmail.trim(),
+    trekkerPhone: trekkerPhone.trim(),
+    trekkerCountry: input.trekkerCountry ?? null,
+    specialRequests: input.specialRequests ?? null,
+    assignedGuideId: guideRef,
+  };
+
+  const bookingInclude = {
+    package: { select: { title: true, slug: true } },
+    departureDate: { select: { startDate: true } },
+    addOns: { include: { addOn: true } },
+  } as const;
+
+  const addOnCreate = (bookingId: string) =>
+    cleanAddOns.map((a) => ({
+      bookingId,
+      addOnId: a.addOnId,
+      quantity: Number(a.quantity),
+      priceAtBooking: addOnRows.find((r) => r.id === a.addOnId)!.price as never,
+    }));
+
+  let bookingId: string;
+  if (wantStatus === "CONFIRMED") {
+    // Reserve the seats and create the booking atomically (re-checks capacity).
+    bookingId = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await confirmSlotsForBooking(tx, departure!.id, size);
+      const created = await tx.booking.create({ data: { ...baseData, status: "CONFIRMED" }, select: { id: true } });
+      if (cleanAddOns.length) await tx.bookingAddOn.createMany({ data: addOnCreate(created.id) });
+      return created.id;
+    });
+  } else {
+    // INQUIRY — no seat reservation, but still refuse an impossible group size.
+    const available = departure.maxSlots - departure.bookedSlots;
+    if (size > available) throw bookingErr(409, `Only ${available} slot(s) available for this departure`);
+    const created = await prisma.booking.create({ data: { ...baseData, status: "INQUIRY" }, select: { id: true } });
+    if (cleanAddOns.length) await prisma.bookingAddOn.createMany({ data: addOnCreate(created.id) });
+    bookingId = created.id;
+  }
+
+  const booking = (await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: bookingInclude,
+  }))!;
+
+  return {
+    id: booking.id,
+    status: booking.status,
+    packageId: booking.packageId,
+    packageTitle: booking.package.title,
+    departureDateId: booking.departureDateId,
+    departureDate: booking.departureDate.startDate,
+    groupSize: booking.groupSize,
+    totalPrice: Number(booking.totalPrice),
+    assignedGuideId: booking.assignedGuideId,
+    trekker: {
+      id: booking.trekkerId,
+      name: booking.trekkerName,
+      email: booking.trekkerEmail,
+      phone: booking.trekkerPhone,
+      country: booking.trekkerCountry,
+    },
+    specialRequests: booking.specialRequests,
+    addOns: booking.addOns.map((a: { addOnId: string; quantity: number; priceAtBooking: unknown; addOn: { name: string } }) => ({
+      addOnId: a.addOnId,
+      name: a.addOn.name,
+      quantity: a.quantity,
+      price: Number(a.priceAtBooking),
+    })),
+    createdAt: booking.createdAt,
+  };
 }

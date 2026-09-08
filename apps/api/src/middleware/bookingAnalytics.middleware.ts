@@ -84,7 +84,7 @@ export function pageViewMiddleware(
       agency_id:  agencyId,
       event_type: "PAGE_VIEW",
       trekker_id: null,
-      package_id: req.params.packageId ?? null,
+      package_id: typeof req.params.packageId === "string" ? req.params.packageId : null,
       metadata: {
         method: req.method,
         path:   req.path,

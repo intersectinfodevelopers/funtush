@@ -85,10 +85,10 @@ describe("getPlatformOverview()", () => {
     expect(result.activeAgencies).toBe(42);
   });
 
-  it("agenciesByTier is built from prisma.agency.groupBy", async () => {
-    vi.mocked(prisma.agency.groupBy).mockResolvedValue([
-      { tier: "FREE", _count: { _all: 10 } },
-      { tier: "PRO",  _count: { _all: 5  } },
+  it("agenciesByTier is built from prisma.agency.findMany (tier name)", async () => {
+    vi.mocked(prisma.agency.findMany).mockResolvedValue([
+      ...Array(10).fill({ tier: { name: "FREE" } }),
+      ...Array(5).fill({ tier: { name: "PRO" } }),
     ] as never);
     const result = await getPlatformOverview() as Record<string, unknown>;
     const tiers = result.agenciesByTier as Record<string, number>;

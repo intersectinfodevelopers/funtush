@@ -1,5 +1,8 @@
-import type { Db } from "mongodb";
 import mongoose from "mongoose";
+
+// mongoose bundles the mongodb driver and re-exports its types under `mongo`.
+// Importing "mongodb" directly is not resolvable from this package.
+export type Db = mongoose.mongo.Db;
 
 let isConnected = false;
 

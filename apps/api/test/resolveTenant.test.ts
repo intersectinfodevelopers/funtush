@@ -124,11 +124,27 @@ describe("resolveTenant middleware", () => {
     expect(req.agencyId).toBe("agency_xyz"); // still locked to the resolved tenant
   });
 
-  it("no host header → 404", async () => {
+  it("no host header, non-production → context=platform, next()", async () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "test";
     const req: any  = { headers: {}, socket: { remoteAddress: "127.0.0.1" } };
     const res: any  = { _status: 200, _ended: false, status(c:number){this._status=c;return this;}, end(){this._ended=true;} };
     const next = vi.fn();
     await resolveTenant(req, res, next);
+    process.env.NODE_ENV = prev;
+    expect(req.context).toBe("platform");
+    expect(next).toHaveBeenCalledOnce();
+    expect(res._status).toBe(200);
+  });
+
+  it("no host header, production → 404", async () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    const req: any  = { headers: {}, socket: { remoteAddress: "127.0.0.1" } };
+    const res: any  = { _status: 200, _ended: false, status(c:number){this._status=c;return this;}, end(){this._ended=true;} };
+    const next = vi.fn();
+    await resolveTenant(req, res, next);
+    process.env.NODE_ENV = prev;
     expect(res._status).toBe(404);
     expect(next).not.toHaveBeenCalled();
   });

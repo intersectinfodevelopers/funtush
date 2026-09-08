@@ -12,6 +12,7 @@ enum AgencyStatus {
   ACTIVE
   LOCKED
   SUSPENDED
+  BANNED
 }
 
 enum UserRole {
@@ -81,6 +82,12 @@ enum TrekDifficulty {
   DIFFICULT
 }
 
+enum GuideStatus {
+  AVAILABLE
+  ON_TREK
+  UNAVAILABLE
+}
+
 enum CommunicationType {
   EMAIL
   WHATSAPP
@@ -148,6 +155,16 @@ model SubscriptionTier {
   monthlyPrice Decimal @map("monthly_price") @db.Decimal(10, 2)
   features     Json
 
+  // ── Phase 2: Super-Admin tier configuration (Concept doc §6) ─────────────
+  annualPrice        Decimal? @map("annual_price") @db.Decimal(10, 2)
+  maxPackages        Int      @default(0) @map("max_packages")
+  trialDays          Int      @default(30) @map("trial_days")
+  marketplaceWeight  Int      @default(0) @map("marketplace_weight")
+  adsEnabled         Boolean  @default(false) @map("ads_enabled")
+  customDomainEnabled Boolean @default(false) @map("custom_domain_enabled")
+  whiteLabelComplete Boolean  @default(false) @map("white_label_complete")
+  apiAccessEnabled   Boolean  @default(false) @map("api_access_enabled")
+
   agencies      Agency[]
   subscriptions Subscription[]
 
@@ -167,6 +184,12 @@ model Agency {
   priorityOverride  Int                    @default(0) @map("priority_override")
   trialExpiresAt    DateTime?              @map("trial_expires_at")
   createdAt         DateTime               @default(now()) @map("created_at")
+
+  // TODO(phase-2): host-based tenant routing + fraud/ban lifecycle are stubbed.
+  tenantId          String?                @unique @map("tenant_id")
+  riskScore         Int                    @default(0) @map("risk_score")
+  bannedAt          DateTime?              @map("banned_at")
+  banReason         String?                @map("ban_reason")
   tier              SubscriptionTier       @relation(fields: [tierId], references: [id])
   users             AgencyUser[]
   agencyStaffs      AgencyStaff[]
@@ -199,6 +222,14 @@ model Agency {
   bugReports BugReport[]
   apiKeys    ApiKey[]
   navigation AgencyNavigation?
+
+  // ── Phase 2 agency-dashboard modules ──────────────────────────────────────
+  safetyWarnings     SafetyWarning[]
+  galleryPosts       GalleryPost[]
+  videos             Video[]
+  agencyDestinations AgencyDestination[]
+  siteAds            SiteAd[]
+  trekkerInvoices    TrekkerInvoice[]
 
   stripeSubscription StripeSubscription?
 
@@ -499,6 +530,11 @@ model AgencyStaff {
   agencyId        String     @map("agency_id")
   userId          String     @map("user_id")
   roleId          String?    @map("role_id")
+  /// Agency-scoped display profile for this team member. Identity (login email,
+  /// password) lives on `User`; the same person can be staff at several agencies
+  /// with a different display name, so name/phone hang off the membership row.
+  name            String?
+  phone           String?
   isActive        Boolean    @default(true) @map("is_active")
   invitedAt       DateTime   @default(now()) @map("invited_at")
   createdAt       DateTime   @default(now()) @map("created_at")
@@ -563,6 +599,110 @@ model TrekDestination {
 
   @@index([agencyId])
   @@map("trek_destinations")
+}
+
+/// Phase 2: a marketing/content "destination" page the agency curates for its
+/// white-label site (title, descriptions, images, activities, publish/feature).
+/// Distinct from `TrekDestination`, which is just the where-tag on a package.
+model AgencyDestination {
+  id               String   @id @default(uuid())
+  agencyId         String   @map("agency_id")
+  agency           Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  title            String
+  slug             String
+  category         String?
+  shortDescription String?  @map("short_description")
+  longDescription  String?  @db.Text @map("long_description")
+  region           String?
+  difficulty       String?
+  activities       String[] @default([])
+  featuredImage    String?  @map("featured_image")
+  gallery          String[] @default([])
+  durationMinDays  Int?     @map("duration_min_days")
+  durationMaxDays  Int?     @map("duration_max_days")
+  altitudeMinM     Int?     @map("altitude_min_m")
+  altitudeMaxM     Int?     @map("altitude_max_m")
+  bestTimeToVisit  String?  @map("best_time_to_visit")
+  published        Boolean  @default(false)
+  featured         Boolean  @default(false)
+  rating           Decimal? @db.Decimal(3, 2)
+  reviewCount      Int      @default(0) @map("review_count")
+  views            Int      @default(0)
+  saves            Int      @default(0)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([agencyId, slug])
+  @@index([agencyId, published])
+  @@map("agency_destinations")
+}
+
+/// Phase 2: banner ads the agency places in fixed slots on its white-label site
+/// (homepage-top, sidebar-1, footer-1, …). NOT the Meta/Google `AdCampaign`.
+enum SiteAdStatus {
+  ACTIVE
+  PAUSED
+}
+
+model SiteAd {
+  id          String       @id @default(uuid())
+  agencyId    String       @map("agency_id")
+  agency      Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  title       String
+  imageUrl    String       @map("image_url")
+  linkUrl     String?      @map("link_url")
+  position    String
+  status      SiteAdStatus @default(ACTIVE)
+  clicks      Int          @default(0)
+  impressions Int          @default(0)
+  startDate   DateTime?    @map("start_date") @db.Date
+  endDate     DateTime?    @map("end_date") @db.Date
+  order       Int          @default(0)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([agencyId, position])
+  @@map("site_ads")
+}
+
+/// Phase 2: invoices an agency issues to its trekker customers for a booking.
+/// (Distinct from `Invoice`, which is the platform's subscription invoice to the
+/// agency — see admin.service.ts.)
+enum TrekkerInvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  VOID
+}
+
+model TrekkerInvoice {
+  id            String               @id @default(uuid())
+  agencyId      String               @map("agency_id")
+  agency        Agency               @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  invoiceNumber String               @map("invoice_number")
+  bookingId     String?              @map("booking_id")
+  booking       Booking?             @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  trekkerName   String               @map("trekker_name")
+  trekkerEmail  String?              @map("trekker_email")
+  packageName   String?              @map("package_name")
+  /// [{ description, quantity, unitPrice }]
+  lineItems     Json                 @default("[]") @map("line_items")
+  subtotal      Decimal              @default(0) @db.Decimal(12, 2)
+  discount      Decimal              @default(0) @db.Decimal(12, 2)
+  total         Decimal              @default(0) @db.Decimal(12, 2)
+  currencyCode  String               @default("NPR") @map("currency_code")
+  status        TrekkerInvoiceStatus @default(DRAFT)
+  issueDate     DateTime?            @map("issue_date") @db.Date
+  dueDate       DateTime?            @map("due_date") @db.Date
+  paidAt        DateTime?            @map("paid_at")
+  notes         String?
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  @@unique([agencyId, invoiceNumber])
+  @@index([agencyId, status])
+  @@map("trekker_invoices")
 }
 
 model TrekItinerary {
@@ -664,8 +804,19 @@ model GuideProfile {
   languages      String[] @default([])
   isActive       Boolean  @default(true) @map("is_active")
 
+  // ── Phase 2: guide as a first-class HR entity (agency dashboard) ──────────
+  email    String?
+  sex      String?
+  photoUrl String?     @map("photo_url")
+  bio      String?
+  status   GuideStatus @default(AVAILABLE)
+  /// TODO(phase-later): derive from Review.guideRating instead of storing.
+  rating   Decimal?    @db.Decimal(3, 2)
+
   branchId String? @map("branch_id")
   branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  certifications GuideCertification[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -677,6 +828,75 @@ model GuideProfile {
   @@index([agencyId])
   @@index([branchId])
   @@map("guide_profiles")
+}
+
+model GuideCertification {
+  id             String       @id @default(uuid())
+  guideProfileId String       @map("guide_profile_id")
+  guideProfile   GuideProfile @relation(fields: [guideProfileId], references: [id], onDelete: Cascade)
+  name           String
+  issuingBody    String?      @map("issuing_body")
+  number         String
+  expiry         DateTime     @db.Date
+  documentUrl    String?      @map("document_url")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([guideProfileId])
+  @@map("guide_certifications")
+}
+
+// ── Phase 2: Blog (agency content) ──────────────────────────────────────────
+
+// ── Phase 2: Media (gallery + videos, agency content) ───────────────────────
+
+enum GalleryStatus {
+  PUBLISHED
+  DRAFT
+}
+
+enum VideoStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model GalleryPost {
+  id            String        @id @default(uuid())
+  agencyId      String        @map("agency_id")
+  agency        Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  category      String?
+  images        String[]      @default([])
+  featuredImage String?       @map("featured_image")
+  status        GalleryStatus @default(PUBLISHED)
+  order         Int           @default(0)
+  likes         Int           @default(0)
+  views         Int           @default(0)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@index([agencyId, status])
+  @@map("gallery_posts")
+}
+
+model Video {
+  id           String      @id @default(uuid())
+  agencyId     String      @map("agency_id")
+  agency       Agency      @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  youtubeUrl   String      @map("youtube_url")
+  thumbnailUrl String?     @map("thumbnail_url")
+  status       VideoStatus @default(ACTIVE)
+  order        Int         @default(0)
+  likes        Int         @default(0)
+  views        Int         @default(0)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  @@index([agencyId, status])
+  @@map("videos")
 }
 
 model TrekDepartureDate {
@@ -754,6 +974,7 @@ model Booking {
   reviewInvitation ReviewInvitation?
   journalEntries   JournalEntry[]
   payrolls         Payroll[]
+  trekkerInvoices  TrekkerInvoice[]
 
   @@index([agencyId, status])
   @@index([trekkerId])
@@ -1830,4 +2051,19 @@ model Blog {
   @@index([agencyId])
   @@index([categoryId])
   @@map("blogs")
+}
+
+/// Formal safety warning issued by a platform admin against an agency for poor
+/// SOS / incident handling. Permanent record (never deleted). See
+/// apps/api/src/services/sosMonitoring.service.ts (issueSafetyWarning).
+model SafetyWarning {
+  id        String   @id @default(cuid())
+  agencyId  String   @map("agency_id")
+  agency    Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  issuedBy  String   @map("issued_by")
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([agencyId])
+  @@map("safety_warnings")
 }

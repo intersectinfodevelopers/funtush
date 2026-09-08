@@ -11,7 +11,7 @@ import {
 } from "../utils/lockout";
 import { hashToken } from "../utils/hashToken";
 import { db, prisma } from "@funtush/database";
-import { jwtPayload } from "../types";
+import { jwtPayload, type Role } from "../types";
 import { redis } from "../utils/redis";
 import { checkOtpRateLimit } from "../utils/otpRateLimit";
 
@@ -233,7 +233,7 @@ export async function refreshTokenService(refreshToken: string) {
   const newAccessToken = generateAccessToken({
     userId: user.id,
     roleType: user.roleType,
-    role: user.role,
+    role: user.role as Role,
     agencyId,
   });
 
