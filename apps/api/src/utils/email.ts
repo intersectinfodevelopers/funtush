@@ -8,6 +8,36 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+export const sendStaffInviteEmail = async (
+  email: string,
+  tempPassword: string,
+  agencyId: string
+) => {
+  try {
+    await transporter.sendMail({
+      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "You've been added to an agency on Funtush",
+      text: `
+Hello,
+
+A staff account has been created for you on Funtush (agency ${agencyId}).
+
+Login credentials:
+Email: ${email}
+Temporary password: ${tempPassword}
+
+Please sign in and change your password immediately.
+
+Thank you!
+      `,
+    });
+  } catch (error) {
+    console.error("Email sending failed:", error);
+    throw error;
+  }
+};
+
 export const sendWelcomeEmail = async (
   email: string,
   password: string,

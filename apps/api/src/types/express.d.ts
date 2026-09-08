@@ -8,12 +8,6 @@ declare global {
   }
 }
 
-import { PrismaClient } from "@prisma/client";
-
-declare module "@funtush/database" {
-  export const prisma: PrismaClient;
-}
-
 declare global {
   namespace Express {
     interface Request {

@@ -63,11 +63,11 @@ describe("Day 5 — platform-wide totals accuracy", () => {
     expect(typeof result.totalRevenue).toBe("number");
   });
 
-  it("builds agenciesByTier from known group counts", async () => {
-    vi.mocked(prisma.agency.groupBy).mockResolvedValue([
-      { tier: "FREE",   _count: { _all: 30 } },
-      { tier: "MEDIUM", _count: { _all: 20 } },
-      { tier: "LARGE",  _count: { _all: 8  } },
+  it("builds agenciesByTier from known agency tier names", async () => {
+    vi.mocked(prisma.agency.findMany).mockResolvedValue([
+      ...Array(30).fill({ tier: { name: "FREE" } }),
+      ...Array(20).fill({ tier: { name: "MEDIUM" } }),
+      ...Array(8).fill({ tier: { name: "LARGE" } }),
     ] as never);
     const result = await getPlatformOverview() as Record<string, unknown>;
     const tiers = result.agenciesByTier as Record<string, number>;

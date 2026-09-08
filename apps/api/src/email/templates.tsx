@@ -132,7 +132,7 @@ export const KYCApprovedEmail = ({ firstName, approvalDate }: KYCApprovedProps) 
           <Text style={body}>
             Hi {firstName},
           </Text>
-          <Text style={body} style={{ color: '#059669', fontWeight: '600' }}>
+          <Text style={{ ...body, color: '#059669', fontWeight: '600' }}>
             Congratulations! Your KYC verification has been approved.
           </Text>
 
@@ -254,7 +254,7 @@ export const PaymentConfirmationEmail = ({
           <Text style={body}>
             Hi {firstName},
           </Text>
-          <Text style={body} style={{ color: '#059669', fontWeight: '600' }}>
+          <Text style={{ ...body, color: '#059669', fontWeight: '600' }}>
             Your payment has been successfully received.
           </Text>
 
@@ -391,7 +391,7 @@ export const PaymentFailedEmail = ({
           <Text style={body}>
             Hi {firstName},
           </Text>
-          <Text style={body} style={{ color: '#dc2626', fontWeight: '600' }}>
+          <Text style={{ ...body, color: '#dc2626', fontWeight: '600' }}>
             We couldn't process your payment on {attemptDate}.
           </Text>
 
@@ -451,7 +451,7 @@ export const BreakGlassClosedEmail = ({
         </Section>
 
         <Section style={content}>
-          <Text style={greeting} style={{ color: '#059669' }}>
+          <Text style={{ ...greeting, color: '#059669' }}>
             Emergency Resolved
           </Text>
           <Text style={body}>
@@ -614,8 +614,7 @@ export const AdCampaignDecisionEmail = ({
               <Column style={{ width: '50%' }}>
                 <Text style={detailLabel}>Status</Text>
                 <Text
-                  style={detailValue}
-                  style={{ color: status === 'APPROVED' ? '#059669' : '#dc2626' }}
+                  style={{ ...detailValue, color: status === 'APPROVED' ? '#059669' : '#dc2626' }}
                 >
                   {status}
                 </Text>
@@ -687,7 +686,7 @@ export const SafetyWarningEmail = ({
           </Section>
 
           <Section style={content}>
-            <Text style={greeting} style={{ color: severityColor }}>
+            <Text style={{ ...greeting, color: severityColor }}>
               Safety Warning: {warningType}
             </Text>
             <Text style={body}>
@@ -701,7 +700,7 @@ export const SafetyWarningEmail = ({
               <Row>
                 <Column style={{ width: '50%' }}>
                   <Text style={detailLabel}>Severity</Text>
-                  <Text style={detailValue} style={{ color: severityColor }}>
+                  <Text style={{ ...detailValue, color: severityColor }}>
                     {severity}
                   </Text>
                 </Column>

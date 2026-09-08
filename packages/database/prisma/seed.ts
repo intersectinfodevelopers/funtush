@@ -97,7 +97,20 @@ async function main() {
     { key: "USER_READ", description: "Read users" },
     { key: "USER_WRITE", description: "Write users" },
     { key: "AGENCY_READ", description: "Read agency" },
-    { key: "AGENCY_WRITE", description: "Write agency" }
+    { key: "AGENCY_WRITE", description: "Write agency" },
+    // Canonical agency-dashboard permission catalog (functional areas). Kept in
+    // sync with migration 20260909190000_seed_permission_catalog and
+    // apps/api/src/config/permissionCatalog.ts.
+    { key: "packages", description: "Create and manage trek packages, itineraries and departure dates" },
+    { key: "bookings", description: "Review, approve and manage bookings and guide assignments" },
+    { key: "guides", description: "Manage guides, certifications and availability" },
+    { key: "customers", description: "View customer profiles, history and notes" },
+    { key: "blog", description: "Write and publish blog posts, categories and media" },
+    { key: "reviews", description: "Respond to and moderate customer reviews" },
+    { key: "finance", description: "View finance dashboards, invoices and payouts" },
+    { key: "analytics", description: "View analytics and performance reports" },
+    { key: "staff", description: "Invite staff, manage roles and permissions" },
+    { key: "settings", description: "Edit agency profile, branding, widgets and site settings" }
   ];
 
   for (const perm of permissions) {

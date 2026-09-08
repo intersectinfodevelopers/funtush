@@ -1,71 +1,185 @@
-import express from "express";
+/**
+ * The Funtush API application.
+ *
+ * This module builds and exports the configured Express app but does NOT listen
+ * or start background jobs — `index.ts` does that. Tests import `{ app }` (or
+ * call `createApp()`) directly.
+ */
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import { MulterError } from "multer";
+import swaggerUi from "swagger-ui-express";
+
 import { db, redis } from "@funtush/database";
+
+// ── Middleware ──────────────────────────────────────────────────────────────
+import { requestLogger } from "./middleware/requestLogger.middleware";
 import { resolveTenant } from "./middleware/resolveTenant.middleware";
 import { rateLimitMiddleware } from "./middleware/rateLimit.middleware";
-import { requestLogger } from "./middleware/requestLogger.middleware";
-import adminRouter from "./routes/admin/index";
+import { authenticateWithRefreshToken } from "./middleware/refreshTokenAuthentication";
+
+// ── Routers ─────────────────────────────────────────────────────────────────
+import uploadRoutes from "./routes/upload.routes";
+import authRoutes from "./routes/auth.routes";
 import agencyRoutes from "./routes/agency.routes";
-import bookingRoutes from "./routes/booking.routes";
-import paymentWebhookRoutes from "./routes/payment.webhook.routes";
-import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
+import agencyCustomerRoutes from "./routes/agencyCustomer.routes";
+import reviewRoutes from "./routes/review.route";
+import couponRoutes from "./routes/coupon.route";
+import branchRoutes from "./routes/branches.routes";
+import brandingRoutes from "./routes/branding.routes";
+import siteConfigRoutes from "./routes/siteConfig.routes";
+import navigationRoutes from "./routes/navigation.routes";
+import regenerationRoutes from "./routes/regeneration.routes";
+import widgetsRoutes from "./routes/widgets/widgets.routes";
+import instagramRoutes from "./routes/widgets/instagram.routes";
+import trekkerRoutes from "./routes/trekker.routes";
+import packageRoutes from "./routes/package.routes";
+import rolesRoutes from "./routes/roles.routes";
+import guidesRoutes from "./routes/guides.routes";
+import blogRoutes from "./routes/blog.routes";
+import mediaRoutes from "./routes/media.routes";
+import agencyDestinationRoutes from "./routes/agencyDestination.routes";
+import siteAdRoutes from "./routes/siteAd.routes";
+import safetyRoutes from "./routes/safety.routes";
+import financeRoutes from "./routes/finance.route";
+import agencyAnalyticsRoutes from "./routes/agencyAnalytics.routes";
+import agencyAnalyticsOverviewRoutes from "./routes/agency/analytics.route";
 import reportsRouter from "./routes/agency/reports.route";
-import billingRoutes from './routes/billing.routes';
-import stripeWebhookRoutes from './routes/webhooks/stripe';
+import staffRoutes from "./routes/staff.routes";
 import paymentMethodsRoutes from "./routes/paymentMethods";
 import adCampaignRoutes from "./routes/adCampaign.routes";
+import apiKeyRoutes from "./routes/apiKey.routes";
+import publicApiRoutes from "./routes/publicApi.routes";
 import bugRoutes from "./routes/bug.routes";
-import bugAdminRoutes from "./routes/bug.routes.js";
-import apiKeyRoutes from "./routes/apiKey.routes.js";
-import publicApiRoutes from "./routes/publicApi.routes.js";
-import { startVisibilityScoreCron } from "./jobs/visibilityScore.job";
-import { startExpireUnpaidBookingsCron } from "./jobs/expireUnpaidBookings.job";
+import billingRoutes from "./routes/billing.routes";
+import marketplaceRoutes from "./routes/marketplace.routes";
+import mobileRoutes from "./routes/mobile.routes";
+import bookingRoutes from "./routes/booking.routes";
+import emailRoutes from "./routes/emailRoutes";
+import sosRoutes from "./routes/sosRoutes";
+import adminRoutes from "./routes/admin/index";
+import fraudRouter from "./routes/admin/fraud.route";
+import paymentWebhookRoutes from "./routes/payment.webhook.routes";
+import stripeWebhookRoutes from "./routes/webhooks/stripe";
 
-const app = express();  
+import { openapiSpec } from "./docs/openapi";
 
-app.use(express.json());
-app.use(requestLogger);
+const docsEnabled =
+  process.env.NODE_ENV !== "production" || process.env.ENABLE_DOCS === "true";
 
-app.get("/health", async (_req, res) => {
-  const [dbStatus, redisStatus] = await Promise.all([
-    db.$queryRaw`SELECT 1`.then(() => "ok" as const).catch(() => "error" as const),
-    redis.ping().then(() => "ok" as const).catch(() => "error" as const),
-  ]);
+export function createApp(): Express {
+  const app = express();
 
-  const allOk = dbStatus === "ok" && redisStatus === "ok";
+  // 1. Payment webhooks need the RAW request body for signature verification,
+  //    so they must be mounted before express.json() consumes the stream.
+  //    (Each router applies express.raw() to its own routes.)
+  app.use("/webhooks/payment", paymentWebhookRoutes);
+  app.use("/webhooks", stripeWebhookRoutes);
 
-  res.status(allOk ? 200 : 503).json({
-    status: allOk ? "ok" : "error",
-    db: dbStatus,
-    redis: redisStatus,
+  // 2. Everything else is JSON.
+  app.use(express.json());
+
+  // 3. Cross-cutting middleware.
+  app.use(requestLogger);
+  app.use(resolveTenant);
+  app.use(rateLimitMiddleware);
+
+  // 4. Health + docs.
+  app.get("/health", async (_req: Request, res: Response) => {
+    // A liveness probe must always answer quickly — bound every dependency
+    // check so a hung/unreachable dependency reports "error" instead of
+    // stalling the request (some Redis clients queue rather than reject).
+    const withTimeout = <T>(p: Promise<T>, ms = 1500): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+      ]);
+
+    const [dbOk, redisOk] = await Promise.all([
+      withTimeout(db.$queryRaw`SELECT 1`).then(() => true).catch(() => false),
+      withTimeout(Promise.resolve(redis.ping())).then((r) => r === "PONG").catch(() => false),
+    ]);
+    const ok = dbOk && redisOk;
+    res.status(ok ? 200 : 503).json({
+      status: ok ? "ok" : "error",
+      db: dbOk ? "ok" : "error",
+      redis: redisOk ? "ok" : "error",
+    });
   });
-});
 
-app.post("/sos", (_req, res) => {
-  res.json({ status: "SOS received" });
-});
+  if (docsEnabled) {
+    app.get("/docs.json", (_req, res) => res.json(openapiSpec));
+    app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
+  }
 
-app.use(resolveTenant);
-app.use(rateLimitMiddleware);
-app.use("/admin", adminRouter);
-app.use("/agencies/me/reports", reportsRouter);
-app.use("/", agencyRoutes);
-app.use("/bookings", bookingRoutes);
-app.use("/webhooks/payment", paymentWebhookRoutes);
-app.use("/agencies/me/payment-methods", paymentMethodsRoutes);
+  // 5. Feature routers. Several declare fully-qualified paths and are mounted at
+  //    "/" — order is not significant between them as long as concrete paths
+  //    don't collide (asserted by app.smoke.test.ts).
+  app.use("/", uploadRoutes);
+  app.use("/auth", authRoutes);
+  app.use("/", agencyRoutes);
+  app.use("/", agencyCustomerRoutes);
+  app.use("/", reviewRoutes);
+  app.use("/", couponRoutes);
+  app.use("/", branchRoutes);
+  // White-label: brand identity, site config (under-construction / top bar /
+  // popup / badge), navigation builder, static-site regeneration.
+  app.use("/", brandingRoutes);
+  app.use("/", siteConfigRoutes);
+  app.use("/", navigationRoutes);
+  app.use("/", regenerationRoutes);
+  app.use("/", instagramRoutes);
+  app.use("/", trekkerRoutes);
+  app.use("/", packageRoutes);
+  app.use("/", rolesRoutes);
+  app.use("/", guidesRoutes);
+  app.use("/", blogRoutes);
+  app.use("/", mediaRoutes);
+  app.use("/", agencyDestinationRoutes);
+  app.use("/", siteAdRoutes);
+  app.use("/", safetyRoutes);
+  app.use("/", financeRoutes);
+  app.use("/", agencyAnalyticsRoutes);
 
-app.use('/billing', billingRoutes);
-app.use('/webhooks', stripeWebhookRoutes);
-app.use('/agencies/me/ad-campaigns', adCampaignRoutes);
+  app.use("/agencies/me/widgets", widgetsRoutes);
+  app.use("/agencies/me/analytics", authenticateWithRefreshToken, agencyAnalyticsOverviewRoutes);
+  app.use("/agencies/me/reports", authenticateWithRefreshToken, reportsRouter);
+  app.use("/agencies/me/staff", staffRoutes);
+  app.use("/agencies/me/payment-methods", paymentMethodsRoutes);
+  app.use("/agencies/me/ad-campaigns", adCampaignRoutes);
+  app.use("/agencies/me/api-keys", apiKeyRoutes);
+  app.use("/agencies/me/bugs", bugRoutes);
+  app.use("/public-api/v1", publicApiRoutes);
+  app.use("/billing", billingRoutes);
 
-app.use("/agencies/me/bugs", bugRoutes);
-app.use("/admin/bugs", bugAdminRoutes);
-app.use("/agencies/me/api-keys", apiKeyRoutes);
-app.use("/public-api/v1", publicApiRoutes);
+  app.use("/marketplace", marketplaceRoutes);
+  app.use("/mobile", mobileRoutes);
+  app.use("/bookings", bookingRoutes);
+  app.use("/emails", emailRoutes);
+  app.use("/sos", sosRoutes);
 
-if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
-  startSubscriptionCron();
-  startVisibilityScoreCron();
-  startExpireUnpaidBookingsCron();
+  app.use("/admin", adminRoutes);
+  app.use("/admin/bugs", bugRoutes); // same router, super-admin sub-routes
+  app.use("/fraud", fraudRouter);
+
+  // 6. Error handler — must be last.
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof MulterError && err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: "File too large. Max 10MB allowed." });
+    }
+    const message = err instanceof Error ? err.message : "Internal server error";
+    if (message.includes("Invalid file type")) {
+      return res.status(400).json({ error: message });
+    }
+    return res.status(500).json({ error: message });
+  });
+
+  return app;
 }
 
+export const app = createApp();
 export default app;

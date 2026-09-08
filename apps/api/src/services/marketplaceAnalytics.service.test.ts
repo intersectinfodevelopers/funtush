@@ -484,10 +484,10 @@ describe("marketplaceAnalytics.service", () => {
 
             vi.mocked(prisma.agency.findUnique)
                 .mockResolvedValueOnce(
-                    mockAgencies[0] as Awaited<ReturnType<typeof prisma.agency.findUnique>>
+                    mockAgencies[0] as unknown as Awaited<ReturnType<typeof prisma.agency.findUnique>>
                 )
                 .mockResolvedValueOnce(
-                    mockAgencies[1] as Awaited<ReturnType<typeof prisma.agency.findUnique>>
+                    mockAgencies[1] as unknown as Awaited<ReturnType<typeof prisma.agency.findUnique>>
                 );
 
             const result = await getTopAgenciesByImpressions("last_7_days", 10);
@@ -525,7 +525,7 @@ describe("marketplaceAnalytics.service", () => {
                 >
             );
             vi.mocked(prisma.agency.findUnique).mockResolvedValue(
-                mockAgency as Awaited<ReturnType<typeof prisma.agency.findUnique>>
+                mockAgency as unknown as Awaited<ReturnType<typeof prisma.agency.findUnique>>
             );
             const result = await getTopAgenciesByImpressions("last_30_days", 5);
 
