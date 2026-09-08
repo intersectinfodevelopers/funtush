@@ -1,4 +1,4 @@
-@"
+
 {
   "dashboard": {
     "title": "Funtush Monitoring Dashboard",
@@ -56,4 +56,3 @@
     ]
   }
 }
-"@ | Out-File -Encoding UTF8 funtush-dashboard.json
