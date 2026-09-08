@@ -1,19 +1,10 @@
-/**
- * Day 5: Testing Suite
- * Complete API tests for Agency Management, SOS, Ad Campaigns, and Fraud Detection
- * With Location/Geolocation Support and Multi-Tenant Architecture
- * 
- * Stack: Express + Prisma + TypeScript + Supertest
- */
+
 
 import { describe, it, beforeAll, beforeEach, afterEach, expect, vi } from 'vitest';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import type { Express } from 'express';
 
-// ============================================================================
-// TEST SETUP & CONFIGURATION
-// ============================================================================
 
 interface TestContext {
   app: Express;
