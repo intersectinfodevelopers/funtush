@@ -5,10 +5,6 @@ export * from "./mongo";
 export * from "@prisma/client";
 
 import { tenantKey, type TenantContext } from "@funtush/shared";
-export * from "./redis.js";
-export * from "./db.js";
-
-export * from "./mongo.js";
 export * from "./models/auditLog.model.js";
 
 

@@ -13,6 +13,8 @@ function getClientIp(req: Request): string {
   );
 }
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]);
+
 export async function resolveTenant(
   req: Request,
   res: Response,
@@ -20,6 +22,15 @@ export async function resolveTenant(
 ): Promise<void> {
   try {
     const host = req.headers.host?.split(":")[0]?.toLowerCase();
+
+    // Outside production, treat localhost / missing Host as the platform context
+    // instead of 404-ing. Lets local dev, tests, and the (mock) frontend through;
+    // production still requires a recognised Funtush domain.
+    if (process.env.NODE_ENV !== "production" && (!host || LOCAL_HOSTS.has(host))) {
+      req.context = "platform"; req.tenantId = null; req.agencyId = null;
+      return next();
+    }
+
     if (!host) { res.status(404).end(); return; }
 
     if (host === "funtush.com" || host === "www.funtush.com") {

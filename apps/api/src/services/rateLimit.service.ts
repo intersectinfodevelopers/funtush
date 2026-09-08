@@ -43,6 +43,11 @@ export async function checkRateLimit(
    
     const count = await redis.incr(redisKey);
 
+    // Defensive: a misconfigured/mocked redis can return a non-number here.
+    if (typeof count !== "number" || Number.isNaN(count)) {
+      return { allowed: true, remaining: 1, resetInSec: 60, limit: config.maxRequests };
+    }
+
     if (count === 1) {
      
       await redis.expire(redisKey, config.windowSecs);

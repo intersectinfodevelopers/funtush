@@ -7,13 +7,16 @@
   "main": "./src/index.ts",
   
   "scripts": {
-    "dev": "nodemon --watch src --ext ts --exec \"tsx --env-file=.env src/index.ts\"",
+    "dev": "nodemon",
     "start": "tsx --env-file=.env src/index.ts",
     "search:reindex": "tsx --env-file=.env src/scripts/reindexSearch.ts",
     "lint": "eslint src",
     "test:security": "vitest run --dir security",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts --passWithNoTests",
+    "test:infra:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "test:infra:down": "docker compose -f docker-compose.test.yml down -v",
+    "db:test:setup": "cd ../../packages/database && DATABASE_URL=\"postgresql://funtush:funtush@localhost:5542/funtush?schema=public\" prisma migrate deploy",
     "clean": "rimraf .turbo coverage"
     
   },
@@ -33,7 +36,7 @@
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "meilisearch": "^0.58.0",
-    "mongodb": "^7.3.0",
+    "mongodb": "~7.2.0",
     "multer": "1.4.5-lts.1",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.10",
@@ -43,6 +46,8 @@
     "react-email": "^6.9.0",
     "resend": "^6.17.2",
     "stripe": "^22.3.2",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1",
     "twilio": "^6.0.2",
     "zod": "^4.4.3"
   },
@@ -56,11 +61,15 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.0",
     "@types/pdfkit": "^0.17.6",
+    "@types/react": "^19.2.18",
     "@types/stripe": "^8.0.417",
     "@types/supertest": "^7.2.0",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
     "dotenv": "^17.4.2",
     "nodemon": "^3.1.14",
     "supertest": "^7.2.2",
+    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^2.1.9",
     "zod": "^4.4.3"
   }

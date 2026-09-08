@@ -12,7 +12,17 @@ import {
   assignGuide,
   checkInBooking,
   checkOutBooking,
+  createManualBooking,
 } from "../services/booking.service";
+
+function bookingErrStatus(err: unknown): number {
+  const withStatus = err as { status?: number };
+  if (typeof withStatus.status === "number") return withStatus.status;
+  const message = err instanceof Error ? err.message : "";
+  if (message.includes("Unauthorized")) return 403;
+  if (message.includes("not found")) return 404;
+  return 400;
+}
 
 export const submitInquiryController = async (req: Request, res: Response) => {
   try {
@@ -37,6 +47,16 @@ export const verifyInquiryOtpController = async (req: Request, res: Response) =>
     const message = err instanceof Error ? err.message : "OTP verification failed";
     const status = message.includes("expired") || message.includes("Incorrect") ? 400 : 500;
     return res.status(status).json({ success: false, message });
+  }
+};
+
+export const createBookingController = async (req: Request, res: Response) => {
+  try {
+    const result = await createManualBooking(req.user!.agencyId!, req.body ?? {});
+    return res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create booking";
+    return res.status(bookingErrStatus(err)).json({ success: false, message });
   }
 };
 

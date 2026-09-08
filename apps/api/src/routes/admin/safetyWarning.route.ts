@@ -15,6 +15,10 @@ function clientIp(req: Request): string {
 function adminId(req: Request): string {
   return (req as unknown as { adminId?: string }).adminId ?? "unknown-admin";
 }
+function paramId(req: Request): string {
+  const v = req.params.id;
+  return Array.isArray(v) ? v[0] : v;
+}
 
 // POST /admin/agencies/:id/warning — formal safety warning (permanent)
 router.post("/:id/warning", async (req: Request, res: Response) => {
@@ -24,11 +28,11 @@ router.post("/:id/warning", async (req: Request, res: Response) => {
       res.status(400).json({ error: "reason is required" });
       return;
     }
-    const warning = await issueSafetyWarning(req.params.id, adminId(req), reason);
+    const warning = await issueSafetyWarning(paramId(req), adminId(req), reason);
 
     await writeAuditLog({
       action: "AGENCY_STATUS_CHANGED", actor_id: adminId(req), actor_ip: clientIp(req),
-      target_type: "agency", target_id: req.params.id, reason: reason.trim(),
+      target_type: "agency", target_id: paramId(req), reason: reason.trim(),
       metadata: { safetyWarning: true, warningId: warning.id },
     });
     res.status(201).json(warning);

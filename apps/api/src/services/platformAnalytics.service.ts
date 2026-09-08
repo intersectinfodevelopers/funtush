@@ -38,7 +38,7 @@ export async function getPlatformOverview() {
       { $group: { _id: null, total: { $sum: "$metadata.amount" } } },
     ]).toArray(),
     prisma.agency.count({ where: { status: "ACTIVE" } }),
-    prisma.agency.groupBy({ by: ["tier"], _count: { _all: true } }),
+    prisma.agency.findMany({ select: { tier: { select: { name: true } } } }),
     col.aggregate([
       { $match: { event_type: "BOOKING_CONFIRMED" } },
       { $group: { _id: "$metadata.destination", count: { $sum: 1 } } },
@@ -61,8 +61,12 @@ export async function getPlatformOverview() {
     totalRevenue:     (totalRevenue[0] as { total?: number } | undefined)?.total ?? 0,
     monthlyRevenue:   (monthlyRevenue[0] as { total?: number } | undefined)?.total ?? 0,
     activeAgencies,
-    agenciesByTier:   (tierBreakdown as Array<{ tier: string; _count: { _all: number } }>).reduce(
-      (acc: Record<string, number>, row) => { acc[row.tier] = row._count._all; return acc; },
+    agenciesByTier:   (tierBreakdown as Array<{ tier: { name: string } | null }>).reduce(
+      (acc: Record<string, number>, row) => {
+        const name = row.tier?.name ?? "UNKNOWN";
+        acc[name] = (acc[name] ?? 0) + 1;
+        return acc;
+      },
       {} as Record<string, number>
     ),
     revenueByTier:    revenueByTier.map((r) => ({
@@ -203,35 +207,37 @@ export async function getTierAnalytics() {
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+  // NOTE(phase-2): "recent upgrade / churn" uses createdAt as a proxy — Agency
+  // has no updatedAt column yet. Refine when the admin dashboard is built.
   const [allAgencies, recentUpgrades, recentChurned] = await Promise.all([
-    prisma.agency.groupBy({
-      by: ["tier", "status"],
-      _count: { _all: true },
+    prisma.agency.findMany({
+      select: { status: true, tier: { select: { name: true } } },
     }),
     prisma.agency.findMany({
       where: {
-        tier:      { not: "FREE" },
-        updatedAt: { gte: thirtyDaysAgo },
+        tier:      { name: { not: "FREE" } },
+        createdAt: { gte: thirtyDaysAgo },
         status:    "ACTIVE",
       },
-      select: { id: true, tier: true, createdAt: true, updatedAt: true },
+      select: { id: true, tier: { select: { name: true } }, createdAt: true },
     }),
     prisma.agency.findMany({
       where: {
         status:    { in: ["SUSPENDED", "LOCKED"] },
-        updatedAt: { gte: thirtyDaysAgo },
+        createdAt: { gte: thirtyDaysAgo },
       },
-      select: { id: true, tier: true, status: true, updatedAt: true },
+      select: { id: true, tier: { select: { name: true } }, status: true },
     }),
   ]);
 
   // Build tier summary
   const tierMap: Record<string, { active: number; suspended: number; locked: number }> = {};
-  for (const row of allAgencies as Array<{ tier: string; status: string; _count: { _all: number } }>) {
-    if (!tierMap[row.tier]) tierMap[row.tier] = { active: 0, suspended: 0, locked: 0 };
-    if (row.status === "ACTIVE")    tierMap[row.tier].active    += row._count._all;
-    if (row.status === "SUSPENDED") tierMap[row.tier].suspended += row._count._all;
-    if (row.status === "LOCKED")    tierMap[row.tier].locked    += row._count._all;
+  for (const row of allAgencies as Array<{ tier: { name: string } | null; status: string }>) {
+    const name = row.tier?.name ?? "UNKNOWN";
+    if (!tierMap[name]) tierMap[name] = { active: 0, suspended: 0, locked: 0 };
+    if (row.status === "ACTIVE")    tierMap[name].active    += 1;
+    if (row.status === "SUSPENDED") tierMap[name].suspended += 1;
+    if (row.status === "LOCKED")    tierMap[name].locked    += 1;
   }
 
   const trialToPaidRate = tierMap["FREE"]?.active > 0
@@ -251,9 +257,10 @@ export async function getTierAnalytics() {
     churnRate,
     recentChurned:    recentChurned.length,
     churnByTier:      recentChurned.reduce((acc: Record<string, number>, a) => {
-      acc[a.tier] = (acc[a.tier] ?? 0) + 1;
+      const name = a.tier?.name ?? "UNKNOWN";
+      acc[name] = (acc[name] ?? 0) + 1;
       return acc;
-    }, {}),
+    }, {} as Record<string, number>),
   };
 
   await cacheSet(cacheKey, result, PLATFORM_CACHE_TTL);

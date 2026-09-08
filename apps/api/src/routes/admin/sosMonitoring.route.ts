@@ -20,6 +20,10 @@ function clientIp(req: Request): string {
 function adminId(req: Request): string {
   return (req as unknown as { adminId?: string }).adminId ?? "unknown-admin";
 }
+function paramId(req: Request): string {
+  const v = req.params.id;
+  return Array.isArray(v) ? v[0] : v;
+}
 
 // GET /admin/sos/active — live feed
 router.get("/active", async (_req: Request, res: Response) => {
@@ -52,7 +56,7 @@ router.post("/:id/notes", async (req: Request, res: Response) => {
       res.status(400).json({ error: "note is required" });
       return;
     }
-    const result = await addAdminNote(req.params.id, adminId(req), note);
+    const result = await addAdminNote(paramId(req), adminId(req), note);
     res.status(201).json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "";
@@ -65,16 +69,17 @@ router.post("/:id/notes", async (req: Request, res: Response) => {
 // GET /admin/sos/:id/export — structured law-enforcement export
 router.get("/:id/export", async (req: Request, res: Response) => {
   try {
-    const data = await exportIncident(req.params.id);
+    const incidentId = paramId(req);
+    const data = await exportIncident(incidentId);
 
     await writeAuditLog({
       action: "AGENCY_VIEWED", actor_id: adminId(req), actor_ip: clientIp(req),
-      target_type: "sos_incident", target_id: req.params.id,
+      target_type: "sos_incident", target_id: incidentId,
       metadata: { exported: true, purpose: "law_enforcement" },
     });
 
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Content-Disposition", `attachment; filename="sos-incident-${req.params.id}.json"`);
+    res.setHeader("Content-Disposition", `attachment; filename="sos-incident-${incidentId}.json"`);
     res.json(data);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "";

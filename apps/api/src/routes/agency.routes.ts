@@ -2,10 +2,6 @@ import express from "express";
 import { agencyKYCStatus, agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyDomain, updateAgencyProfile } from "../controllers/agency.controller";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 import { checkAgencyStatus, isPaidTier } from "src/middleware/agencyAccess.middleware";
-import {
-  getAgencyMarketplacePerformance,
-  getAgencyMarketplaceConversionsData,
-} from "../controllers/agencyAnalytics.controller";
 
 import { upload } from "@funtush/storage";
 
@@ -34,16 +30,7 @@ router.route("/agencies/me/domain")
 router.route("/subscription-tiers")
   .get(SubscriptionTiers);
 
-router.get(
-  "/agencies/me/marketplace/impressions",
-  authenticateWithRefreshToken,
-  getAgencyMarketplacePerformance
-);
-
-router.get(
-  "/agencies/me/marketplace/conversions",
-  authenticateWithRefreshToken,
-  getAgencyMarketplaceConversionsData
-);
+// NOTE: GET /agencies/me/marketplace/{impressions,conversions} live in
+// agencyAnalytics.routes.ts — declaring them here too caused a duplicate route.
 
 export default router;

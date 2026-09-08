@@ -1,0 +1,59 @@
+# Local / CI test infrastructure for @funtush/api.
+# Ports are deliberately non-standard so they don't collide with any other
+# Postgres/Redis/Mongo already running on the host.
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   npm run db:test:setup      # migrate + seed
+#   npm test
+#   docker compose -f docker-compose.test.yml down -v
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: funtush
+      POSTGRES_PASSWORD: funtush
+      POSTGRES_DB: funtush
+    ports:
+      - "5542:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U funtush -d funtush"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6399:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27217:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    tmpfs:
+      - /data/db
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    environment:
+      MEILI_MASTER_KEY: test-master-key
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "7701:7700"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7700/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

@@ -91,7 +91,7 @@ export const BookingConfirmed = ({
             </Row>
           </Section>
 
-          <Text style={body} style={{ marginTop: '24px' }}>
+          <Text style={{ ...body, marginTop: '24px' }}>
             Your detailed itinerary PDF is ready for download:
           </Text>
 

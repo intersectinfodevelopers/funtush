@@ -207,7 +207,7 @@ export async function getAgencyMarketplaceConversions(agencyId: string, windowHo
         bookingCreatedAt: linkedBooking?.createdAt || null,
       };
     })
-    .filter((c: typeof conversions[number]) => c.converted); // Only return conversions
+    .filter((c) => c.converted); // Only return conversions
 
   const conversionRate =
     clicks.length > 0 ? ((conversions.length / clicks.length) * 100).toFixed(2) : "0.00";

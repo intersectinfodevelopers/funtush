@@ -1,121 +1,23 @@
-﻿import "dotenv/config";
-import express, { type Request, type Response, type NextFunction } from "express";
-import { MulterError } from "multer";
+import "dotenv/config";
 
-import uploadRoutes from "./routes/upload.routes.js";
-import authRoutes from "./routes/auth.routes.js";
-import agencyRoutes from "./routes/agency.routes.js";
-import packageRoutes from "./routes/package.routes.js";
-import bookingRoutes from "./routes/booking.routes.js";
-import agencyCustomerRoutes from "./routes/agencyCustomer.routes.js";
-import trekkerRoutes from "./routes/trekker.routes.js";
-import marketplaceRoutes from "./routes/marketplace.routes.js";
-import mobileRoutes from "./routes/mobile.routes.js";
-import reviewRoutes from "./routes/review.route.js";
-import couponRoutes from "./routes/coupon.route.js";
-import branchRoutes from "./routes/branches.routes.js";
-import brandingRoutes from "./routes/branding.routes.js";
-import siteConfigRoutes from "./routes/siteConfig.routes.js";
-import navigationRoutes from "./routes/navigation.routes.js";
-import regenerationRoutes from "./routes/regeneration.routes.js";
-import widgetsRoutes from "./routes/widgets/widgets.routes.js";
-import instagramRoutes from "./routes/widgets/instagram.routes.js";
-import blogRoutes from "./routes/blog.routes.js";
-import financeRoutes from "./routes/finance.route.js";
-import staffRoutes from "./routes/staff.routes";
-import adminRoutes from "./routes/admin/index.js";
-import agencyAnalyticsRoutes from "./routes/agencyAnalytics.routes.js";
-import fraudRouter from "./routes/admin/fraud.route.js";
-
-// Email & SOS Routes
-import emailRoutes from "./routes/emailRoutes.js";
-import sosRoutes from "./routes/sosRoutes.js";
-
-import { startVisibilityScoreCron } from "./jobs/visibilityScore.job.js";
-import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job.js";
-import { startAdPerformanceSyncJob } from "./jobs/syncAdPerformance.job.js";
-import { configureIndexes } from "./services/search.service.js";
-import { flushRegenerations } from "./services/regeneration.service.js";
+import { app } from "./app";
+import { db, connectMongo } from "@funtush/database";
 import {
   initNotificationService,
   ensureNotificationIndexes,
 } from "./services/notificationDispatch.service";
-import { db, redis, connectMongo } from "@funtush/database";
+import { startSubscriptionCron } from "./jobs/subscriptionExpiry.job";
+import { startVisibilityScoreCron } from "./jobs/visibilityScore.job";
+import { startAdPerformanceSyncJob } from "./jobs/syncAdPerformance.job";
+import { startExpireUnpaidBookingsCron } from "./jobs/expireUnpaidBookings.job";
+import { configureIndexes } from "./services/search.service";
+import { flushRegenerations } from "./services/regeneration.service";
 
-const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
-// Middleware
-app.use(express.json());
-
-// Routes
-app.use("/", uploadRoutes);
-app.use("/", agencyRoutes);
-app.use("/", agencyCustomerRoutes);
-app.use("/", reviewRoutes);
-app.use("/", couponRoutes);
-app.use("/", branchRoutes);
-// Brand identity settings + the public read the white-label renderer uses.
-app.use("/", brandingRoutes);
-// Site configuration: under-construction mode, top bar, popup, Funtush badge.
-app.use("/", siteConfigRoutes);
-// Navigation builder: custom menu (Medium/Large), Book Now button, fixed nav for Small.
-app.use("/", navigationRoutes);
-// Static site regeneration: publish history + the manual "Republish" button.
-app.use("/", regenerationRoutes);
-app.use("/agencies/me/widgets", widgetsRoutes);
-app.use("/", instagramRoutes);
-app.use("/", blogRoutes);
-
-
-app.use("/", trekkerRoutes);
-app.use("/", packageRoutes);
-app.use("/marketplace", marketplaceRoutes);
-// Mobile-optimized dashboards for the React Native app (slim, paginated).
-app.use("/mobile", mobileRoutes);
-app.use("/bookings", bookingRoutes);
-app.use("/auth", authRoutes);
-app.use("/agencies/me/staff", staffRoutes);
-app.use("/admin", adminRoutes);
-app.use("/fraud", fraudRouter);
-
-// Analytics Routes
-app.use("/", agencyAnalyticsRoutes);
-
-app.use("/", financeRoutes);
-
-// Email & SOS Routes
-app.use("/emails", emailRoutes);
-app.use("/sos", sosRoutes);
-
-app.get("/health", async (_req: Request, res: Response) => {
-  const [dbOk, redisOk] = await Promise.all([
-    db.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
-    redis.ping().then((r) => r === "PONG").catch(() => false),
-  ]);
-
-  const ok = dbOk && redisOk;
-  res.status(ok ? 200 : 503).json({
-    status: ok ? "ok" : "error",
-    db: dbOk ? "ok" : "error",
-    redis: redisOk ? "ok" : "error",
-  });
-});
-
-// Global error handler
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  if (err instanceof MulterError && err.code === "LIMIT_FILE_SIZE") {
-    return res.status(400).json({ error: "File too large. Max 10MB allowed." });
-  }
-
-  const message = err instanceof Error ? err.message : "Internal server error";
-
-  if (message.includes("Invalid file type")) {
-    return res.status(400).json({ error: message });
-  }
-
-  return res.status(500).json({ error: message });
-});
+// `void db;` — keep the import referenced; the pooled client is created on import
+// and shared by every service.
+void db;
 
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   void (async () => {
@@ -133,6 +35,7 @@ if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   startSubscriptionCron();
   startVisibilityScoreCron();
   startAdPerformanceSyncJob();
+  startExpireUnpaidBookingsCron();
 
   // Ensure Meilisearch indexes + settings exist on boot (idempotent, non-blocking).
   configureIndexes().catch(console.error);
@@ -146,13 +49,7 @@ if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
    *
    * A regeneration pipeline runs *after* the HTTP response has been sent, so a
    * deploy that kills the worker mid-pipeline can stop it between "the API cache
-   * was purged" and "the pages were rebuilt" — the one state in the whole design
-   * that actually serves something wrong. Draining first costs a second or two
-   * per deploy and removes that window entirely.
-   *
-   * `server.close` stops accepting new connections while letting in-flight
-   * requests finish, so the two drains are complementary: no new regenerations
-   * are queued, and the queued ones are allowed to land.
+   * was purged" and "the pages were rebuilt". Draining first removes that window.
    */
   const shutdown = (signal: string) => {
     console.log(`[shutdown] ${signal} received — draining regenerations`);

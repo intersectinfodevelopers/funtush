@@ -44,6 +44,8 @@ apps/api/dist/
 !.env.example
 apps/api/.env
 apps/api/.env.*
+# .env.test holds only throwaway values for docker-compose.test.yml — commit it.
+!apps/api/.env.test
 
 # Secrets / keys
 *.pem
