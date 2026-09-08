@@ -46,6 +46,7 @@ export async function syncAndGetCampaignPerformance(
         {
           metaCampaignId: campaign.metaCampaignId ?? '',
           googleCampaignId: campaign.googleCampaignId ?? '',
+          googleSearchCampaignId: campaign.googleSearchCampaignId ?? ''
         },
         todayStr
       );
