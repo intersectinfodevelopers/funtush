@@ -230,6 +230,7 @@ model Agency {
   agencyDestinations AgencyDestination[]
   siteAds            SiteAd[]
   trekkerInvoices    TrekkerInvoice[]
+  fraudFlags         FraudFlag[]
 
   stripeSubscription StripeSubscription?
 
@@ -2066,4 +2067,61 @@ model SafetyWarning {
 
   @@index([agencyId])
   @@map("safety_warnings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fraud review queue (Concept doc §4).
+//
+// The detection pipeline (fingerprint / IP / email / trial-abuse analysis) is
+// still WIP; these two models back the *review* side that a platform admin
+// works: a queue of PENDING flags to confirm (permanent ban + blocklist) or
+// dismiss. See apps/api/src/services/fraud.service.ts + routes/admin/fraud.route.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum FraudFlagStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+
+enum BlocklistEntryType {
+  FINGERPRINT
+  IP
+  EMAIL
+}
+
+model FraudFlag {
+  id              String          @id @default(cuid())
+  agencyId        String          @map("agency_id")
+  agency          Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  /// Overall severity the pipeline assigned: RED (strongest) | ORANGE | YELLOW.
+  signal          String
+  status          FraudFlagStatus @default(PENDING)
+  /// Individual detectors that fired, e.g. ["DUPLICATE_FINGERPRINT", "DISPOSABLE_EMAIL"].
+  flagsTriggered  String[]        @default([]) @map("flags_triggered")
+  evidenceSummary String?         @map("evidence_summary")
+  /// Signals captured at flag time — copied onto blocklist rows when confirmed.
+  fingerprint     String?
+  ip              String?
+  email           String?
+  reviewedAt      DateTime?       @map("reviewed_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([agencyId])
+  @@map("fraud_flags")
+}
+
+model BlocklistEntry {
+  id        String             @id @default(cuid())
+  type      BlocklistEntryType
+  value     String
+  reason    String
+  /// The agency this entry originated from (the one that got banned), if known.
+  agencyId  String?            @map("agency_id")
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@unique([type, value])
+  @@index([value])
+  @@map("blocklist_entries")
 }
