@@ -40,8 +40,9 @@ vi.mock("@funtush/database", () => {
         set: vi.fn(),
         del: vi.fn(),
     };
+    const $executeRaw = vi.fn().mockResolvedValue(1);
     const $transaction = vi.fn(async (fn: (tx: unknown) => unknown) =>
-        fn({ booking, bookingAddOn, paymentLink, trekDepartureDate, guideProfile, trekPackage, package: pkg, trekAddOn, coupon })
+        fn({ booking, bookingAddOn, paymentLink, trekDepartureDate, guideProfile, trekPackage, package: pkg, trekAddOn, coupon, $executeRaw })
     );
 
     return {
@@ -56,6 +57,7 @@ vi.mock("@funtush/database", () => {
             trekAddOn,
             coupon,
             $transaction,
+            $executeRaw,
         },
         redis,
         BookingStatus: {
@@ -115,13 +117,12 @@ import {
 } from "../../services/booking.service";
 
 import { processConfirmedPayment, expireUnpaidBookings } from "../../services/payment.service";
-import { releaseSlotsForBooking, confirmSlotsForBooking } from "../../services/departureDate.service";
+import { releaseSlotsForBooking } from "../../services/departureDate.service";
 import { validateAndApplyCoupon } from "../../services/coupon.service";
 import { sendOtpEmail, sendInquiryConfirmationEmail, sendAgencyInquiryAlertEmail } from "../../utils/email";
 import { notifyAgencyAdmins } from "../../services/notification.service.js";
 
 type ReleaseSlotsTx = Parameters<typeof releaseSlotsForBooking>[0];
-type ConfirmSlotsTx = Parameters<typeof confirmSlotsForBooking>[0];
 
 const AGENCY_ID = "agency-1";
 const BOOKING_ID = "booking-1";
@@ -353,9 +354,18 @@ describe("cancelBooking", () => {
     );
 
     it("throws for a non-cancellable state", async () => {
-        (prisma.booking.findUnique as Mock).mockResolvedValue(baseBooking({ status: "INQUIRY" }));
+        (prisma.booking.findUnique as Mock).mockResolvedValue(baseBooking({ status: "COMPLETED" }));
 
         await expect(cancelBooking(BOOKING_ID, AGENCY_ID, "reason")).rejects.toThrow(/cannot be cancelled/);
+    });
+
+    it("cancels an INQUIRY (or ALTERNATIVE_PROPOSED) without releasing slots", async () => {
+        (prisma.booking.findUnique as Mock).mockResolvedValue(baseBooking({ status: "INQUIRY" }));
+
+        const res = await cancelBooking(BOOKING_ID, AGENCY_ID, "changed my mind");
+
+        expect(res.status).toBe("CANCELLED");
+        expect(prisma.trekDepartureDate.update).not.toHaveBeenCalled();
     });
 
     it("throws without a reason", async () => {
@@ -801,84 +811,5 @@ describe("proposeAlternativeDate", () => {
     });
 });
 
-describe("confirmSlotsForBooking (direct)", () => {
-    it("increments bookedSlots and flips AVAILABLE -> FULL exactly when capacity is filled", async () => {
-        const tx = {
-            trekDepartureDate: {
-                findUnique: vi.fn().mockResolvedValue({
-                    id: DEPARTURE_ID,
-                    maxSlots: 5,
-                    bookedSlots: 3,
-                    status: "AVAILABLE",
-                }),
-                update: vi.fn().mockResolvedValue({}),
-            },
-        } as unknown as ConfirmSlotsTx;
-
-        await confirmSlotsForBooking(tx, DEPARTURE_ID, 2);
-
-        expect(tx.trekDepartureDate.update).toHaveBeenCalledWith({
-            where: { id: DEPARTURE_ID },
-            data: { bookedSlots: 5, status: "FULL" },
-        });
-    });
-
-    it("increments bookedSlots and stays AVAILABLE when capacity remains", async () => {
-        const tx = {
-            trekDepartureDate: {
-                findUnique: vi.fn().mockResolvedValue({
-                    id: DEPARTURE_ID,
-                    maxSlots: 10,
-                    bookedSlots: 2,
-                    status: "AVAILABLE",
-                }),
-                update: vi.fn().mockResolvedValue({}),
-            },
-        } as unknown as ConfirmSlotsTx;
-
-        await confirmSlotsForBooking(tx, DEPARTURE_ID, 3);
-
-        expect(tx.trekDepartureDate.update).toHaveBeenCalledWith({
-            where: { id: DEPARTURE_ID },
-            data: { bookedSlots: 5, status: "AVAILABLE" },
-        });
-    });
-
-    it("throws if groupSize would exceed maxSlots (prevents overbooking race)", async () => {
-        const tx = {
-            trekDepartureDate: {
-                findUnique: vi.fn().mockResolvedValue({
-                    id: DEPARTURE_ID,
-                    maxSlots: 5,
-                    bookedSlots: 4,
-                    status: "AVAILABLE",
-                }),
-                update: vi.fn(),
-            },
-        } as unknown as ConfirmSlotsTx;
-
-        await expect(confirmSlotsForBooking(tx, DEPARTURE_ID, 2)).rejects.toThrow();
-        expect(tx.trekDepartureDate.update).not.toHaveBeenCalled();
-    });
-
-    it("preserves a GUARANTEED status instead of computing FULL/AVAILABLE from slot count", async () => {
-        const tx = {
-            trekDepartureDate: {
-                findUnique: vi.fn().mockResolvedValue({
-                    id: DEPARTURE_ID,
-                    maxSlots: 5,
-                    bookedSlots: 1,
-                    status: "GUARANTEED",
-                }),
-                update: vi.fn().mockResolvedValue({}),
-            },
-        } as unknown as ConfirmSlotsTx;
-
-        await confirmSlotsForBooking(tx, DEPARTURE_ID, 1);
-
-        expect(tx.trekDepartureDate.update).toHaveBeenCalledWith({
-            where: { id: DEPARTURE_ID },
-            data: { bookedSlots: 2, status: "GUARANTEED" },
-        });
-    });
-});
+// confirmSlotsForBooking is now a single atomic conditional UPDATE (raw SQL); its
+// capacity guard + concurrency safety live in src/test/departureSlots.integration.test.ts.

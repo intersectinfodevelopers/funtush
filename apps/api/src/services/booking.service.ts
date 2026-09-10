@@ -298,6 +298,11 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
   };
 }
 
+const BOOKING_STATUSES = [
+  "INQUIRY", "PENDING", "CONFIRMED", "PAYMENT_PENDING", "REJECTED",
+  "ALTERNATIVE_PROPOSED", "PAID", "ACTIVE", "COMPLETED", "CANCELLED",
+] as const;
+
 // GET /agencies/me/bookings
 export async function getAgencyBookings(
   agencyId: string,
@@ -305,9 +310,19 @@ export async function getAgencyBookings(
   page = 1,
   limit = 20,
 ) {
+  // An unrecognised ?status= would otherwise reach Prisma as an invalid enum and
+  // surface as a 500. Reject it as a client error instead.
+  if (status && !BOOKING_STATUSES.includes(status.toUpperCase() as (typeof BOOKING_STATUSES)[number])) {
+    const e = new Error(
+      `Invalid status filter. Expected one of: ${BOOKING_STATUSES.join(", ")}`,
+    ) as Error & { status?: number };
+    e.status = 400;
+    throw e;
+  }
+
   const where: Prisma.BookingWhereInput = {
     agencyId,
-    ...(status ? { status: status as Prisma.EnumBookingStatusFilter["equals"] } : {}),
+    ...(status ? { status: status.toUpperCase() as Prisma.EnumBookingStatusFilter["equals"] } : {}),
   };
 
   const [bookings, total] = await Promise.all([
@@ -398,7 +413,9 @@ export async function rejectBooking(
 
   if (!booking) throw new Error("Booking not found");
   if (booking.agencyId !== agencyId) throw new Error("Unauthorized");
-  if (booking.status !== "INQUIRY") {
+  // Rejectable while it's still just a request — including after the agency
+  // proposed an alternative date the trekker never took up.
+  if (!["INQUIRY", "ALTERNATIVE_PROPOSED"].includes(booking.status)) {
     throw new Error("Booking cannot be rejected in its current state");
   }
 
@@ -508,13 +525,20 @@ export async function cancelBooking(bookingId: string, agencyId: string, reason:
   if (!booking) throw new Error("Booking not found");
   if (booking.agencyId !== agencyId) throw new Error("Unauthorized");
 
-  const cancellableFrom = ["PAYMENT_PENDING", "PAID", "CONFIRMED", "ACTIVE"];
+  // Only these states hold reserved seats (accept / manual-confirm reserve them);
+  // INQUIRY and ALTERNATIVE_PROPOSED do not, so cancelling them must NOT release
+  // slots or it would steal a seat from another booking.
+  const slotsReserved = ["PAYMENT_PENDING", "PAID", "CONFIRMED", "ACTIVE"];
+  const cancellableFrom = [...slotsReserved, "INQUIRY", "ALTERNATIVE_PROPOSED"];
   if (!cancellableFrom.includes(booking.status)) {
     throw new Error("Booking cannot be cancelled in its current state");
   }
+  const shouldRelease = slotsReserved.includes(booking.status);
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await releaseSlotsForBooking(tx, booking.departureDateId, booking.groupSize);
+    if (shouldRelease) {
+      await releaseSlotsForBooking(tx, booking.departureDateId, booking.groupSize);
+    }
     await tx.booking.update({
       where: { id: bookingId },
       data: { status: "CANCELLED", rejectionReason: reason },
@@ -787,9 +811,11 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
     // INQUIRY — no seat reservation, but still refuse an impossible group size.
     const available = departure.maxSlots - departure.bookedSlots;
     if (size > available) throw bookingErr(409, `Only ${available} slot(s) available for this departure`);
-    const created = await prisma.booking.create({ data: { ...baseData, status: "INQUIRY" }, select: { id: true } });
-    if (cleanAddOns.length) await prisma.bookingAddOn.createMany({ data: addOnCreate(created.id) });
-    bookingId = created.id;
+    bookingId = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const created = await tx.booking.create({ data: { ...baseData, status: "INQUIRY" }, select: { id: true } });
+      if (cleanAddOns.length) await tx.bookingAddOn.createMany({ data: addOnCreate(created.id) });
+      return created.id;
+    });
   }
 
   const booking = (await prisma.booking.findUnique({
