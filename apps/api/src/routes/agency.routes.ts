@@ -1,7 +1,7 @@
 import express from "express";
-import { agencyKYCStatus, agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyDomain, updateAgencyProfile } from "../controllers/agency.controller";
+import { agencyKYCStatus, agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyProfile } from "../controllers/agency.controller";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
-import { checkAgencyStatus, isPaidTier } from "src/middleware/agencyAccess.middleware";
+import { checkAgencyStatus } from "src/middleware/agencyAccess.middleware";
 
 import { upload } from "@funtush/storage";
 
@@ -24,8 +24,8 @@ router.route("/agencies/me/kyc")
 router.route("/agencies/me/profile")
   .patch(authenticateWithRefreshToken, checkAgencyStatus, updateAgencyProfile);
 
-router.route("/agencies/me/domain")
-  .patch(authenticateWithRefreshToken, isPaidTier, updateAgencyDomain);
+// Custom-domain onboarding + DNS verification lives in customDomain.routes.ts
+// (GET / PUT / POST verify / DELETE /agencies/me/domain).
 
 router.route("/subscription-tiers")
   .get(SubscriptionTiers);

@@ -38,6 +38,8 @@ const MOUNTED_PATHS: Array<[string, string]> = [
   ["post", "/auth/agency/login"],
   ["post", "/auth/refresh"],
   ["patch", "/agencies/me/profile"],
+  ["get", "/agencies/me/domain"],
+  ["post", "/agencies/me/domain/verify"],
   ["get", "/agencies/me/kyc"],
   ["get", "/agencies/packages"],
   ["get", "/agencies/packages/pkg-x/addons"],
