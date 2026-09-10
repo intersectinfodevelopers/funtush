@@ -1,6 +1,5 @@
 import { prisma } from "../packages/database/prisma.js";
 import { cacheGet, cacheSet } from "./redis.service.js";
-import crypto from "crypto";
 
 const DASHBOARD_TTL = 60;
 
@@ -171,47 +170,6 @@ export async function updateAgencyTier(id: string, tier: string) {
     data: { tier },
     select: { id: true, tier: true },
   });
-}
-
-const BREAK_GLASS_TTL_SECONDS = 30 * 60;
-
-export async function issueBreakGlassToken(agencyId: string, issuedByIp: string) {
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + BREAK_GLASS_TTL_SECONDS * 1000);
-
-
-  const record = await prisma.breakGlassToken.create({
-    data: {
-      token,
-      agencyId,
-      issuedByIp,
-      expiresAt,
-    },
-  });
-
-
-  await cacheSet(`break-glass:${token}`, { agencyId, issuedByIp }, BREAK_GLASS_TTL_SECONDS);
-
-
-  notifyAgencyAdminOfBreakGlass(agencyId, expiresAt).catch((err) =>
-    console.error("[break-glass] notification failed:", err)
-  );
-
-  return { token, expiresAt, recordId: record.id };
-}
-
-
-
-async function notifyAgencyAdminOfBreakGlass(agencyId: string, expiresAt: Date) {
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyId },
-    select: { email: true, name: true },
-  });
-  if (!agency) return;
-
-  console.log(
-    `[break-glass] NOTIFY ${agency.email}: Emergency access granted to ${agency.name} — expires ${expiresAt.toISOString()}`
-  );
 }
 
 

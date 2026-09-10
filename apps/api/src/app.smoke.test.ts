@@ -48,6 +48,7 @@ const MOUNTED_PATHS: Array<[string, string]> = [
   ["patch", "/agencies/me/staff/st-x"],
   ["get", "/agencies/me/roles"],
   ["get", "/agencies/me/roles/permissions"],
+  ["get", "/agencies/me/break-glass"],
   ["get", "/agencies/me/guides"],
   ["post", "/agencies/me/guides"],
   ["get", "/agencies/me/blogs"],
@@ -94,6 +95,8 @@ const MOUNTED_PATHS: Array<[string, string]> = [
   ["get", "/admin/sos/active"],
   ["get", "/admin/email-queue"],
   ["get", "/admin/fraud/queue"],
+  ["get", "/admin/break-glass"],
+  ["post", "/admin/break-glass"],
 ];
 
 describe("app: OpenAPI doc", () => {
