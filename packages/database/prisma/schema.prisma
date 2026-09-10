@@ -230,6 +230,7 @@ model Agency {
   agencyDestinations AgencyDestination[]
   siteAds            SiteAd[]
   trekkerInvoices    TrekkerInvoice[]
+  domainMapping      DomainMapping?
 
   stripeSubscription StripeSubscription?
 
@@ -2066,4 +2067,37 @@ model SafetyWarning {
 
   @@index([agencyId])
   @@map("safety_warnings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom-domain (host-based tenant routing) — Concept doc §4.
+//
+// An agency on a paid tier points their own domain at the white-label site.
+// They add a DNS TXT record proving ownership; verification does a live lookup
+// and, on success, flips status → VERIFIED and copies the domain onto
+// Agency.customDomain. resolveTenant only routes a request to an agency when the
+// mapping is VERIFIED.
+// ─────────────────────────────────────────────────────────────────────────────
+enum DomainMappingStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+model DomainMapping {
+  id                String              @id @default(cuid())
+  agencyId          String              @unique @map("agency_id")
+  agency            Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  domain            String              @unique
+  /// Random value the agency publishes as a TXT record at _funtush-verify.<domain>.
+  verificationToken String              @map("verification_token")
+  status            DomainMappingStatus @default(PENDING)
+  verifiedAt        DateTime?           @map("verified_at")
+  lastCheckedAt     DateTime?           @map("last_checked_at")
+  lastError         String?             @map("last_error")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("domain_mappings")
 }
