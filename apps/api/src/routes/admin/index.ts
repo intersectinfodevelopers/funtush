@@ -10,6 +10,7 @@ import safetyWarningRouter from "./safetyWarning.route.js";
 import kycRouter from "./kyc.route.js";
 import emailQueueRouter from "./emailQueue.route.js";
 import tiersRouter from "./tiers.route.js";
+import breakGlassRouter from "./breakGlass.route.js";
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use("/safety-warnings", safetyWarningRouter);
 router.use("/kyc", kycRouter);
 router.use("/email-queue", emailQueueRouter);
 router.use("/tiers", tiersRouter);
+router.use("/break-glass", breakGlassRouter);
 
 export default router;

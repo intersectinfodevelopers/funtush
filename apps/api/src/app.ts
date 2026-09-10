@@ -65,6 +65,7 @@ import adminRoutes from "./routes/admin/index";
 import fraudRouter from "./routes/admin/fraud.route";
 import paymentWebhookRoutes from "./routes/payment.webhook.routes";
 import stripeWebhookRoutes from "./routes/webhooks/stripe";
+import breakGlassRoutes from "./routes/breakGlass.routes";
 
 import { openapiSpec } from "./docs/openapi";
 
@@ -142,6 +143,7 @@ export function createApp(): Express {
   app.use("/", agencyDestinationRoutes);
   app.use("/", siteAdRoutes);
   app.use("/", safetyRoutes);
+  app.use("/", breakGlassRoutes);
   app.use("/", financeRoutes);
   app.use("/", agencyAnalyticsRoutes);
 

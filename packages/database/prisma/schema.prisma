@@ -230,6 +230,7 @@ model Agency {
   agencyDestinations AgencyDestination[]
   siteAds            SiteAd[]
   trekkerInvoices    TrekkerInvoice[]
+  breakGlassTokens   BreakGlassToken[]
 
   stripeSubscription StripeSubscription?
 
@@ -2066,4 +2067,34 @@ model SafetyWarning {
 
   @@index([agencyId])
   @@map("safety_warnings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Break-Glass emergency access (Concept doc §4).
+//
+// A platform admin can request time-limited access to an agency's workspace for
+// incident response. The raw token is returned once and only its SHA-256 hash is
+// stored; a Redis key mirrors it with a TTL for fast verification. Every issue /
+// use / revoke is written to the immutable audit log, and the agency is notified
+// and can see the history (GET /agencies/me/break-glass).
+// ─────────────────────────────────────────────────────────────────────────────
+model BreakGlassToken {
+  id          String    @id @default(cuid())
+  agencyId    String    @map("agency_id")
+  agency      Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  /// SHA-256 of the raw token — the raw value is shown to the admin once, never stored.
+  tokenHash   String    @unique @map("token_hash")
+  issuedByIp  String    @map("issued_by_ip")
+  /// Admin identity when available (id or email).
+  issuedBy    String?   @map("issued_by")
+  reason      String?
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  revokedAt   DateTime? @map("revoked_at")
+  revokedByIp String?   @map("revoked_by_ip")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([agencyId])
+  @@index([expiresAt])
+  @@map("break_glass_tokens")
 }
