@@ -82,6 +82,7 @@ const MOUNTED_PATHS: Array<[string, string]> = [
   ["post", "/bookings/inquiry"],
   ["patch", "/bookings/bk-x/assign-guide"],
   ["get", "/marketplace/agencies"],
+  ["get", "/marketplace/agencies/compare"],
   ["get", "/marketplace/packages"],
   ["get", "/mobile/trekker/dashboard"],
   ["post", "/sos/trigger"],

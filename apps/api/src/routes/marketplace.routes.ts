@@ -1,8 +1,9 @@
 import express from "express";
 import {
   searchMarketplace,
-  recordMarketplaceClick, 
+  recordMarketplaceClick,
   getAgencies,
+  compareMarketplaceAgencies,
   getAgency,
   getDestinations,
   getDestination,
@@ -21,9 +22,12 @@ router.get("/packages", searchMarketplace);
 // POST /marketplace/click { agencyId, destination, searchQuery? }
 router.post("/click", recordMarketplaceClick);
 
-// GET /marketplace/agencies            → all agencies with tier, rating, top destination tags
-// GET /marketplace/agencies/:slug      → public agency profile (packages, reviews, badges)
+// GET /marketplace/agencies                    → KYC-verified agencies, composite-ranked;
+//                                                 personalised (trekkedWith + yourHistory) with a trekker token
+// GET /marketplace/agencies/compare?slugs=a,b,c → side-by-side data for 2-4 agencies
+// GET /marketplace/agencies/:slug              → public agency profile (packages, reviews, badges)
 router.get("/agencies", getAgencies);
+router.get("/agencies/compare", compareMarketplaceAgencies); // before :slug
 router.get("/agencies/:slug", getAgency);
 
 // GET /marketplace/destinations        → all master destinations with package count
