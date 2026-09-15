@@ -63,7 +63,8 @@ export const createReviewService = async (
     token: string,
     rating: number,
     text: string,
-    photos: string[]
+    photos: string[],
+    title?: string
 ) => {
     const invitation =
         await db.reviewInvitation.findUnique({
@@ -93,6 +94,7 @@ export const createReviewService = async (
                 agencyId: invitation.booking.agencyId,
 
                 rating,
+                title: title?.trim() || undefined,
                 text,
                 photos,
 

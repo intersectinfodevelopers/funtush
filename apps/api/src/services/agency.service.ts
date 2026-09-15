@@ -399,28 +399,6 @@ export const updateAgencyProfileService = async (
 };
 
 
-export const updateAgencyDomainService = async (agencyId: string, domain: string) => {
-  const updatedAgency = await db.agency.update({
-    where: {
-      id: agencyId,
-    },
-    data: {
-      customDomain: domain,
-    },
-  });
-
-  return {
-    updatedAgency,
-    dnsInstructions: {
-      step1: `Add CNAME record: ${domain} → your-app.com`,
-      step2: `Wait for propagation (5-30 min)`,
-      step3: `Verify domain in dashboard`,
-    },
-  };
-
-};
-
-
 interface KYCDetails {
   business_registration: string;
   pan_certificate: string;

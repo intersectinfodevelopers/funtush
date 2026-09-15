@@ -20,6 +20,21 @@ const router = express.Router();
 
 // Public — trekker inquiry
 
+/**
+ * @openapi
+ * /bookings/inquiry/verify-otp:
+ *   post:
+ *     tags: [Bookings]
+ *     summary: Verify the OTP sent by POST /bookings/inquiry and create the real INQUIRY booking
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [sessionToken, otp], properties: { sessionToken: { type: string }, otp: { type: string, minLength: 6, maxLength: 6 } } }
+ *     responses:
+ *       201: { description: Booking created }
+ *       400: { description: sessionToken/otp missing, expired, or incorrect }
+ */
 // /bookings/inquiry
 router.post("/inquiry", submitInquiryController);
 // /bookings/inquiry/verify-otp
@@ -68,6 +83,25 @@ router.post("/inquiry/verify-otp", verifyInquiryOtpController);
 // /agencies/me/bookings
 router.post("/", requireAuth, requireRole(["AGENCY_ADMIN"]), createBookingController);
 router.get("/", requireAuth, requireRole(["AGENCY_ADMIN"]), getAgencyBookingsController);
+/**
+ * @openapi
+ * /bookings/{id}:
+ *   get: { tags: [Bookings], summary: Get one of the agency's bookings, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Booking }, 404: { description: Not found } } }
+ * /bookings/{id}/reject:
+ *   patch: { tags: [Bookings], summary: Reject an INQUIRY booking with a reason, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Rejected }, 400: { description: Reason required, or not in INQUIRY state } } }
+ * /bookings/{id}/propose-date:
+ *   patch: { tags: [Bookings], summary: Propose an alternative departure date for an INQUIRY booking, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated }, 400: { description: proposedDate required, or not in INQUIRY state } } }
+ * /bookings/{id}/confirm:
+ *   patch: { tags: [Bookings], summary: Confirm a PAID booking, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Confirmed }, 400: { description: Not in PAID state } } }
+ * /bookings/{id}/cancel:
+ *   patch: { tags: [Bookings], summary: Cancel a booking (from PAYMENT_PENDING/PAID/CONFIRMED/ACTIVE) and release its slots, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Cancelled }, 400: { description: Reason required, or not in a cancellable state } } }
+ * /bookings/{id}/assign-guide:
+ *   patch: { tags: [Bookings], summary: Assign a guide to a booking, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Assigned }, 404: { description: Booking or guide not found } } }
+ * /bookings/{id}/check-in:
+ *   patch: { tags: [Bookings], summary: Check in a booking (trek start), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked in }, 400: { description: Not in a checkable-in state } } }
+ * /bookings/{id}/check-out:
+ *   patch: { tags: [Bookings], summary: Check out a booking (trek complete), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked out }, 400: { description: Not in a checkable-out state } } }
+ */
 // /agencies/me/bookings/:id
 router.get("/:id", requireAuth, requireRole(["AGENCY_ADMIN"]), getBookingByIdController);
 // /agencies/me/bookings/:id/accept

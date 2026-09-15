@@ -7,7 +7,62 @@ import type { AgencyRequest } from '../types/auth-request';
 
 const router = Router();
 
-// POST /billing/subscribe
+/**
+ * @openapi
+ * /billing/subscribe:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Create a Stripe subscription for the authenticated agency
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Subscription created }, 400: { description: Missing subscriptionTierId }, 404: { description: Agency not found } }
+ * /billing/subscribe/verify:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Verify and complete a Nepali-gateway (Khalti/eSewa/ConnectIPS) subscription payment
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Verified }, 400: { description: Invalid provider or missing fields } }
+ * /billing/subscribe/khalti/initiate:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Initiate a Khalti subscription payment
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Payment initiated }, 400: { description: Missing fields } }
+ * /billing/subscribe/esewa/initiate:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Initiate an eSewa subscription payment
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Payment initiated }, 400: { description: Missing fields } }
+ * /billing/subscribe/connectips/initiate:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Initiate a ConnectIPS subscription payment
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Payment initiated }, 400: { description: Missing fields } }
+ * /billing/fonepay/activate:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Activate Fonepay for the authenticated agency
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Activated }, 400: { description: Activation failed }, 401: { description: Agency not found } }
+ * /billing/fonepay/qr/dynamic:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Generate a dynamic Fonepay QR code for a given amount
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: QR generated }, 400: { description: Missing fields } }
+ * /billing/fonepay/status:
+ *   get:
+ *     tags: [Billing]
+ *     summary: Get the agency's Fonepay activation status
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Status }, 401: { description: Agency not found } }
+ * /billing/fonepay/verify:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Verify and record a trekker's Fonepay payment (no auth — verified server-side against the real Fonepay API before being credited, same trust model as the payment webhooks)
+ *     responses: { 200: { description: Verified }, 400: { description: Missing fields or verification failed } }
+ */
 router.post(
   '/subscribe',
   authenticateWithRefreshToken,
@@ -201,7 +256,7 @@ router.post(
   }
 );
 
-// POST /agencies/me/payment-methods/fonepay/activate
+// POST /billing/fonepay/activate
 router.post(
   '/fonepay/activate',
   authenticateWithRefreshToken,
@@ -229,7 +284,7 @@ router.post(
   }
 );
 
-// POST /agencies/me/payment-methods/fonepay/qr/dynamic
+// POST /billing/fonepay/qr/dynamic
 router.post(
   '/fonepay/qr/dynamic',
   authenticateWithRefreshToken,
@@ -258,7 +313,7 @@ router.post(
   }
 );
 
-// GET /agencies/me/payment-methods/fonepay/status
+// GET /billing/fonepay/status
 router.get(
   '/fonepay/status',
   authenticateWithRefreshToken,
@@ -284,7 +339,7 @@ router.get(
   }
 );
 
-// POST /trekker/payment/fonepay/verify (no auth - trekker facing)
+// POST /billing/fonepay/verify (no auth — verified server-side against Fonepay before crediting)
 router.post(
   '/fonepay/verify',
   async (req, res) => {

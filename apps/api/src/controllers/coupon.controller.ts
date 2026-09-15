@@ -6,7 +6,6 @@ export const createCoupon = async (
     res: Response
 ) => {
     try {
-        console.log("agency id coupon",req.agencyId)
         const agencyId = req.agencyId as string;
 
         const coupon = await createCouponService(

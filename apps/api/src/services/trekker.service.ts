@@ -69,42 +69,45 @@ export const createTrekker = async (data: CreateTrekkerInput) => {
 };
 
 
-interface trekkerPreferenceInput {
-    trekkerId: string;
-    preferred_destinations: string[];
-    budget_range: string;
-    group_size_preference: string;
+interface TrekkerPreferenceInput {
+    preferred_destinations?: string[];
+    budget_range?: string;
+    group_size_preference?: number;
 }
-export const trekkerPreferenceService = async (data: trekkerPreferenceInput, id: string) => {
-    const {
-        trekkerId, preferred_destinations, budget_range, group_size_preference
-    } = data;
 
-    // check duplicate email
-    const existing = await db.trekkerPreference.findUnique(
-        { where: { id }, }
-    );
+/**
+ * `trekkerId` is a caller-trusted argument, resolved by the controller from
+ * the authenticated session's own trekker record — never accepted from the
+ * request body. Previously this took the whole request body as a second
+ * "id" parameter and looked up `TrekkerPreference` by *that* (a JSON object
+ * where a string was expected, always a Prisma validation error), then
+ * unconditionally created a new row with snake_case keys the schema doesn't
+ * have (`preferredDestinations`/`budgetRange`/`groupSizePreference` are the
+ * real column names) — the endpoint could never once succeed. Fixed to
+ * `upsert` on `TrekkerPreference.trekkerId` (already `@unique`), which is
+ * also what "PATCH a preferences row that may or may not exist yet" means.
+ */
+export const trekkerPreferenceService = async (trekkerId: string, data: TrekkerPreferenceInput) => {
+    const { preferred_destinations, budget_range, group_size_preference } = data;
 
-    if (!existing) {
-        const error = new Error("Email doesnot exist") as Error & { status?: number };
-        error.status = 400;
-        throw error;
-    }
-
-    // create agency
-    const trekkerPreference = await db.trekkerPreference.create({
-        data: {
+    const trekkerPreference = await db.trekkerPreference.upsert({
+        where: { trekkerId },
+        create: {
             trekkerId,
-            preferred_destinations,
-            budget_range,
-            group_size_preference
+            preferredDestinations: preferred_destinations,
+            budgetRange: budget_range,
+            groupSizePreference: group_size_preference,
+        },
+        update: {
+            ...(preferred_destinations !== undefined ? { preferredDestinations: preferred_destinations } : {}),
+            ...(budget_range !== undefined ? { budgetRange: budget_range } : {}),
+            ...(group_size_preference !== undefined ? { groupSizePreference: group_size_preference } : {}),
         },
     });
 
-
     return {
         success: true,
-        message: "Trekker preference added successfully",
+        message: "Trekker preference saved successfully",
         data: {
             trekkerPreference
         },

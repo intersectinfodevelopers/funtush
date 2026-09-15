@@ -1,4 +1,4 @@
-import { Router, Request, Response, raw } from "express";
+import { Router, Request, Response, raw, json } from "express";
 import {
   verifyStripeSignature,
   verifyKhaltiPayment,
@@ -9,6 +9,32 @@ import { processConfirmedPayment } from "../services/payment.service";
 
 const router = Router();
 
+/**
+ * This router is mounted in `app.ts` *before* the app's global
+ * `express.json()` (a comment there already explains why: Stripe needs the
+ * exact raw bytes for its signature, so nothing may parse the body before
+ * its route does). That also means the khalti/esewa/connectips routes
+ * below get **no body parser at all** unless they apply their own — which,
+ * until now, they didn't. Every real callback from those three providers
+ * crashed with `Cannot destructure property 'pidx' of 'req.body' as it is
+ * undefined` (confirmed directly against the real app), so no Khalti/
+ * eSewa/ConnectIPS payment ever actually got confirmed. Unlike Stripe,
+ * these three compute their signatures over reconstructed field strings,
+ * not raw bytes, so a normal `json()` parse is enough — no `raw()` needed.
+ */
+const parseJsonBody = json();
+
+/**
+ * @openapi
+ * /webhooks/payment/{agencyId}/stripe:
+ *   post: { tags: [Payment Webhooks], summary: "Stripe payment_intent.succeeded webhook (HMAC signature + 5-minute replay window)", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed or ignored (non-matching event type) }, 400: { description: Missing/invalid signature or metadata } } }
+ * /webhooks/payment/{agencyId}/khalti:
+ *   post: { tags: [Payment Webhooks], summary: "Khalti callback — verified via a server-to-server lookup call to Khalti's own API, not a request signature", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed }, 400: { description: Verification failed } } }
+ * /webhooks/payment/{agencyId}/esewa:
+ *   post: { tags: [Payment Webhooks], summary: "eSewa callback (base64 payload + HMAC-SHA256 signature)", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed or ignored (non-COMPLETE status) }, 400: { description: Invalid payload or signature } } }
+ * /webhooks/payment/{agencyId}/connectips:
+ *   post: { tags: [Payment Webhooks], summary: "ConnectIPS callback (HMAC-SHA256 signature)", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed or ignored (non-SUCCESS status) }, 400: { description: Invalid signature } } }
+ */
 // Stripe requires raw body for signature verification — apply raw() before JSON parser
 router.post(
   "/:agencyId/stripe",
@@ -73,7 +99,7 @@ router.post(
 
 // POST /webhooks/payment/:agencyId/khalti
 // Khalti sends pidx + purchase_order_id (our bookingId) in the callback body
-router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
+router.post("/:agencyId/khalti", parseJsonBody, async (req: Request, res: Response) => {
   const agencyId = req.params.agencyId as string;
   const { pidx, purchase_order_id: bookingId } = req.body as {
     pidx: string;
@@ -103,7 +129,7 @@ router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
 // eSewa 
 // POST /webhooks/payment/:agencyId/esewa
 // eSewa sends a base64-encoded data param containing JSON + a signature
-router.post("/:agencyId/esewa", async (req: Request, res: Response) => {
+router.post("/:agencyId/esewa", parseJsonBody, async (req: Request, res: Response) => {
   const agencyId = req.params.agencyId as string;
   const { data } = req.body as { data: string };
 
@@ -167,7 +193,7 @@ router.post("/:agencyId/esewa", async (req: Request, res: Response) => {
 
 // connectIps
 // POST /webhooks/payment/:agencyId/connectips
-router.post("/:agencyId/connectips", async (req: Request, res: Response) => {
+router.post("/:agencyId/connectips", parseJsonBody, async (req: Request, res: Response) => {
   const agencyId = req.params.agencyId as string;
   const {
     TXNAMT,

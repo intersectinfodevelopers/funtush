@@ -289,6 +289,33 @@ export const FAVICON_SPEC: ImageSpec = {
   mimeTypes: ["image/png", "image/webp"],
 };
 
+/* ── 6b. Logo display width (backend catch-up pass) ─────────────────────── */
+
+/**
+ * How large the uploaded logo is *shown*, in the header and footer — separate
+ * from `LOGO_SPEC` above, which governs the *uploaded file's* pixel dimensions.
+ *
+ * These two do not conflict, and it is worth spelling out why not. `LOGO_SPEC`
+ * exists so every agency uploads the same fixed-resolution source (725 × 145),
+ * which is what keeps a scaled-up, blurry logo off the header entirely. This
+ * display width only ever scales that source **down** for layout — `MAX_LOGO_
+ * WIDTH` is kept well under 725px specifically so a display width can never
+ * upscale the image, which is the only direction that causes blur. A theme
+ * with a narrower header simply shows a smaller, still-sharp logo.
+ */
+export const MIN_LOGO_WIDTH = 40;
+export const MAX_LOGO_WIDTH = 280;
+
+/* ── 6c. Receipt footer (backend catch-up pass) ──────────────────────────── */
+
+/**
+ * A line or two of free text printed at the bottom of every POS receipt and
+ * invoice — "Thank you for trekking with us!", a return policy, a WiFi
+ * password. 200 characters is generous for that without being an invitation
+ * to paste a paragraph of terms and conditions onto a receipt.
+ */
+export const MAX_RECEIPT_FOOTER_LENGTH = 200;
+
 /* ── 7. Defaults ────────────────────────────────────────────────────────── */
 
 /**
@@ -306,4 +333,6 @@ export const DEFAULT_BRANDING = {
   cardImageRatio: "RATIO_4_3" as CardImageRatioId,
   currencyCode: "NPR",
   currencyDisplay: "SYMBOL" as const,
+  logoWidth: 140,
+  receiptFooter: "Thank you for trekking with us!",
 } as const;

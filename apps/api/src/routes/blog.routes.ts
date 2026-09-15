@@ -5,6 +5,19 @@ import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthent
 
 const router = Router();
 
+/**
+ * @openapi
+ * /agencies/me/categories:
+ *   get: { tags: [Blog], summary: List the agency's blog categories, security: [{ refreshToken: [] }], responses: { 200: { description: Categories } } }
+ *   post: { tags: [Blog], summary: Create a blog category, security: [{ refreshToken: [] }], responses: { 201: { description: Created } } }
+ * /agencies/me/categories/{id}:
+ *   patch: { tags: [Blog], summary: Update a blog category, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated } } }
+ * /agencies/me/blogs:
+ *   get: { tags: [Blog], summary: List the agency's blog posts, security: [{ refreshToken: [] }], responses: { 200: { description: Posts } } }
+ *   post: { tags: [Blog], summary: Create a blog post (multipart, up to 10 photos), security: [{ refreshToken: [] }], responses: { 201: { description: Created } } }
+ * /agencies/me/blogs/{id}:
+ *   patch: { tags: [Blog], summary: Update a blog post (multipart, up to 10 photos), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated } } }
+ */
 router.route('/agencies/me/categories')
     .get(authenticateWithRefreshToken, getAgencycategories)
     .post(authenticateWithRefreshToken, createcategory);

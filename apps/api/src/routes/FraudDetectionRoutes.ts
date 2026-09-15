@@ -1,3 +1,21 @@
+/**
+ * ── NOT MOUNTED — out of scope (API-wide docs/test pass, Batch 0) ────────────
+ *
+ * Never imported by `app.ts`. IP/email/behavioral fraud-*detection* logic,
+ * distinct from the fraud *review queue* this pass fixed
+ * (`services/fraud.service.ts`, `FraudFlag`/`BlocklistEntry`). Four of its
+ * five imports below don't resolve — `./ipAnalysisService`,
+ * `./emailAnalysisService`, `./behavioralAnalysisService`, and
+ * `./fraudDetectionDatabaseService` (case-mismatched; the file that exists
+ * is `FraudDetectionDatabaseService.ts`) — and the `IpRegistration`/
+ * `AgencyEmail`/`TrialUsage` Prisma models they'd need have never existed
+ * anywhere in this repo's git history.
+ *
+ * Deliberately left as-is: this is a real fraud-detection engine (IP
+ * reputation, email-pattern, behavioral-velocity heuristics) with no
+ * existing spec or prior implementation to complete — a product design
+ * task, not a routing or test-coverage gap.
+ */
 import { Router, Request, Response } from 'express';
 import { IPAnalysisService } from '../services/ipAnalysisService';
 import { EmailAnalysisService } from '../services/emailAnalysisService';

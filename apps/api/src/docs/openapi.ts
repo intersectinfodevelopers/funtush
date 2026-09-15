@@ -168,8 +168,131 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     "/auth/refresh": {
       post: {
         tags: ["Auth"],
-        summary: "Exchange a refresh token for a new access token",
-        responses: { "200": { description: "New access token" }, "401": { description: "Invalid refresh token" } },
+        summary: "Exchange a refresh token for a new access + refresh token pair (single use — the old refresh token is consumed)",
+        responses: { "200": { description: "New token pair" }, "401": { description: "Invalid or already-used refresh token" } },
+      },
+    },
+    "/auth/admin/login": {
+      post: {
+        tags: ["Auth"],
+        summary: "Platform (super-admin) login — locks for 15 min after 5 failed attempts",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "password"],
+                properties: {
+                  email: { type: "string", format: "email" },
+                  password: { type: "string", format: "password" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Access + refresh tokens" },
+          "401": { description: "Invalid credentials or not a super admin" },
+          "429": { description: "Account temporarily locked" },
+        },
+      },
+    },
+    "/auth/trekker/login": {
+      post: {
+        tags: ["Auth"],
+        summary: "Trekker login",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "password"],
+                properties: {
+                  email: { type: "string", format: "email" },
+                  password: { type: "string", format: "password" },
+                },
+              },
+            },
+          },
+        },
+        responses: { "200": { description: "Access + refresh tokens" }, "401": { description: "Invalid credentials" } },
+      },
+    },
+    "/auth/register": {
+      post: {
+        tags: ["Auth"],
+        summary: "Register a new trekker account",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "password", "confirmPassword"],
+                properties: {
+                  email: { type: "string", format: "email" },
+                  password: { type: "string", format: "password", description: "Min 8 chars, upper+lower+digit" },
+                  confirmPassword: { type: "string", format: "password" },
+                },
+              },
+            },
+          },
+        },
+        responses: { "201": { description: "Registered" }, "400": { description: "Invalid input or email already exists" } },
+      },
+    },
+    "/auth/verify-otp": {
+      post: {
+        tags: ["Auth"],
+        summary: "Verify a trekker's registration OTP (marks the trekker's email verified)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["userId", "otp"],
+                properties: {
+                  userId: { type: "string", description: "The trekker id (not the user id), despite the field name" },
+                  otp: { type: "string", minLength: 6, maxLength: 6 },
+                },
+              },
+            },
+          },
+        },
+        responses: { "200": { description: "Verified" }, "400": { description: "Invalid or expired OTP" } },
+      },
+    },
+    "/auth/me": {
+      get: {
+        tags: ["Auth"],
+        summary: "The authenticated caller's identity (role, roleType, agencyId, permissions)",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Identity" }, "401": { description: "Unauthorized" } },
+      },
+    },
+    "/auth/logout": {
+      post: {
+        tags: ["Auth"],
+        summary: "Invalidate a refresh token",
+        responses: { "200": { description: "Logged out" }, "400": { description: "Logout failed" } },
+      },
+    },
+    "/auth/trekker/resend-otp": {
+      post: {
+        tags: ["Auth"],
+        summary: "Resend a trekker's registration OTP (max 3 per hour per email)",
+        responses: { "200": { description: "Sent" }, "500": { description: "Unknown email or rate-limited" } },
+      },
+    },
+    "/auth/fcm-token": {
+      post: {
+        tags: ["Auth"],
+        summary: "Register a device's FCM push-notification token for the authenticated user",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Registered" }, "400": { description: "fcmToken is required" } },
       },
     },
     "/subscription-tiers": {
@@ -212,11 +335,55 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       },
     },
     "/agencies/me/domain": {
+      get: {
+        tags: ["Agency"],
+        summary: "Subdomain, custom domain, verification status, and publish state",
+        security: [{ refreshToken: [] }],
+        responses: { "200": { description: "Domain settings" }, "401": { description: "Unauthorized" } },
+      },
       patch: {
         tags: ["Agency"],
-        summary: "Set the agency's custom domain (paid tiers only)",
+        summary: "Connect (or replace) the agency's custom domain (paid tiers only)",
         security: [{ refreshToken: [] }],
-        responses: { "200": { description: "Updated" }, "403": { description: "Tier does not allow custom domains" } },
+        responses: {
+          "200": { description: "Connected — returns DNS instructions to verify" },
+          "400": { description: "Not a well-formed domain" },
+          "403": { description: "Tier does not allow custom domains" },
+        },
+      },
+      delete: {
+        tags: ["Agency"],
+        summary: "Disconnect the agency's custom domain (paid tiers only)",
+        security: [{ refreshToken: [] }],
+        responses: { "200": { description: "Disconnected" }, "403": { description: "Tier does not allow custom domains" } },
+      },
+    },
+    "/agencies/me/domain/verify": {
+      post: {
+        tags: ["Agency"],
+        summary: "Re-check DNS ownership of the connected custom domain right now (paid tiers only)",
+        security: [{ refreshToken: [] }],
+        responses: {
+          "200": { description: "Verification result" },
+          "400": { description: "No domain connected yet" },
+          "403": { description: "Tier does not allow custom domains" },
+        },
+      },
+    },
+    "/agencies/me/publish": {
+      post: {
+        tags: ["Agency"],
+        summary: "Publish the agency's site (every tier, including FREE)",
+        security: [{ refreshToken: [] }],
+        responses: { "200": { description: "Published" }, "401": { description: "Unauthorized" } },
+      },
+    },
+    "/agencies/me/unpublish": {
+      post: {
+        tags: ["Agency"],
+        summary: "Unpublish the agency's site (every tier, including FREE)",
+        security: [{ refreshToken: [] }],
+        responses: { "200": { description: "Unpublished" }, "401": { description: "Unauthorized" } },
       },
     },
     "/agencies/me/kyc": {
@@ -407,9 +574,136 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     "/admin/agencies": {
       get: {
         tags: ["Admin"],
-        summary: "List / filter all agencies",
+        summary: "List / filter all agencies (search, tier, status, join date, pagination)",
         security: [{ bearerAuth: [] }],
         responses: { "200": { description: "Agencies" } },
+      },
+    },
+    "/admin/agencies/{id}": {
+      get: {
+        tags: ["Admin"],
+        summary: "Full agency profile — booking/staff summary, KYC status",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Profile" }, "404": { description: "Not found" } },
+      },
+    },
+    "/admin/agencies/{id}/tier": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Change an agency's subscription tier immediately",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Updated" }, "500": { description: "Unknown tier name" } },
+      },
+    },
+    "/admin/agencies/{id}/status": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Set an agency's status to ACTIVE, SUSPENDED, or LOCKED (reason required, audit-logged)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Updated" }, "400": { description: "Missing status/reason" } },
+      },
+    },
+    "/admin/agencies/{id}/visibility": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Set a marketplace-visibility priority override (super-admin only — platform-admin JWT required, not just IP-whitelisted admin context)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Updated, visibility score recomputed" },
+          "400": { description: "admin_override must be a non-negative integer" },
+          "401": { description: "No platform-admin bearer token" },
+          "403": { description: "Not a super admin" },
+        },
+      },
+    },
+    "/admin/agencies/{id}/impersonate": {
+      post: {
+        tags: ["Admin"],
+        summary: "Issue a short-lived (15 min) impersonation token for support",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "201": { description: "Token issued" }, "404": { description: "Agency not found" } },
+      },
+    },
+    "/admin/ad-campaigns/pending": {
+      get: {
+        tags: ["Admin"],
+        summary: "Queue of ad campaigns awaiting approval (Large-tier agencies)",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Pending campaigns" } },
+      },
+    },
+    "/admin/ad-campaigns/active": {
+      get: {
+        tags: ["Admin"],
+        summary: "Running ad campaigns with impressions/clicks/spend",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Active campaigns" } },
+      },
+    },
+    "/admin/ad-campaigns/{id}/approve": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Approve and push a campaign live via the ad platform (platform-admin JWT required)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Live" }, "401": { description: "No platform-admin token" } },
+      },
+    },
+    "/admin/ad-campaigns/{id}/reject": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Reject a pending campaign with a reason (platform-admin JWT required)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Rejected" }, "409": { description: "Already resolved" } },
+      },
+    },
+    "/admin/ad-campaigns/{id}/pause": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Pause a running campaign immediately (platform-admin JWT required)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Paused" }, "401": { description: "No platform-admin token" } },
+      },
+    },
+    "/admin/fraud/queue": {
+      get: {
+        tags: ["Admin"],
+        summary: "Pending fraud flags, strongest signal first",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Queue" } },
+      },
+    },
+    "/admin/fraud/ban-registry": {
+      get: {
+        tags: ["Admin"],
+        summary: "Every permanently banned account",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Registry" } },
+      },
+    },
+    "/admin/fraud/{id}/confirm": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Confirm a fraud flag — bans the account and blocklists its fingerprint/IP/email",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Confirmed" }, "409": { description: "Already resolved" } },
+      },
+    },
+    "/admin/fraud/{id}/dismiss": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Dismiss a fraud flag — clears it and resets the account's risk score",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Dismissed" }, "409": { description: "Already resolved" } },
       },
     },
     "/admin/kyc": {
@@ -418,6 +712,116 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
         summary: "KYC review queue",
         security: [{ bearerAuth: [] }],
         responses: { "200": { description: "Queue" } },
+      },
+    },
+    "/admin/kyc/{id}": {
+      get: {
+        tags: ["Admin"],
+        summary: "One KYC submission with agency and document details",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Submission" }, "404": { description: "Not found" } },
+      },
+    },
+    "/admin/kyc/{id}/approve": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Approve a KYC submission",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Approved" }, "409": { description: "Already reviewed" } },
+      },
+    },
+    "/admin/kyc/{id}/reject": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Reject a KYC submission with a reason",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Rejected" }, "400": { description: "Reason required" } },
+      },
+    },
+    "/admin/email-queue": {
+      get: {
+        tags: ["Admin"],
+        summary: "Outgoing email queue, grouped by status (pending/sent/failed)",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Queue" }, "400": { description: "Invalid status filter" } },
+      },
+    },
+    "/admin/analytics": {
+      get: {
+        tags: ["Admin"],
+        summary: "Platform-wide overview — bookings, revenue by tier, top destinations",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Overview" } },
+      },
+    },
+    "/admin/analytics/agencies": {
+      get: {
+        tags: ["Admin"],
+        summary: "Top performing agencies by bookings, revenue, retention",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Performance" } },
+      },
+    },
+    "/admin/analytics/marketplace": {
+      get: {
+        tags: ["Admin"],
+        summary: "Most searched destinations, popular filters, conversion funnel",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Marketplace analytics" } },
+      },
+    },
+    "/admin/analytics/tiers": {
+      get: {
+        tags: ["Admin"],
+        summary: "Trial-to-paid conversion rate and churn rate per tier",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Tier analytics" } },
+      },
+    },
+    "/admin/safety-warnings/{id}/warning": {
+      post: {
+        tags: ["Admin"],
+        summary: "Issue a formal, permanent safety warning against an agency",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "201": { description: "Warning issued" }, "404": { description: "Agency not found" } },
+      },
+    },
+    "/admin/sos/active": {
+      get: {
+        tags: ["Admin"],
+        summary: "Live feed of active/acknowledged SOS incidents, with acknowledgment-overdue flags",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "Active incidents" } },
+      },
+    },
+    "/admin/sos/history": {
+      get: {
+        tags: ["Admin"],
+        summary: "Past (resolved/cancelled) SOS incidents",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "History" } },
+      },
+    },
+    "/admin/sos/{id}/notes": {
+      post: {
+        tags: ["Admin"],
+        summary: "Add an admin observation note to an SOS incident",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "201": { description: "Note added" }, "404": { description: "Incident not found" } },
+      },
+    },
+    "/admin/sos/{id}/export": {
+      get: {
+        tags: ["Admin"],
+        summary: "Structured law-enforcement export of a full incident record",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Export" }, "404": { description: "Incident not found" } },
       },
     },
   },

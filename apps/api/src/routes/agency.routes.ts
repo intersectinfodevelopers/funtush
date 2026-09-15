@@ -1,7 +1,7 @@
 import express from "express";
-import { agencyKYCStatus, agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyDomain, updateAgencyProfile } from "../controllers/agency.controller";
+import { agencyKYCStatus, agencyKYCSubmission, registerAgency, SubscriptionTiers, updateAgencyProfile } from "../controllers/agency.controller";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
-import { checkAgencyStatus, isPaidTier } from "src/middleware/agencyAccess.middleware";
+import { checkAgencyStatus } from "src/middleware/agencyAccess.middleware";
 
 import { upload } from "@funtush/storage";
 
@@ -24,8 +24,9 @@ router.route("/agencies/me/kyc")
 router.route("/agencies/me/profile")
   .patch(authenticateWithRefreshToken, checkAgencyStatus, updateAgencyProfile);
 
-router.route("/agencies/me/domain")
-  .patch(authenticateWithRefreshToken, isPaidTier, updateAgencyDomain);
+// /agencies/me/domain (+ /verify, /publish, /unpublish) now live in
+// domain.routes.ts — see that file's header for why the paid-tier gate
+// differs between connect/verify/disconnect and publish/unpublish.
 
 router.route("/subscription-tiers")
   .get(SubscriptionTiers);

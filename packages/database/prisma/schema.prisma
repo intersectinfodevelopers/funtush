@@ -15,6 +15,49 @@ enum AgencyStatus {
   BANNED
 }
 
+/// Ownership-proof state of `Agency.customDomain` (backend catch-up pass).
+/// `NONE` ⇒ no custom domain connected. `PENDING` ⇒ connected, TXT record not
+/// yet found. `VERIFIED` ⇒ the TXT record matched — see
+/// `lib/dnsVerification.ts`. There is deliberately no `FAILED`: DNS can take
+/// up to 48 hours to propagate, so "not verified yet" is `PENDING` whether
+/// the record hasn't appeared or hasn't propagated — the two are
+/// indistinguishable from here and an agency shouldn't see a scary "failed"
+/// state for a change that just hasn't landed yet.
+enum DomainVerificationStatus {
+  NONE
+  PENDING
+  VERIFIED
+}
+
+/// Fraud review queue (API-wide docs/test pass). Strongest signal first —
+/// `services/fraud.service.ts` sorts a queue RED → ORANGE → YELLOW because
+/// Postgres can't order by an app-defined priority the way a `CASE` would
+/// need restating in every query; the enum still constrains storage to
+/// exactly these three values.
+enum FraudSignal {
+  RED
+  ORANGE
+  YELLOW
+}
+
+/// A flag starts `PENDING`; an admin resolves it to exactly one of the other
+/// two — there is no path back to `PENDING` once reviewed, matching
+/// `KycStatus`'s own one-way review shape.
+enum FraudFlagStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+
+/// Which signal a `BlocklistEntry` row blocks on. A confirmed fraud flag can
+/// contribute up to three rows (fingerprint, IP, email) — see
+/// `confirmFraud` in `services/fraud.service.ts`.
+enum BlocklistEntryType {
+  FINGERPRINT
+  IP
+  EMAIL
+}
+
 enum UserRole {
   SUPER_ADMIN
   AGENCY_ADMIN
@@ -165,6 +208,17 @@ model SubscriptionTier {
   whiteLabelComplete Boolean  @default(false) @map("white_label_complete")
   apiAccessEnabled   Boolean  @default(false) @map("api_access_enabled")
 
+  // ── Phase 7 (backend catch-up): fields promoted out of the loose `features`
+  // Json blob — nothing ever read individual keys out of that blob (it was
+  // genuinely unstructured), so this is a pure typed-column upgrade, not a
+  // migration of live data. `maxBookingsPerMonth: null` means unlimited,
+  // matching `annualPrice`'s "null = unset" convention above rather than a
+  // sentinel number.
+  maxBookingsPerMonth    Int?     @map("max_bookings_per_month")
+  blogEnabled            Boolean  @default(false) @map("blog_enabled")
+  analyticsEnabled       Boolean  @default(false) @map("analytics_enabled")
+  prioritySupportEnabled Boolean  @default(false) @map("priority_support_enabled")
+
   agencies      Agency[]
   subscriptions Subscription[]
 
@@ -180,6 +234,22 @@ model Agency {
   status            AgencyStatus           @default(TRIAL)
   tierId            String                 @map("tier_id")
   customDomain      String?                @map("custom_domain")
+  /// See `DomainVerificationStatus` — defaults to `NONE` for every agency
+  /// that has never touched `customDomain`.
+  customDomainStatus DomainVerificationStatus @default(NONE) @map("custom_domain_status")
+  /// Random token an agency proves ownership by publishing in a TXT record —
+  /// see `buildDnsInstructions` in `data/domain.ts`. Regenerated every time a
+  /// new domain is connected, so a stale token from a previously-disconnected
+  /// domain can never verify a different one.
+  customDomainVerificationToken String? @map("custom_domain_verification_token")
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
+  /// `null` ⇒ this site has never been published — the state of every agency
+  /// before it first clicks Publish. Distinct from `AgencySiteConfig.
+  /// underConstruction`, which pauses an *already-published* site; a site is
+  /// actually live only when both `publishedAt` is set and
+  /// `underConstruction` is false — see `getSiteLiveness` in
+  /// `siteConfig.service.ts`.
+  publishedAt       DateTime?              @map("published_at")
   mapsUrl           String?                @map("maps_url")
   priorityOverride  Int                    @default(0) @map("priority_override")
   trialExpiresAt    DateTime?              @map("trial_expires_at")
@@ -222,6 +292,11 @@ model Agency {
   bugReports BugReport[]
   apiKeys    ApiKey[]
   navigation AgencyNavigation?
+  socialLinks AgencySocialLinks?
+  seoSettings AgencySeoSettings?
+  notificationPreference AgencyNotificationPreference?
+  emailSettings AgencyEmailSettings?
+  sitePage AgencySitePage?
 
   // ── Phase 2 agency-dashboard modules ──────────────────────────────────────
   safetyWarnings     SafetyWarning[]
@@ -242,6 +317,9 @@ model Agency {
   fonepayTransactions FonepayTransaction[]
   categories          Category[]
   blogs               Blog[]
+
+  fraudFlags       FraudFlag[]
+  blocklistEntries BlocklistEntry[]
 
   @@map("agencies")
 }
@@ -1129,6 +1207,11 @@ model Review {
   assignedGuideId String? @map("assigned_guide_id")
 
   rating Int
+  /// Short headline a trekker can optionally give their review — e.g. "Best
+  /// trek of my life" — shown above `text` on the review card. Added in the
+  /// backend catch-up pass; existing reviews have none, which is fine, it's
+  /// purely decorative on top of `text`.
+  title  String?
   text   String
   photos String[] @default([])
 
@@ -1802,6 +1885,16 @@ model AgencyBranding {
 
   currencyDisplay CurrencyDisplay @default(SYMBOL) @map("currency_display")
 
+  /// Rendered width of `logoUrl` in the header/footer, in px — separate from
+  /// the fixed 725×145 upload size (see `LOGO_SPEC` in
+  /// `apps/api/src/data/brandTheme.ts`), which exists purely to guarantee a
+  /// sharp source image. This only ever scales that source down for layout.
+  logoWidth Int? @map("logo_width")
+
+  /// Free text printed at the bottom of every POS receipt/invoice — a thank-you
+  /// line, a return policy, a WiFi password. `null` ⇒ the platform default.
+  receiptFooter String? @map("receipt_footer")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -2010,6 +2103,385 @@ model AgencyNavigationItem {
   @@index([navigationId])
   @@index([parentId])
   @@map("agency_navigation_items")
+}
+
+/// The five social profile links shown in the site footer/header — one row per
+/// agency, every field optional (an agency may fill in as few or as many as it
+/// likes). Not tier-gated: like branding and navigation, every tier gets to
+/// say who it is.
+///
+/// `whatsappNumber` is a phone number, not a URL — it mirrors
+/// `AgencyProfile.whatsappNumber`'s convention, and the renderer builds the
+/// `wa.me/` link from it rather than storing a pre-built one that would go
+/// stale if the number changed.
+model AgencySocialLinks {
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  facebookUrl    String? @map("facebook_url")
+  instagramUrl   String? @map("instagram_url")
+  tiktokUrl      String? @map("tiktok_url")
+  whatsappNumber String? @map("whatsapp_number")
+  youtubeUrl     String? @map("youtube_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("agency_social_links")
+}
+
+/// Search-engine metadata for an agency's site — the `<title>`/`<meta
+/// description>` pair and a social share image. One row per agency, not
+/// tier-gated, following the same reasoning `AgencySocialLinks` does.
+model AgencySeoSettings {
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  /// Rendered as `<title>`. Recommended ≤60 characters — see
+  /// `SEO_TEXT_LIMITS` in `apps/api/src/data/seoSettings.ts`.
+  metaTitle String? @map("meta_title")
+
+  /// Rendered as `<meta name="description">`. Recommended ≤160 characters.
+  metaDescription String? @map("meta_description")
+
+  /// CDN URL of the image used for social share previews (Open Graph /
+  /// Twitter cards).
+  ogImageUrl String? @map("og_image_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("agency_seo_settings")
+}
+
+/// Which channels (email / in-app) reach the agency for each of eight fixed
+/// event types, plus the "welcome back" popup shown inside the *trekker's*
+/// app to a returning customer. Unlike every sibling model added in this
+/// pass, this one is not part of the public white-label site — nothing here
+/// is ever read by a site visitor's browser, so there is no public
+/// `/site/:slug/...` counterpart and no regeneration is queued on save.
+///
+/// Sixteen typed booleans rather than one JSON blob, matching this codebase's
+/// preference (see `brandTheme.ts`'s header) for typed columns over a loose
+/// blob whenever the set of things being configured is small and fixed — here
+/// exactly the eight events in `apps/api/src/data/notifications.ts`.
+model AgencyNotificationPreference {
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  newInquiryEmail      Boolean @default(false) @map("new_inquiry_email")
+  newInquiryInApp      Boolean @default(true) @map("new_inquiry_in_app")
+  paymentReceivedEmail Boolean @default(false) @map("payment_received_email")
+  paymentReceivedInApp Boolean @default(true) @map("payment_received_in_app")
+  bookingCancelledEmail Boolean @default(false) @map("booking_cancelled_email")
+  bookingCancelledInApp Boolean @default(true) @map("booking_cancelled_in_app")
+  newReviewEmail       Boolean @default(false) @map("new_review_email")
+  newReviewInApp       Boolean @default(true) @map("new_review_in_app")
+  /// Always `true` — see `isEmailLocked` in `data/notifications.ts`. Stored
+  /// (not just forced at read time) so the column's own default documents
+  /// the rule for anyone reading the table directly.
+  sosTriggeredEmail    Boolean @default(true) @map("sos_triggered_email")
+  sosTriggeredInApp    Boolean @default(true) @map("sos_triggered_in_app")
+  lowSlotsEmail        Boolean @default(false) @map("low_slots_email")
+  lowSlotsInApp        Boolean @default(true) @map("low_slots_in_app")
+  subscriptionEmail    Boolean @default(false) @map("subscription_email")
+  subscriptionInApp    Boolean @default(true) @map("subscription_in_app")
+  weeklyDigestEmail    Boolean @default(false) @map("weekly_digest_email")
+  weeklyDigestInApp    Boolean @default(true) @map("weekly_digest_in_app")
+
+  /// A one-time popup shown to a returning trekker inside their own app —
+  /// not the public site. `null` message ⇒ the platform default line.
+  welcomeBackPopupEnabled Boolean @default(true) @map("welcome_back_popup_enabled")
+  welcomeBackPopupMessage String? @map("welcome_back_popup_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("agency_notification_preferences")
+}
+
+/// How the agency's own outgoing emails (booking confirmations, payment
+/// links, trek reminders, review invites) identify themselves. Not part of
+/// the public white-label site — no visitor's browser ever reads this — so,
+/// like `AgencyNotificationPreference`, there is no public read and no
+/// regeneration is queued on save.
+model AgencyEmailSettings {
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  /// Shown as the "from" display name in inboxes. `null` ⇒ the platform's own
+  /// sender name.
+  senderName String? @map("sender_name")
+
+  /// Needs domain verification with the email provider before mail can
+  /// actually be sent as this address — stored here as the agency's
+  /// intention; the send pipeline still falls back to the platform's
+  /// verified address until that's wired up.
+  fromAddress String? @map("from_address")
+
+  /// Replies from trekkers go here instead of the platform's own inbox.
+  replyTo String? @map("reply_to")
+
+  /// Appended to every outgoing email's footer.
+  footerText String? @map("footer_text")
+
+  /// Required for marketing email in most regions; transactional email
+  /// (bookings, payments) is exempt but an agency may still want the link.
+  includeUnsubscribe Boolean @default(true) @map("include_unsubscribe")
+
+  /// A silent copy of every booking confirmation and payment link.
+  bccBookingsTo String? @map("bcc_bookings_to")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("agency_email_settings")
+}
+
+/// ── Phase 8 (backend catch-up): the page-builder / "MySite" model ───────────
+/// One agency, one editable public page, built from an ordered list of
+/// sections — the backend counterpart of the frontend's `MySite` prototype
+/// (`src/lib/mock/site-pages.ts`). Same one-row-per-agency convention as
+/// `AgencyBranding`/`AgencySiteConfig`/`AgencyNavigation`: no row ⇒ the agency
+/// has never opened the builder, and the service falls back to the platform's
+/// default starter template.
+///
+/// Deliberately carries **no** `published` flag of its own — whether the
+/// public site is live at all is `Agency.publishedAt`'s job (Phase 6), and
+/// duplicating that fact here would recreate exactly the two-sources-of-truth
+/// problem `getSiteLiveness()` was written to avoid. This model only answers
+/// "what renders", never "is it currently being shown".
+model AgencySitePage {
+  id       String @id @default(uuid())
+  agencyId String @unique @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  /// Which platform starter template this site was last seeded from —
+  /// provenance only. Once seeded, `sections` is independently editable and
+  /// this id stops describing what actually renders; it exists so "Switch
+  /// template" can show which one is currently applied. A free-text value
+  /// checked against `data/sitePage.ts`'s `SITE_TEMPLATES` whitelist, not a
+  /// DB enum — a new template should not need a migration.
+  templateId String? @map("template_id")
+
+  /// The visual variant (heading weight, card shape, accent style) — see
+  /// `data/sitePage.ts`'s `SITE_VARIANTS`. Kept separate from `templateId`
+  /// because an agency keeps editing sections after picking a template while
+  /// the variant it came with stays fixed.
+  variant SitePageVariant @default(CLASSIC) @map("variant")
+
+  /// The site's own display name shown in the dashboard builder — not the
+  /// brand name (`AgencyBranding.brandName`) and never shown to visitors.
+  name String? @map("name")
+
+  /// Site-wide header chrome, applies to every page — bundled onto this one
+  /// settings row rather than a separate table, the same call
+  /// `AgencyNavigation` makes for `bookNowLabel`/`bookNowHidden`.
+  headerStyle   SitePageHeaderStyle @default(STANDARD) @map("header_style")
+  headerCtaText String?             @map("header_cta_text")
+  headerCtaLink String?             @map("header_cta_link")
+  headerSticky  Boolean             @default(true) @map("header_sticky")
+
+  /// Site-wide footer chrome.
+  footerStyle SitePageFooterStyle @default(BASIC) @map("footer_style")
+
+  sections AgencySitePageSection[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("agency_site_pages")
+}
+
+enum SitePageVariant {
+  CLASSIC
+  MINIMAL
+  EDITORIAL
+  BOLD
+  ELEGANT
+  PLAYFUL
+}
+
+enum SitePageHeaderStyle {
+  STANDARD
+  CENTERED
+  CTA
+}
+
+enum SitePageFooterStyle {
+  BASIC
+  DETAILED
+  GRID
+  LOGO_GRID
+}
+
+enum SitePageSectionType {
+  TOPBAR
+  HERO
+  CATEGORIES
+  TEXTBLOCK
+  BLOGS
+  PACKAGES
+  DESTINATIONS
+  VIDEOS
+  GALLERY
+  REVIEWS
+  ADS
+}
+
+enum SitePageHeroHeight {
+  SMALL
+  MEDIUM
+  LARGE
+  FULL
+}
+
+enum SitePageMarqueeDirection {
+  LTR
+  RTL
+}
+
+/// One block in the page, in `position` order — the exact ordered-list
+/// pattern `AgencyNavigationItem` established: the client sends its whole
+/// section list back in the order it wants, and the write path renumbers
+/// `position` from each array's index. There is no separate reorder
+/// endpoint and no diffing against stored ids — see
+/// `services/sitePage.service.ts`.
+///
+/// One flat row shape for every section type, mirroring the frontend's own
+/// `Section` struct exactly rather than inventing a per-type table: `type`
+/// decides which of these columns the renderer and the editor actually look
+/// at, and the set of possible fields is small, fixed, and enumerable — the
+/// same "typed columns over a JSON blob" call `brandTheme.ts`'s header
+/// comment argues for.
+model AgencySitePageSection {
+  id     String         @id @default(uuid())
+  siteId String         @map("site_id")
+  site   AgencySitePage @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  type SitePageSectionType @map("type")
+  /// Zero-based, among all of this site's sections — order = array index.
+  position Int
+
+  title    String?
+  text     String?
+  subtitle String?
+  /// An uploaded asset URL (see `AgencyBranding.logoUrl`), not an inline data
+  /// URI the way the frontend prototype stores it — the dashboard uploads
+  /// first, then saves the URL here.
+  image    String?
+  link     String?
+  ctaText  String? @map("cta_text")
+  ctaText2 String? @map("cta_text_2")
+  ctaLink2 String? @map("cta_link_2")
+
+  heroHeight     SitePageHeroHeight? @map("hero_height")
+  overlayEnabled Boolean             @default(false) @map("overlay_enabled")
+
+  fontSize Int? @map("font_size")
+  /// Marquee seconds-per-pass — `topbar` only.
+  speed     Int?                      @map("speed")
+  direction SitePageMarqueeDirection? @map("direction")
+
+  useThemeBg   Boolean @default(true) @map("use_theme_bg")
+  bgColor      String? @map("bg_color")
+  useThemeText Boolean @default(true) @map("use_theme_text")
+  textColor    String? @map("text_color")
+
+  spacingTop    Int? @map("spacing_top")
+  spacingBottom Int? @map("spacing_bottom")
+
+  /// Data-section only (`packages`/`destinations`/`blogs`/`gallery`/`videos`/
+  /// `reviews`): how many to auto-pull when `selectedIds` is empty.
+  itemCount Int? @map("item_count")
+  /// Data-section only: specific items to feature, in this order. Empty ⇒
+  /// "just take the first `itemCount`". Ids only, never an embedded snapshot
+  /// — resolved against the live table at render time, matching the
+  /// frontend's own `pickItems()` behaviour (a deleted item silently drops
+  /// rather than rendering a stale copy).
+  selectedIds String[] @default([]) @map("selected_ids")
+
+  cardWidth  Int? @map("card_width")
+  cardHeight Int? @map("card_height")
+
+  /// `ads` only: which placement slot (`SiteAd.position`) to show here.
+  adPosition String? @map("ad_position")
+
+  /// 25/50/75/100 — two consecutive sections both under 100 share one row,
+  /// exactly like the frontend's `buildRows()`.
+  widthPercent Int @default(100) @map("width_percent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([siteId])
+  @@map("agency_site_page_sections")
+}
+
+/// ── Fraud review queue (API-wide docs/test pass) ─────────────────────────────
+/// Reproduces the schema an already-written (but never merged into this
+/// working tree) fix expects — `services/fraud.service.ts` and
+/// `routes/admin/fraud.route.ts` were shipped referencing these two models
+/// months ago; this closes that gap rather than redesigning the feature.
+/// An admin reviews a `PENDING` flag and either confirms it (bans the
+/// account, blocklists whichever of fingerprint/IP/email the flag captured)
+/// or dismisses it (clears the flag, resets `Agency.riskScore`).
+model FraudFlag {
+  id       String @id @default(uuid())
+  agencyId String @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  signal FraudSignal
+  status FraudFlagStatus @default(PENDING)
+
+  /// The rule names that fired, e.g. `["DUPLICATE_FINGERPRINT", "DISPOSABLE_EMAIL"]`.
+  /// A plain string array, not a typed catalog — nothing in this codebase
+  /// currently populates a `FraudFlag` (the detection pipeline that would is
+  /// unbuilt, see `routes/fingerprintRoutes.ts`'s file header), so there is
+  /// no fixed rule-name set yet to constrain this to.
+  flagsTriggered String[] @default([]) @map("flags_triggered")
+
+  /// Human-readable evidence, shown to the admin and reused as the default
+  /// ban reason if the admin confirms without typing their own.
+  evidenceSummary String? @map("evidence_summary")
+
+  /// Whichever of these the flag actually captured — each is optional
+  /// because not every fraud signal involves all three (a disposable-email
+  /// signal may carry no device fingerprint, for instance).
+  fingerprint String?
+  ip          String?
+  email       String?
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  /// Set the moment an admin confirms or dismisses — `null` while `PENDING`.
+  reviewedAt DateTime? @map("reviewed_at")
+
+  @@index([agencyId])
+  @@index([status])
+  @@map("fraud_flags")
+}
+
+/// A permanent block on a fingerprint, IP, or email — created only by
+/// confirming a `FraudFlag` (see `confirmFraud`). `@@unique([type, value])`
+/// is what makes `createMany(..., { skipDuplicates: true })` idempotent: a
+/// second confirmed account sharing the same IP as an earlier ban doesn't
+/// error, it just doesn't duplicate the row.
+model BlocklistEntry {
+  id       String             @id @default(uuid())
+  type     BlocklistEntryType
+  value    String
+  reason   String
+  agencyId String             @map("agency_id")
+  agency   Agency             @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([type, value])
+  @@map("blocklist_entries")
 }
 
 //Category and Blog

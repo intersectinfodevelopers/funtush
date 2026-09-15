@@ -40,6 +40,16 @@ import {
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /agencies/me/site-config:
+ *   get: { tags: [Site Config], summary: Get the agency's own site configuration, security: [{ refreshToken: [] }], responses: { 200: { description: Config } } }
+ *   patch: { tags: [Site Config], summary: Update site configuration (construction mode, announcement bar, popup — Medium+), security: [{ refreshToken: [] }], responses: { 200: { description: Updated }, 400: { description: Validation failed } } }
+ * /agencies/me/site-config/options:
+ *   get: { tags: [Site Config], summary: Get the tier-gated site-config options available to this agency, security: [{ refreshToken: [] }], responses: { 200: { description: Options } } }
+ * /site/{slug}/config:
+ *   get: { tags: [Site Config], summary: "Public: site configuration for an agency's published site (construction mode nulls topBar/popup)", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Config } } }
+ */
 router
   .route("/agencies/me/site-config")
   .get(authenticateWithRefreshToken, getMySiteConfig)

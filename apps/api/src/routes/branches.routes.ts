@@ -13,6 +13,10 @@ const router = Router();
  *   patch: { tags: [Branches], summary: Update a branch, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated } } }
  * /agencies/me/branches/{id}/report:
  *   get: { tags: [Branches], summary: Per-branch operations + finance report, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Report } } }
+ * /agencies/me/staff/{id}/branch:
+ *   patch: { tags: [Branches], summary: Assign a staff member to a branch, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Assigned } } }
+ * /agencies/me/finance/consolidated:
+ *   get: { tags: [Branches], summary: Finance rolled up across every branch, security: [{ refreshToken: [] }], responses: { 200: { description: Consolidated finance } } }
  * /guides/{id}/branch:
  *   patch: { tags: [Branches], summary: Assign a guide to a branch, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Assigned } } }
  * /packages/{id}/branches:
