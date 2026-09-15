@@ -159,36 +159,37 @@ export const deleteDepartureDateService = async (
 
 // Called from the booking-confirmation flow (inside a transaction). Books
 // `groupSize` seats against the date and flips it to FULL when it sells out.
-// Re-validates capacity under the transaction so two confirmations racing for the
-// last seats can't both succeed.
+//
+// Capacity is enforced with a SINGLE conditional UPDATE — `booked_slots` is only
+// incremented while `booked_slots + n <= max_slots`. Postgres row-locks the date
+// for the duration of the UPDATE, so two transactions racing for the last seats
+// serialise and the loser's guard fails (affected-row count 0). A read-then-write
+// with `data: { bookedSlots: absoluteValue }` would let a stale read overbook.
 export const confirmSlotsForBooking = async (
   tx: Prisma.TransactionClient,
   departureDateId: string,
   groupSize: number
 ) => {
-  const departure = await tx.trekDepartureDate.findUnique({
-    where: { id: departureDateId },
-  });
+  const affected = await tx.$executeRaw`
+    UPDATE "trek_departure_dates"
+    SET "booked_slots" = "booked_slots" + ${groupSize},
+        "status" = CASE
+          WHEN "booked_slots" + ${groupSize} >= "max_slots" THEN 'FULL'::"DepartureStatus"
+          ELSE "status"
+        END
+    WHERE "id" = ${departureDateId}
+      AND "status" <> 'FULL'
+      AND "booked_slots" + ${groupSize} <= "max_slots"
+  `;
+
+  if (affected === 1) return;
+
+  // Nothing updated — say why.
+  const departure = await tx.trekDepartureDate.findUnique({ where: { id: departureDateId } });
   if (!departure) throw notFound("Departure date no longer exists");
-
-  if (departure.status === "FULL") {
-    throw new Error("This departure date is full");
-  }
-
+  if (departure.status === "FULL") throw new Error("This departure date is full");
   const available = departure.maxSlots - departure.bookedSlots;
-  if (groupSize > available) {
-    throw new Error(`Only ${available} slot(s) available — cannot confirm a group of ${groupSize}`);
-  }
-
-  const bookedSlots = departure.bookedSlots + groupSize;
-  return tx.trekDepartureDate.update({
-    where: { id: departureDateId },
-    data: {
-      bookedSlots,
-      // booked_slots >= max_slots → FULL
-      status: bookedSlots >= departure.maxSlots ? "FULL" : departure.status,
-    },
-  });
+  throw new Error(`Only ${available} slot(s) available — cannot confirm a group of ${groupSize}`);
 };
 
 // Releases the seats reserved for a booking and recalculates the departure status.
