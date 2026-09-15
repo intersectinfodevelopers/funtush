@@ -226,8 +226,21 @@ d("Booking lifecycle actions (e2e)", () => {
     expect(res.body.data.status).toBe("CANCELLED");
   });
 
-  it("PATCH /:id/cancel 400s a booking already in INQUIRY (not a cancellable state)", async () => {
+  // cancelBooking's cancellableFrom deliberately includes INQUIRY/
+  // ALTERNATIVE_PROPOSED alongside the slot-holding states (fix/booking-
+  // overbooking-and-state) — an agency can cancel/decline a booking that
+  // never got past inquiry, it just skips releasing slots since none were
+  // ever reserved.
+  it("PATCH /:id/cancel cancels an INQUIRY booking without releasing slots (none were reserved)", async () => {
     const id = await createInquiryBooking();
+    const res = await request(app).patch(`/bookings/${id}/cancel`).set(bearer(ctx)).send({ reason: "Declined by agency" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe("CANCELLED");
+  });
+
+  it("PATCH /:id/cancel 400s a booking in a terminal state (COMPLETED)", async () => {
+    const id = await createInquiryBooking();
+    await db.booking.update({ where: { id }, data: { status: "COMPLETED" } });
     const res = await request(app).patch(`/bookings/${id}/cancel`).set(bearer(ctx)).send({ reason: "n/a" });
     expect(res.status).toBe(400);
   });

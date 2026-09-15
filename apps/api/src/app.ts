@@ -193,6 +193,9 @@ export function createApp(): Express {
 
   app.use("/admin", adminRoutes);
   app.use("/admin/bugs", bugRoutes); // same router, super-admin sub-routes
+  // NOTE: the fraud review queue is mounted at /admin/fraud via adminRoutes
+  // (behind requireAdmin). It used to also be mounted unprotected at "/fraud" —
+  // removed, since ban/blocklist actions must be admin-only.
 
   // 6. Error handler — must be last.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

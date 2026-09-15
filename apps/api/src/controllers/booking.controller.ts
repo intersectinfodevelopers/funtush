@@ -73,7 +73,11 @@ export const getAgencyBookingsController = async (req: Request, res: Response) =
     return res.status(200).json({ success: true, data: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch bookings";
-    return res.status(500).json({ success: false, message });
+    // A validation error carries an explicit status; anything else is a 500.
+    const status = typeof (err as { status?: number }).status === "number"
+      ? (err as { status: number }).status
+      : 500;
+    return res.status(status).json({ success: false, message });
   }
 };
 

@@ -8,7 +8,39 @@ import {
 
 const router = Router();
 
-// GET /admin/fraud/queue — flagged accounts, strongest signal first
+/**
+ * @openapi
+ * /admin/fraud/queue:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Pending fraud flags, strongest signal first (RED â†’ ORANGE â†’ YELLOW)
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ data: FraudFlag[], total }" }, 403: { description: Admin only } }
+ * /admin/fraud/ban-registry:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Every permanently banned account with reason + timestamp
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ data, total }" }, 403: { description: Admin only } }
+ * /admin/fraud/{id}/confirm:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Confirm a flag â€” permanently ban the account and blocklist its fingerprint / IP / email
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+ *     requestBody:
+ *       content: { application/json: { schema: { type: object, properties: { reason: { type: string } } } } }
+ *     responses: { 200: { description: Confirmed }, 404: { description: Flag not found }, 409: { description: Already resolved } }
+ * /admin/fraud/{id}/dismiss:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Dismiss a flag â€” clear it, reset the account's risk score, notify the agency
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+ *     responses: { 200: { description: Dismissed }, 404: { description: Flag not found }, 409: { description: Already resolved } }
+ */
+
+// GET /admin/fraud/queue ï¿½ flagged accounts, strongest signal first
 router.get("/queue", async (req, res) => {
   try {
     const queue = await getFraudQueue();
@@ -19,7 +51,7 @@ router.get("/queue", async (req, res) => {
   }
 });
 
-// GET /admin/fraud/ban-registry — all permanently banned accounts
+// GET /admin/fraud/ban-registry ï¿½ all permanently banned accounts
 router.get("/ban-registry", async (req, res) => {
   try {
     const registry = await getBanRegistry();
@@ -30,7 +62,7 @@ router.get("/ban-registry", async (req, res) => {
   }
 });
 
-// PATCH /admin/fraud/:id/confirm — ban account + blocklist fingerprint/IP/email
+// PATCH /admin/fraud/:id/confirm ï¿½ ban account + blocklist fingerprint/IP/email
 router.patch("/:id/confirm", async (req, res) => {
   try {
     const { reason } = req.body as { reason?: string };
@@ -45,7 +77,7 @@ router.patch("/:id/confirm", async (req, res) => {
   }
 });
 
-// PATCH /admin/fraud/:id/dismiss — clear flag, reset risk, notify agency
+// PATCH /admin/fraud/:id/dismiss ï¿½ clear flag, reset risk, notify agency
 router.patch("/:id/dismiss", async (req, res) => {
   try {
     const updated = await dismissFraud(req.params.id);

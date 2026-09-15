@@ -29,35 +29,6 @@ enum DomainVerificationStatus {
   VERIFIED
 }
 
-/// Fraud review queue (API-wide docs/test pass). Strongest signal first —
-/// `services/fraud.service.ts` sorts a queue RED → ORANGE → YELLOW because
-/// Postgres can't order by an app-defined priority the way a `CASE` would
-/// need restating in every query; the enum still constrains storage to
-/// exactly these three values.
-enum FraudSignal {
-  RED
-  ORANGE
-  YELLOW
-}
-
-/// A flag starts `PENDING`; an admin resolves it to exactly one of the other
-/// two — there is no path back to `PENDING` once reviewed, matching
-/// `KycStatus`'s own one-way review shape.
-enum FraudFlagStatus {
-  PENDING
-  CONFIRMED
-  DISMISSED
-}
-
-/// Which signal a `BlocklistEntry` row blocks on. A confirmed fraud flag can
-/// contribute up to three rows (fingerprint, IP, email) — see
-/// `confirmFraud` in `services/fraud.service.ts`.
-enum BlocklistEntryType {
-  FINGERPRINT
-  IP
-  EMAIL
-}
-
 enum UserRole {
   SUPER_ADMIN
   AGENCY_ADMIN
@@ -305,6 +276,7 @@ model Agency {
   agencyDestinations AgencyDestination[]
   siteAds            SiteAd[]
   trekkerInvoices    TrekkerInvoice[]
+  fraudFlags         FraudFlag[]
 
   stripeSubscription StripeSubscription?
 
@@ -317,9 +289,6 @@ model Agency {
   fonepayTransactions FonepayTransaction[]
   categories          Category[]
   blogs               Blog[]
-
-  fraudFlags       FraudFlag[]
-  blocklistEntries BlocklistEntry[]
 
   @@map("agencies")
 }
@@ -2422,68 +2391,6 @@ model AgencySitePageSection {
   @@map("agency_site_page_sections")
 }
 
-/// ── Fraud review queue (API-wide docs/test pass) ─────────────────────────────
-/// Reproduces the schema an already-written (but never merged into this
-/// working tree) fix expects — `services/fraud.service.ts` and
-/// `routes/admin/fraud.route.ts` were shipped referencing these two models
-/// months ago; this closes that gap rather than redesigning the feature.
-/// An admin reviews a `PENDING` flag and either confirms it (bans the
-/// account, blocklists whichever of fingerprint/IP/email the flag captured)
-/// or dismisses it (clears the flag, resets `Agency.riskScore`).
-model FraudFlag {
-  id       String @id @default(uuid())
-  agencyId String @map("agency_id")
-  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-
-  signal FraudSignal
-  status FraudFlagStatus @default(PENDING)
-
-  /// The rule names that fired, e.g. `["DUPLICATE_FINGERPRINT", "DISPOSABLE_EMAIL"]`.
-  /// A plain string array, not a typed catalog — nothing in this codebase
-  /// currently populates a `FraudFlag` (the detection pipeline that would is
-  /// unbuilt, see `routes/fingerprintRoutes.ts`'s file header), so there is
-  /// no fixed rule-name set yet to constrain this to.
-  flagsTriggered String[] @default([]) @map("flags_triggered")
-
-  /// Human-readable evidence, shown to the admin and reused as the default
-  /// ban reason if the admin confirms without typing their own.
-  evidenceSummary String? @map("evidence_summary")
-
-  /// Whichever of these the flag actually captured — each is optional
-  /// because not every fraud signal involves all three (a disposable-email
-  /// signal may carry no device fingerprint, for instance).
-  fingerprint String?
-  ip          String?
-  email       String?
-
-  createdAt  DateTime  @default(now()) @map("created_at")
-  /// Set the moment an admin confirms or dismisses — `null` while `PENDING`.
-  reviewedAt DateTime? @map("reviewed_at")
-
-  @@index([agencyId])
-  @@index([status])
-  @@map("fraud_flags")
-}
-
-/// A permanent block on a fingerprint, IP, or email — created only by
-/// confirming a `FraudFlag` (see `confirmFraud`). `@@unique([type, value])`
-/// is what makes `createMany(..., { skipDuplicates: true })` idempotent: a
-/// second confirmed account sharing the same IP as an earlier ban doesn't
-/// error, it just doesn't duplicate the row.
-model BlocklistEntry {
-  id       String             @id @default(uuid())
-  type     BlocklistEntryType
-  value    String
-  reason   String
-  agencyId String             @map("agency_id")
-  agency   Agency             @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([type, value])
-  @@map("blocklist_entries")
-}
-
 //Category and Blog
 model Category {
   id          String  @id @default(uuid())
@@ -2538,4 +2445,61 @@ model SafetyWarning {
 
   @@index([agencyId])
   @@map("safety_warnings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fraud review queue (Concept doc §4).
+//
+// The detection pipeline (fingerprint / IP / email / trial-abuse analysis) is
+// still WIP; these two models back the *review* side that a platform admin
+// works: a queue of PENDING flags to confirm (permanent ban + blocklist) or
+// dismiss. See apps/api/src/services/fraud.service.ts + routes/admin/fraud.route.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum FraudFlagStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+
+enum BlocklistEntryType {
+  FINGERPRINT
+  IP
+  EMAIL
+}
+
+model FraudFlag {
+  id              String          @id @default(cuid())
+  agencyId        String          @map("agency_id")
+  agency          Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  /// Overall severity the pipeline assigned: RED (strongest) | ORANGE | YELLOW.
+  signal          String
+  status          FraudFlagStatus @default(PENDING)
+  /// Individual detectors that fired, e.g. ["DUPLICATE_FINGERPRINT", "DISPOSABLE_EMAIL"].
+  flagsTriggered  String[]        @default([]) @map("flags_triggered")
+  evidenceSummary String?         @map("evidence_summary")
+  /// Signals captured at flag time — copied onto blocklist rows when confirmed.
+  fingerprint     String?
+  ip              String?
+  email           String?
+  reviewedAt      DateTime?       @map("reviewed_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([agencyId])
+  @@map("fraud_flags")
+}
+
+model BlocklistEntry {
+  id        String             @id @default(cuid())
+  type      BlocklistEntryType
+  value     String
+  reason    String
+  /// The agency this entry originated from (the one that got banned), if known.
+  agencyId  String?            @map("agency_id")
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@unique([type, value])
+  @@index([value])
+  @@map("blocklist_entries")
 }
