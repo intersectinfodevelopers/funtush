@@ -28,6 +28,10 @@ const SELECT = {
   customDomainEnabled: true,
   whiteLabelComplete: true,
   apiAccessEnabled: true,
+  maxBookingsPerMonth: true,
+  blogEnabled: true,
+  analyticsEnabled: true,
+  prioritySupportEnabled: true,
   features: true,
 } satisfies Prisma.SubscriptionTierSelect;
 
@@ -48,6 +52,10 @@ function toApi(r: Row) {
     customDomainEnabled: r.customDomainEnabled,
     whiteLabelComplete: r.whiteLabelComplete,
     apiAccessEnabled: r.apiAccessEnabled,
+    maxBookingsPerMonth: r.maxBookingsPerMonth,
+    blogEnabled: r.blogEnabled,
+    analyticsEnabled: r.analyticsEnabled,
+    prioritySupportEnabled: r.prioritySupportEnabled,
     features: r.features,
   };
 }
@@ -65,6 +73,10 @@ export interface TierInput {
   customDomainEnabled?: boolean;
   whiteLabelComplete?: boolean;
   apiAccessEnabled?: boolean;
+  maxBookingsPerMonth?: number | null;
+  blogEnabled?: boolean;
+  analyticsEnabled?: boolean;
+  prioritySupportEnabled?: boolean;
   features?: unknown;
 }
 
@@ -81,6 +93,9 @@ const BOOL_FIELDS = [
   "customDomainEnabled",
   "whiteLabelComplete",
   "apiAccessEnabled",
+  "blogEnabled",
+  "analyticsEnabled",
+  "prioritySupportEnabled",
 ] as const;
 
 function buildData(body: TierInput, forCreate: boolean): Prisma.SubscriptionTierUncheckedCreateInput {
@@ -95,6 +110,17 @@ function buildData(body: TierInput, forCreate: boolean): Prisma.SubscriptionTier
   }
   if (body.annualPrice !== undefined) {
     data.annualPrice = body.annualPrice === null ? null : Number(body.annualPrice);
+  }
+  if (body.maxBookingsPerMonth !== undefined) {
+    if (body.maxBookingsPerMonth === null) {
+      data.maxBookingsPerMonth = null;
+    } else {
+      const n = Number(body.maxBookingsPerMonth);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new TierConfigError(400, "maxBookingsPerMonth must be a non-negative number, or null for unlimited.");
+      }
+      data.maxBookingsPerMonth = Math.trunc(n);
+    }
   }
   for (const f of BOOL_FIELDS) {
     if (body[f] !== undefined) data[f] = Boolean(body[f]);

@@ -45,6 +45,12 @@ import {
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /agencies/me/site/regeneration:
+ *   get: { tags: [Site Regeneration], summary: List the agency's site regeneration history, security: [{ refreshToken: [] }], parameters: [{ name: limit, in: query, schema: { type: integer } }], responses: { 200: { description: History } } }
+ *   post: { tags: [Site Regeneration], summary: Trigger a rebuild of the agency's published site, security: [{ refreshToken: [] }], responses: { 201: { description: Regeneration queued }, 403: { description: Locked agency } } }
+ */
 router
   .route("/agencies/me/site/regeneration")
   .get(authenticateWithRefreshToken, getMyRegenerations)

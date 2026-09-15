@@ -13,12 +13,14 @@ export async function getDashboardStats() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [agenciesByTier, activeSubscriptions, monthlyRevenue, activeTreks] =
+  const [tiersWithAgencyCounts, activeSubscriptions, monthlyRevenue, activeTreks] =
     await Promise.all([
 
-      prisma.agency.groupBy({
-        by: ["tier"],
-        _count: { _all: true },
+      // `Agency.tier` is a relation (`tierId` is the scalar FK), so the
+      // breakdown is built from the tier side rather than a `groupBy` on a
+      // non-scalar field.
+      prisma.subscriptionTier.findMany({
+        select: { name: true, _count: { select: { agencies: true } } },
       }),
 
       prisma.subscription.count({
@@ -26,8 +28,8 @@ export async function getDashboardStats() {
       }),
 
 
-      prisma.invoice.aggregate({
-        _sum: { amount: true },
+      prisma.trekkerInvoice.aggregate({
+        _sum: { total: true },
         where: {
           status: "PAID",
           paidAt: { gte: startOfMonth },
@@ -35,18 +37,18 @@ export async function getDashboardStats() {
       }),
 
 
-      prisma.trek.count({
-        where: { status: "LIVE" },
+      prisma.trekPackage.count({
+        where: { status: "PUBLISHED" },
       }),
     ]);
 
   const stats = {
-    agenciesByTier: (agenciesByTier as Array<{ tier: string; _count: { _all: number } }>).reduce((acc: Record<string, number>, row) => {
-      acc[row.tier] = row._count._all;
+    agenciesByTier: tiersWithAgencyCounts.reduce((acc: Record<string, number>, row) => {
+      acc[row.name] = row._count.agencies;
       return acc;
     }, {} as Record<string, number>),
     totalActiveSubscriptions: activeSubscriptions,
-    revenueThisMonth: monthlyRevenue._sum.amount ?? 0,
+    revenueThisMonth: monthlyRevenue._sum.total ?? 0,
     activeTreksLive: activeTreks,
     generatedAt: now.toISOString(),
   };

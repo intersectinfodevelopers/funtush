@@ -62,14 +62,30 @@
  * One scope per Day 1/2/3 screen, and the names are the *feature's* names, not
  * the table's — a scope is "what the agency thinks it changed", which is what
  * makes a regeneration receipt readable in a support ticket.
+ *
+ * `socialLinks` and `seoSettings` extend the same table for the social-links
+ * and SEO settings screens (backend catch-up pass) — same reasoning, new
+ * screens. `sitePage` (Phase 8) is different from all five: it is the only
+ * scope that changes actual page *content* (the section list) rather than
+ * chrome that wraps every page, which is why `SITE_PAGES`, below, attaches it
+ * only to Home instead of to `LAYOUT`.
  */
-export type RegenerationScope = "branding" | "siteConfig" | "navigation";
+export type RegenerationScope =
+  | "branding"
+  | "siteConfig"
+  | "navigation"
+  | "socialLinks"
+  | "seoSettings"
+  | "sitePage";
 
 /** Every scope, in the order the screens were built. */
 export const REGENERATION_SCOPES: readonly RegenerationScope[] = [
   "branding",
   "siteConfig",
   "navigation",
+  "socialLinks",
+  "seoSettings",
+  "sitePage",
 ];
 
 /** `true` when `value` is one of the three known scopes. */
@@ -94,6 +110,9 @@ export const SCOPE_TAG_PREFIX: Record<RegenerationScope, string> = {
   branding: "branding",
   siteConfig: "config",
   navigation: "nav",
+  socialLinks: "social",
+  seoSettings: "seo",
+  sitePage: "page",
 };
 
 /**
@@ -182,7 +201,10 @@ export interface SitePage {
 const LAYOUT: readonly RegenerationScope[] = REGENERATION_SCOPES;
 
 export const SITE_PAGES: readonly SitePage[] = [
-  { path: "/", label: "Home", dependsOn: LAYOUT },
+  // Home is the page the builder actually renders (Phase 8), so it alone
+  // also depends on `sitePage` — every other page here is a separate,
+  // hardcoded route the builder does not touch.
+  { path: "/", label: "Home", dependsOn: [...LAYOUT, "sitePage"] },
   { path: "/packages", label: "Packages", dependsOn: LAYOUT },
   { path: "/destinations", label: "Destinations", dependsOn: LAYOUT },
   { path: "/about", label: "About", dependsOn: LAYOUT },
@@ -211,6 +233,9 @@ export const SCOPE_API_PATHS: Record<RegenerationScope, string> = {
   branding: "/site/{slug}/branding",
   siteConfig: "/site/{slug}/config",
   navigation: "/site/{slug}/navigation",
+  socialLinks: "/site/{slug}/social-links",
+  seoSettings: "/site/{slug}/seo",
+  sitePage: "/site/{slug}/site-page",
 };
 
 /** `/site/{slug}/branding` → `/site/himalayan-trails/branding`. */

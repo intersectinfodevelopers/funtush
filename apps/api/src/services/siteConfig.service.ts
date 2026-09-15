@@ -126,6 +126,9 @@ export interface ResolvedPopup {
  */
 export interface ResolvedSiteConfig {
   underConstruction: boolean;
+  /** `Agency.publishedAt !== null` — see `resolveSiteConfig`'s doc comment for
+   * why this is kept separate from `underConstruction` rather than merged. */
+  published: boolean;
   comingSoon: ComingSoonPage | null;
   topBar: ResolvedTopBar | null;
   popup: ResolvedPopup | null;
@@ -456,6 +459,15 @@ export function resolveSiteConfig(
   agency: { tier: string },
   row: SiteConfigRow | null,
   brandPrimaryColor: string,
+  /**
+   * `Agency.publishedAt !== null` (backend catch-up pass) — passed through
+   * untouched rather than decided here, because `underConstruction` and
+   * "never published" are deliberately kept as two separate facts in this
+   * response (mirroring the frontend's own two separate gates). Combining
+   * them into one page-servable boolean is `getSiteLiveness`'s job, not this
+   * function's — this one just reports state.
+   */
+  published: boolean = true,
 ): ResolvedSiteConfig {
   const merged = withDefaults(row);
   const badge = resolveFuntushBadge(agency.tier, merged.showFuntushBadge);
@@ -463,6 +475,7 @@ export function resolveSiteConfig(
   if (merged.underConstruction) {
     return {
       underConstruction: true,
+      published,
       comingSoon: resolveComingSoon(merged),
       topBar: null,
       popup: null,
@@ -473,6 +486,7 @@ export function resolveSiteConfig(
 
   return {
     underConstruction: false,
+    published,
     comingSoon: null,
     topBar: resolveTopBar(merged, brandPrimaryColor),
     popup: resolvePopup(merged, agency.tier),
@@ -570,6 +584,7 @@ export async function getPublicSiteConfigBySlug(
       tier: { select: { name: true } },
       branding: true,
       siteConfig: true,
+      publishedAt: true,
     },
   });
 
@@ -592,6 +607,7 @@ export async function getPublicSiteConfigBySlug(
     { tier },
     agency.siteConfig as SiteConfigRow | null,
     branding.primaryColor,
+    agency.publishedAt !== null,
   );
 
   return { ...resolved, agencySlug: agency.slug };
@@ -697,9 +713,18 @@ export interface SiteLiveness {
  * Is this agency's public site currently serving content?
  *
  * Split out from `getPublicSiteConfigBySlug` and kept deliberately narrow — it
- * selects three columns, not a whole config — because it is called by middleware
- * in front of *other* routes, and a guard that costs as much as the handler it
- * guards is a guard people take back out.
+ * selects a handful of columns, not a whole config — because it is called by
+ * middleware in front of *other* routes, and a guard that costs as much as
+ * the handler it guards is a guard people take back out.
+ *
+ * **Two independent reasons a page won't serve** (backend catch-up pass adds
+ * the second): `underConstruction` pauses an *already-published* site, and
+ * `publishedAt === null` means the site has never gone live at all — the
+ * state of every agency before its first Publish. Both collapse to the same
+ * "not live" answer here, because this function's one job is the binary
+ * "can I serve this page" a content route needs; `getPublicSiteConfigBySlug`
+ * is where the two stay distinguishable, for the settings screen that needs
+ * to know which one it's looking at.
  *
  * An agency that does not exist is reported as **not live** rather than throwing.
  * The caller (the middleware) turns that into its own 404; making this function
@@ -711,6 +736,7 @@ export async function getSiteLiveness(slug: string): Promise<SiteLiveness> {
     where: { slug },
     select: {
       status: true,
+      publishedAt: true,
       siteConfig: {
         select: {
           underConstruction: true,
@@ -727,13 +753,16 @@ export async function getSiteLiveness(slug: string): Promise<SiteLiveness> {
   }
 
   const config = agency.siteConfig;
-  if (!config?.underConstruction) return { live: true, comingSoon: null };
+  const paused = Boolean(config?.underConstruction);
+  const neverPublished = agency.publishedAt === null;
+
+  if (!paused && !neverPublished) return { live: true, comingSoon: null };
 
   return {
     live: false,
     comingSoon: {
-      headline: config.constructionHeadline?.trim() || DEFAULT_CONSTRUCTION_COPY.headline,
-      message: config.constructionMessage?.trim() || DEFAULT_CONSTRUCTION_COPY.message,
+      headline: config?.constructionHeadline?.trim() || DEFAULT_CONSTRUCTION_COPY.headline,
+      message: config?.constructionMessage?.trim() || DEFAULT_CONSTRUCTION_COPY.message,
     },
   };
 }

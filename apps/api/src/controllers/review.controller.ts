@@ -9,7 +9,7 @@ export const createReview = async (
     res: Response
 ) => {
     try {
-        const { token, rating, text } = req.body;
+        const { token, rating, text, title } = req.body;
 
         const photos = (req.files as Express.Multer.File[]) || [];
 
@@ -21,7 +21,8 @@ export const createReview = async (
             token,
             Number(rating),
             text,
-            urls || []
+            urls || [],
+            title
         );
 
         return res.status(201).json({

@@ -5,7 +5,6 @@
   "description": "Funtush backend API (Node.js + Express).",
   "type": "commonjs",
   "main": "./src/index.ts",
-  
   "scripts": {
     "dev": "nodemon",
     "start": "tsx --env-file=.env src/index.ts",
@@ -18,7 +17,6 @@
     "test:infra:down": "docker compose -f docker-compose.test.yml down -v",
     "db:test:setup": "cd ../../packages/database && DATABASE_URL=\"postgresql://funtush:funtush@localhost:5542/funtush?schema=public\" prisma migrate deploy",
     "clean": "rimraf .turbo coverage"
-    
   },
   "dependencies": {
     "@funtush/auth": "workspace:*",
@@ -29,6 +27,7 @@
     "@react-email/components": "^1.0.12",
     "axios": "^1.19.0",
     "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
     "cron": "^4.4.0",
     "date-fns": "^4.4.0",
     "express": "^4.22.2",
@@ -54,6 +53,7 @@
   "devDependencies": {
     "@jest/globals": "^30.4.1",
     "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",

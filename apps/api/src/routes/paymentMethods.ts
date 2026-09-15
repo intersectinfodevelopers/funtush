@@ -7,7 +7,22 @@ import type { AgencyRequest } from '../types/auth-request';
 
 const router = Router();
 
-// POST /agencies/me/payment-methods
+/**
+ * @openapi
+ * /agencies/me/payment-methods:
+ *   post:
+ *     tags: [Payment Methods]
+ *     summary: Save (or replace) a payment provider's credentials, AES-256-GCM encrypted at rest
+ *     security: [{ refreshToken: [] }]
+ *     responses:
+ *       200: { description: Saved — credentials never included in the response }
+ *       400: { description: provider is required }
+ *   get:
+ *     tags: [Payment Methods]
+ *     summary: List the agency's connected payment providers
+ *     security: [{ refreshToken: [] }]
+ *     responses: { 200: { description: Payment methods } }
+ */
 router.post(
   '/',
   authenticateWithRefreshToken,
@@ -87,7 +102,19 @@ router.get(
   }
 );
 
-// PATCH /agencies/me/payment-methods/:id/toggle
+/**
+ * @openapi
+ * /agencies/me/payment-methods/{id}/toggle:
+ *   patch:
+ *     tags: [Payment Methods]
+ *     summary: Toggle a payment method active/inactive
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: Toggled }
+ *       404: { description: Not found (or belongs to a different agency) }
+ */
 router.patch(
   '/:id/toggle',
   authenticateWithRefreshToken,

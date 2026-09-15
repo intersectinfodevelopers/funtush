@@ -20,7 +20,9 @@ function paramId(req: Request): string {
   return Array.isArray(v) ? v[0] : v;
 }
 
-// POST /admin/agencies/:id/warning — formal safety warning (permanent)
+// POST /admin/safety-warnings/:id/warning — formal safety warning (permanent)
+// (mounted at /admin/safety-warnings in admin/index.ts — the comment this
+// replaced said /admin/agencies/:id/warning, which was never the real path)
 router.post("/:id/warning", async (req: Request, res: Response) => {
   try {
     const { reason } = req.body as { reason?: string };

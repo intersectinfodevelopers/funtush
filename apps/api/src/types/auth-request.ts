@@ -11,8 +11,3 @@ export type AgencyUser = {
 export type AgencyRequest = Request & {
   agencyUser?: AgencyUser;
 };
-
-export interface UpdateDomainBody {
-  domain: string;
-}
-

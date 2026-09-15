@@ -38,6 +38,16 @@ import {
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /agencies/me/navigation:
+ *   get: { tags: [Navigation], summary: Get the agency's own site navigation, security: [{ refreshToken: [] }], responses: { 200: { description: Navigation } } }
+ *   patch: { tags: [Navigation], summary: Update the site navigation (menu items, Book Now button — some fields Medium+), security: [{ refreshToken: [] }], responses: { 200: { description: Updated }, 400: { description: Validation failed } } }
+ * /agencies/me/navigation/options:
+ *   get: { tags: [Navigation], summary: Get the tier-gated navigation options available to this agency, security: [{ refreshToken: [] }], responses: { 200: { description: Options } } }
+ * /site/{slug}/navigation:
+ *   get: { tags: [Navigation], summary: "Public: navigation menu for an agency's published site", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Navigation } } }
+ */
 router
   .route("/agencies/me/navigation")
   .get(authenticateWithRefreshToken, getMyNavigation)

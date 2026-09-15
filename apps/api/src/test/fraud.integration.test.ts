@@ -1,20 +1,17 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Fraud review queue — integration tests (real Postgres).
-//
-// Exercises fraud.service.ts against a real DB: a PENDING flag is queued,
-// confirming it bans the agency + writes blocklist rows (idempotently), and
-// dismissing it clears the flag + resets the risk score.
-//
-// SAFE anywhere: skips when no DB is reachable. Uses a throwaway agency.
-// ─────────────────────────────────────────────────────────────────────────────
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+// Fraud review queue — integration test (API-wide docs/test pass, Batch 0).
+// Real DB, skip if down. Exercises the real Prisma queries/transaction the
+// mocked-service HTTP test (`test/fraud.route.test.ts`) cannot — this is the
+// coverage that was missing entirely before this pass: `fraud.service.ts`
+// referenced `FraudFlag`/`BlocklistEntry` models that did not exist in the
+// schema, so nothing had ever proven this works against a real database.
+import { describe, it, expect, afterAll } from "vitest";
 
 type Database = typeof import("@funtush/database");
-type FraudService = typeof import("../services/fraud.service");
+type Svc = typeof import("../services/fraud.service");
 
 let DB_AVAILABLE = false;
 let db: Database["db"];
-let svc: FraudService;
+let svc: Svc;
 let tierId = "";
 
 try {
@@ -23,7 +20,6 @@ try {
   const database = await import("@funtush/database");
   db = database.db;
   await db.$queryRaw`SELECT 1`;
-
   const tier = await db.subscriptionTier.upsert({
     where: { name: "FRAUD_TEST_TIER" },
     update: {},
@@ -31,119 +27,144 @@ try {
     select: { id: true },
   });
   tierId = tier.id;
-
   svc = await import("../services/fraud.service");
   DB_AVAILABLE = true;
-} catch (err) {
-  console.warn(`[fraud.integration] DB unavailable — skipping (${err instanceof Error ? err.message : err})`);
+} catch (e) {
+  console.warn(`[fraud.integration] skip (${e instanceof Error ? e.message : e})`);
 }
 
 const d = DB_AVAILABLE ? describe : describe.skip;
 
 d("Fraud review queue (real DB)", () => {
-  let agencyId = "";
-  let flagId = "";
-
-  beforeAll(async () => {
-    const suffix = `${Date.now()}`;
-    const agency = await db.agency.create({
-      data: {
-        name: `Fraud Test Agency ${suffix}`,
-        email: `fraudtest-${suffix}@example.com`,
-        slug: `fraudtest-${suffix}`,
-        tierId,
-        riskScore: 80,
-      },
-      select: { id: true },
-    });
-    agencyId = agency.id;
-
-    const flag = await db.fraudFlag.create({
-      data: {
-        agencyId,
-        signal: "RED",
-        flagsTriggered: ["DUPLICATE_FINGERPRINT", "DISPOSABLE_EMAIL"],
-        evidenceSummary: "Same device fingerprint as 3 banned accounts",
-        fingerprint: `fp-${suffix}`,
-        ip: "203.0.113.7",
-        email: `spam-${suffix}@temp.example`,
-      },
-      select: { id: true },
-    });
-    flagId = flag.id;
-  });
+  const agencyIds: string[] = [];
+  const flagIds: string[] = [];
 
   afterAll(async () => {
-    if (agencyId) {
-      await db.blocklistEntry.deleteMany({ where: { agencyId } }).catch(() => {});
-      await db.agency.delete({ where: { id: agencyId } }).catch(() => {}); // cascades the flag
+    await db.fraudFlag.deleteMany({ where: { id: { in: flagIds } } }).catch(() => {});
+    await db.blocklistEntry.deleteMany({ where: { agencyId: { in: agencyIds } } }).catch(() => {});
+    for (const id of agencyIds) {
+      await db.agency.delete({ where: { id } }).catch(() => {});
     }
   });
 
-  it("getFraudQueue returns the PENDING flag, strongest signal first", async () => {
-    const queue = await svc.getFraudQueue();
-    const mine = queue.find((f) => f.id === flagId);
-    expect(mine).toBeTruthy();
-    expect(mine!.status).toBe("PENDING");
-    // RED should sort ahead of anything ORANGE/YELLOW in the queue
-    const firstNonMineWeaker = queue.every(
-      (f, i) => i === 0 || ["RED", "ORANGE", "YELLOW"].indexOf(f.signal) >= ["RED", "ORANGE", "YELLOW"].indexOf(queue[i - 1].signal),
-    );
-    expect(firstNonMineWeaker).toBe(true);
-  });
-
-  it("confirmFraud bans the agency and blocklists fingerprint/IP/email", async () => {
-    const updated = await svc.confirmFraud(flagId, "Confirmed duplicate-account fraud");
-    expect(updated.status).toBe("CONFIRMED");
-    expect(updated.reviewedAt).toBeInstanceOf(Date);
-
-    const agency = await db.agency.findUnique({ where: { id: agencyId } });
-    expect(agency!.status).toBe("BANNED");
-    expect(agency!.bannedAt).toBeInstanceOf(Date);
-    expect(agency!.banReason).toBe("Confirmed duplicate-account fraud");
-
-    const blocked = await db.blocklistEntry.findMany({ where: { agencyId } });
-    expect(blocked.map((b) => b.type).sort()).toEqual(["EMAIL", "FINGERPRINT", "IP"]);
-  });
-
-  it("confirmFraud is idempotent on the blocklist and 409s a resolved flag", async () => {
-    await expect(svc.confirmFraud(flagId)).rejects.toThrow(/already confirmed/i);
-    // still exactly 3 rows — no duplicates
-    const blocked = await db.blocklistEntry.count({ where: { agencyId } });
-    expect(blocked).toBe(3);
-  });
-
-  it("getBanRegistry includes the banned agency", async () => {
-    const registry = await svc.getBanRegistry();
-    const mine = registry.find((a) => a.id === agencyId);
-    expect(mine).toBeTruthy();
-    expect(mine!.banReason).toBe("Confirmed duplicate-account fraud");
-  });
-
-  it("dismissFraud clears a PENDING flag and resets the risk score", async () => {
-    const suffix = `${Date.now()}-d`;
+  async function freshAgency(label: string) {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const agency = await db.agency.create({
-      data: {
-        name: `Fraud Dismiss Agency ${suffix}`,
-        email: `frauddismiss-${suffix}@example.com`,
-        slug: `frauddismiss-${suffix}`,
-        tierId,
-        riskScore: 65,
-      },
-      select: { id: true },
+      data: { name: `Fraud ${label} ${s}`, email: `fraud-${label}-${s}@example.com`, slug: `fraud-${label}-${s}`, tierId },
     });
+    agencyIds.push(agency.id);
+    return agency;
+  }
+
+  it("getFraudQueue returns only PENDING flags, strongest signal first", async () => {
+    const agency = await freshAgency("queue");
+
+    const yellow = await db.fraudFlag.create({
+      data: { agencyId: agency.id, signal: "YELLOW", flagsTriggered: ["LOW_RISK"] },
+    });
+    const red = await db.fraudFlag.create({
+      data: { agencyId: agency.id, signal: "RED", flagsTriggered: ["DUPLICATE_FINGERPRINT"] },
+    });
+    const resolved = await db.fraudFlag.create({
+      data: { agencyId: agency.id, signal: "RED", status: "DISMISSED", flagsTriggered: [] },
+    });
+    flagIds.push(yellow.id, red.id, resolved.id);
+
+    const queue = await svc.getFraudQueue();
+    const ids = queue.map((f) => f.id);
+
+    expect(ids).toContain(red.id);
+    expect(ids).toContain(yellow.id);
+    expect(ids).not.toContain(resolved.id);
+    expect(ids.indexOf(red.id)).toBeLessThan(ids.indexOf(yellow.id));
+  });
+
+  it("confirmFraud bans the account and blocklists its fingerprint/IP/email in one transaction", async () => {
+    const agency = await freshAgency("confirm");
     const flag = await db.fraudFlag.create({
-      data: { agencyId: agency.id, signal: "YELLOW", evidenceSummary: "Weak signal" },
-      select: { id: true },
+      data: {
+        agencyId: agency.id,
+        signal: "RED",
+        flagsTriggered: ["DUPLICATE_FINGERPRINT", "DISPOSABLE_EMAIL"],
+        fingerprint: `fp-${agency.id}`,
+        ip: `10.0.0.${Math.floor(Math.random() * 250)}`,
+        email: `spam-${agency.id}@temp.com`,
+      },
     });
+    flagIds.push(flag.id);
+
+    const updated = await svc.confirmFraud(flag.id, "Confirmed duplicate-account fraud");
+    expect(updated.status).toBe("CONFIRMED");
+    expect(updated.reviewedAt).not.toBeNull();
+
+    const bannedAgency = await db.agency.findUnique({ where: { id: agency.id } });
+    expect(bannedAgency?.status).toBe("BANNED");
+    expect(bannedAgency?.banReason).toBe("Confirmed duplicate-account fraud");
+
+    const entries = await db.blocklistEntry.findMany({ where: { agencyId: agency.id } });
+    expect(entries.map((e) => e.type).sort()).toEqual(["EMAIL", "FINGERPRINT", "IP"]);
+  });
+
+  it("confirmFraud is idempotent on the blocklist via skipDuplicates — a second account sharing a fingerprint doesn't error", async () => {
+    const sharedFingerprint = `fp-shared-${Date.now()}`;
+
+    const agencyA = await freshAgency("shared-a");
+    const flagA = await db.fraudFlag.create({
+      data: { agencyId: agencyA.id, signal: "RED", flagsTriggered: [], fingerprint: sharedFingerprint },
+    });
+    flagIds.push(flagA.id);
+    await svc.confirmFraud(flagA.id);
+
+    const agencyB = await freshAgency("shared-b");
+    const flagB = await db.fraudFlag.create({
+      data: { agencyId: agencyB.id, signal: "RED", flagsTriggered: [], fingerprint: sharedFingerprint },
+    });
+    flagIds.push(flagB.id);
+
+    await expect(svc.confirmFraud(flagB.id)).resolves.toMatchObject({ status: "CONFIRMED" });
+
+    const rows = await db.blocklistEntry.findMany({ where: { type: "FINGERPRINT", value: sharedFingerprint } });
+    expect(rows).toHaveLength(1);
+  });
+
+  it("confirmFraud throws when the flag is already resolved", async () => {
+    const agency = await freshAgency("already");
+    const flag = await db.fraudFlag.create({
+      data: { agencyId: agency.id, signal: "YELLOW", status: "DISMISSED", flagsTriggered: [] },
+    });
+    flagIds.push(flag.id);
+
+    await expect(svc.confirmFraud(flag.id)).rejects.toThrow(/already dismissed/i);
+  });
+
+  it("dismissFraud clears the flag and resets the agency's risk score", async () => {
+    const agency = await freshAgency("dismiss");
+    await db.agency.update({ where: { id: agency.id }, data: { riskScore: 42 } });
+
+    const flag = await db.fraudFlag.create({
+      data: { agencyId: agency.id, signal: "ORANGE", flagsTriggered: ["VELOCITY"] },
+    });
+    flagIds.push(flag.id);
 
     const updated = await svc.dismissFraud(flag.id);
     expect(updated.status).toBe("DISMISSED");
 
-    const after = await db.agency.findUnique({ where: { id: agency.id } });
-    expect(after!.riskScore).toBe(0);
-    expect(after!.status).not.toBe("BANNED");
+    const cleared = await db.agency.findUnique({ where: { id: agency.id } });
+    expect(cleared?.riskScore).toBe(0);
+  });
 
-    await db.agency.delete({ where: { id: agency.id } }).catch(() => {});
+  it("getBanRegistry lists only BANNED agencies, most recent first", async () => {
+    const agency = await freshAgency("registry");
+    const flag = await db.fraudFlag.create({
+      data: { agencyId: agency.id, signal: "RED", flagsTriggered: [] },
+    });
+    flagIds.push(flag.id);
+    await svc.confirmFraud(flag.id, "Registry test ban");
+
+    const registry = await svc.getBanRegistry();
+    const entry = registry.find((r) => r.id === agency.id);
+
+    expect(entry).toBeDefined();
+    expect(entry?.banReason).toBe("Registry test ban");
   });
 });

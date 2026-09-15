@@ -1,3 +1,19 @@
+/**
+ * ── NOT MOUNTED — out of scope (API-wide docs/test pass, Batch 0) ────────────
+ *
+ * Never imported by `app.ts`. This is the device-fingerprint half of an
+ * unbuilt fraud-*detection* pipeline (distinct from the fraud *review
+ * queue* — `FraudFlag`/`BlocklistEntry`, `services/fraud.service.ts` — which
+ * this same pass fixed). The `Fingerprint` Prisma model this file's service
+ * layer expects (`services/fingerprintDatabaseService.ts`) has never existed
+ * anywhere in this repo's git history — this is genuinely unfinished
+ * original work, not a refactor casualty.
+ *
+ * Deliberately left as-is: designing real fingerprint-matching/fraud-
+ * detection heuristics has no existing spec to follow and is a product
+ * decision, not a routing or test-coverage gap. Do not mount this without
+ * first adding the `Fingerprint` model and deciding what "matches" means.
+ */
 import { Router, Request, Response } from 'express';
 import { FingerprintDatabaseService } from '../services/fingerprintDatabaseService';
 const fingerprintRoutes = Router();

@@ -10,6 +10,15 @@ import { db } from '@funtush/database';
 
 const router = Router();
 
+/**
+ * @openapi
+ * /webhooks/stripe:
+ *   post:
+ *     tags: [Webhooks]
+ *     summary: Stripe subscription webhook (invoice.paid, invoice.payment_failed, customer.subscription.deleted)
+ *     description: Verified via the `Stripe-Signature` header against the raw request body (mounted before the global JSON parser). Every event is logged to `stripeWebhookLog` for idempotency/audit before being processed.
+ *     responses: { 200: { description: Received and processed }, 400: { description: Invalid/missing signature }, 500: { description: Processing failed (already logged, event still acknowledged as received by Stripe's signature check) } }
+ */
 router.post(
   '/stripe',
   raw({ type: 'application/json' }),

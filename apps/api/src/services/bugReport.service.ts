@@ -43,6 +43,10 @@ export async function getAgencyBugs(
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
+      include: {
+        agency: { select: { id: true, name: true } },
+        assignedTo: { select: { id: true, email: true } },
+      },
     }),
     prisma.bugReport.count({ where }),
   ]);

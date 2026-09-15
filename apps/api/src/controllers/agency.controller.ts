@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
-import {  acceptBookingService, AgencyKYCService, agencySubscription, createAgency, getAgencyDashboardService, getSubscriptionTiers, KYCStatusService, publishPackageService, updateAgencyDomainService, updateAgencyProfileService } from "../services/agency.service";
+import {  acceptBookingService, AgencyKYCService, agencySubscription, createAgency, getAgencyDashboardService, getSubscriptionTiers, KYCStatusService, publishPackageService, updateAgencyProfileService } from "../services/agency.service";
 import { uploadFile } from "@funtush/storage";
-import type { UpdateDomainBody } from "../types/auth-request";
 
 export const registerAgency = async (req: Request, res: Response) => {
     try {
@@ -185,42 +184,6 @@ export const updateAgencyProfile = async (req: Request, res: Response) => {
 };
 
 
-export const updateAgencyDomain = async (req: Request, res: Response) => {
-    try {
-        const agencyId = req.agencyId as string;
-
-        if (!agencyId) {
-            return res.status(401).json({
-                success: false,
-                message: "Unauthorized",
-            });
-        }
-
-        const { domain }: UpdateDomainBody = req.body;
-
-        if (!domain) {
-            return res.status(400).json({
-                success: false,
-                message: "Domain is required",
-            });
-        }
-
-        const result = await updateAgencyDomainService(agencyId, domain);
-
-        return res.status(200).json({
-            success: true,
-            message: "Custom domain updated successfully",
-            data: result,
-        });
-    } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
-    }
-};
-
-
 export const agencyKYCSubmission = async (req: Request, res: Response) => {
     try {
         const agencyId = req.agencyId as string;
@@ -250,8 +213,6 @@ export const agencyKYCSubmission = async (req: Request, res: Response) => {
             bank_details,
         } = files;
 
-        console.log("FILES:", files);
-
         const businessRegistration = business_registration?.[0];
         const panCertificate = pan_certificate?.[0];
         const tourismLicense = tourism_license?.[0];
@@ -270,7 +231,7 @@ export const agencyKYCSubmission = async (req: Request, res: Response) => {
             });
         }
 
-        /** FOR SIMULTANEOUS UPLOAD OF FILES*/
+        /** FOR SIMULTANEOUS UPLOAD OF FILES */
         const [
             businessRegistrationUrl,
             panCertificateUrl,

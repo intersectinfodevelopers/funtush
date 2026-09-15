@@ -2,7 +2,7 @@ import express from "express";
 import { adminLogin, agencyLogin, getMe, logoutService, refreshTokenService, registerTrekker, requireAuth, resendOtpService, trekkerLogin, verifyOtp } from "@funtush/auth";
 
 import { validate } from "../middleware/validate";
-import { loginSchema } from "../validations/auth.validation";
+import { loginSchema, registerSchema, verifyOtpSchema } from "../validations/auth.validation";
 import { prisma } from "@funtush/database";
 
 const router = express.Router();
@@ -44,7 +44,11 @@ router.post("/trekker/login", validate(loginSchema), async (req, res) => {
 });
 
 // trekker registration
-router.post("/register", async (req, res) => {
+// `registerSchema` existed but was never wired in — this endpoint accepted
+// any password at all (no length/complexity check, no confirmPassword
+// match) until this pass. No known caller (frontend or test) sends this
+// body today, so requiring `confirmPassword` is safe to add now.
+router.post("/register", validate(registerSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -60,7 +64,8 @@ router.post("/register", async (req, res) => {
 });
 
 // OTP verification
-router.post("/verify-otp", async (req, res) => {
+// `verifyOtpSchema` existed but was never wired in either — same fix.
+router.post("/verify-otp", validate(verifyOtpSchema), async (req, res) => {
   try {
     const { userId, otp } = req.body;
 
@@ -82,8 +87,6 @@ router.get("/me", requireAuth, (req, res) => {
     user: getMe(req.user!),
   });
 });
-
-export default router;
 
 // refresh token
 router.post("/refresh", async (req, res) => {
@@ -159,3 +162,5 @@ router.post("/fcm-token", requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to register FCM token" });
   }
 });
+
+export default router;

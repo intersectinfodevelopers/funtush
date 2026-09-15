@@ -2,7 +2,6 @@ import type { Request, Response } from "express";
 import { verifyAccessToken } from "@funtush/auth";
 import { searchMarketplacePackages } from "../services/search.service.js";
 import {
-  listAgencies,
   getAgencyProfile,
   listDestinations,
   getDestinationBySlug,
@@ -16,6 +15,10 @@ import {
   recordImpression,
   recordClick,
 } from "../services/marketplaceAnalytics.service.js";
+import {
+  rankAgencies,
+  compareAgencies,
+} from "../services/marketplaceRanking.service.js";
 
 const VALID_DIFFICULTIES = new Set(["EASY", "MODERATE", "CHALLENGING", "DIFFICULT"]);
 
@@ -140,20 +143,57 @@ export const recordMarketplaceClick = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * GET /marketplace/agencies
+ *
+ * KYC-verified, paid, ACTIVE agencies ranked by a composite score. When a
+ * trekker's access token is present the list is personalised: agencies they
+ * have completed a trek with come back in a `trekkedWith` group that always
+ * sorts first, and every item carries a `yourHistory` summary.
+ *
+ * `?tier=`, `?region=`, `?min_rating=`, `?search=`, `?limit=` all narrow the
+ * result. `page` is no longer meaningful — the response is a ranked shortlist,
+ * not a paginated directory.
+ */
 export const getAgencies = async (req: Request, res: Response) => {
   try {
-    const result = await listAgencies({
-      search: asString(req.query.search),
-      tier: asString(req.query.tier),
-      region: asString(req.query.region),
-      minRating: asNumber(req.query.min_rating),
-      page: asNumber(req.query.page),
-      limit: asNumber(req.query.limit),
+    const trekkerUserId = optionalTrekkerUserId(req);
+    const result = await rankAgencies({
+      trekkerId: trekkerUserId ?? null,
+      filters: {
+        search: asString(req.query.search),
+        tier: asString(req.query.tier)?.toUpperCase(),
+        region: asString(req.query.region),
+        minRating: asNumber(req.query.min_rating),
+        limit: asNumber(req.query.limit),
+      },
     });
     return res.json({ success: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load agencies";
     return res.status(500).json({ success: false, message });
+  }
+};
+
+/**
+ * GET /marketplace/agencies/compare?slugs=a,b,c
+ *
+ * Side-by-side data for 2-4 agencies the trekker picked. Non-verified agencies
+ * are NOT hidden here (unlike the ranked list) — the trekker asked for these by
+ * slug, and "not verified" is a comparison fact worth showing. Personalised
+ * with `yourHistory` when a trekker token is present.
+ */
+export const compareMarketplaceAgencies = async (req: Request, res: Response) => {
+  try {
+    const raw = asString(req.query.slugs);
+    const slugs = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const trekkerUserId = optionalTrekkerUserId(req);
+    const data = await compareAgencies(slugs, trekkerUserId ?? null);
+    return res.json({ success: true, data });
+  } catch (err) {
+    const status = (err as { status?: number })?.status ?? 500;
+    const message = err instanceof Error ? err.message : "Failed to compare agencies";
+    return res.status(status).json({ success: false, message });
   }
 };
 

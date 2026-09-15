@@ -13,6 +13,7 @@ import express, {
 } from "express";
 import { MulterError } from "multer";
 import swaggerUi from "swagger-ui-express";
+import cors from "cors";
 
 import { db, redis } from "@funtush/database";
 
@@ -33,6 +34,12 @@ import branchRoutes from "./routes/branches.routes";
 import brandingRoutes from "./routes/branding.routes";
 import siteConfigRoutes from "./routes/siteConfig.routes";
 import navigationRoutes from "./routes/navigation.routes";
+import socialLinksRoutes from "./routes/socialLinks.routes";
+import seoSettingsRoutes from "./routes/seoSettings.routes";
+import notificationPreferencesRoutes from "./routes/notificationPreferences.routes";
+import emailSettingsRoutes from "./routes/emailSettings.routes";
+import domainRoutes from "./routes/domain.routes";
+import sitePageRoutes from "./routes/sitePage.routes";
 import regenerationRoutes from "./routes/regeneration.routes";
 import widgetsRoutes from "./routes/widgets/widgets.routes";
 import instagramRoutes from "./routes/widgets/instagram.routes";
@@ -70,8 +77,25 @@ import { openapiSpec } from "./docs/openapi";
 const docsEnabled =
   process.env.NODE_ENV !== "production" || process.env.ENABLE_DOCS === "true";
 
+// No browser-facing frontend could call this API cross-origin at all before
+// this (no `cors` package, no CORS headers set anywhere) — confirmed while
+// wiring funtush-admin's real login: it works over curl (which doesn't
+// enforce CORS) but is silently blocked from an actual browser without
+// this. Origins are configurable via CORS_ALLOWED_ORIGINS (comma-separated)
+// for deployed environments; defaults cover the local frontend dev ports.
+const allowedOrigins = (
+  process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:3000,http://localhost:3001"
+)
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 export function createApp(): Express {
   const app = express();
+
+  // 0. CORS, ahead of everything else so a preflight (OPTIONS) request never
+  //    reaches route-matching at all.
+  app.use(cors({ origin: allowedOrigins, credentials: true }));
 
   // 1. Payment webhooks need the RAW request body for signature verification,
   //    so they must be mounted before express.json() consumes the stream.
@@ -130,6 +154,12 @@ export function createApp(): Express {
   app.use("/", brandingRoutes);
   app.use("/", siteConfigRoutes);
   app.use("/", navigationRoutes);
+  app.use("/", socialLinksRoutes);
+  app.use("/", seoSettingsRoutes);
+  app.use("/", notificationPreferencesRoutes);
+  app.use("/", emailSettingsRoutes);
+  app.use("/", domainRoutes);
+  app.use("/", sitePageRoutes);
   app.use("/", regenerationRoutes);
   app.use("/", instagramRoutes);
   app.use("/", trekkerRoutes);

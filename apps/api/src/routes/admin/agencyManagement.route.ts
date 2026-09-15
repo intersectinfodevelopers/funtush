@@ -10,6 +10,8 @@ import {
 } from "../../services/adminAgency.service";
 import { writeAuditLog } from "../../services/auditLog.service";
 import { requireAdmin } from "../../middleware/requireAdmin.middleware";
+import { requireAuth } from "@funtush/auth";
+import { requireSuperAdminRole } from "../../middleware/requireSuperAdminRole.middleware";
 
 const router = Router();
 
@@ -118,13 +120,20 @@ router.patch("/:id/status", async (req: Request, res: Response) => {
   }
 });
 
-router.patch("/:id/visibility", requireAdmin, async (req: Request, res: Response) => {
+// `requireAdmin` (the IP-whitelist gate every /admin/* path already has via
+// the parent router) plus `requireAuth` + `requireSuperAdminRole` (a real
+// platform-admin JWT, `Authorization: Bearer`) — the same two-gate stack
+// `admin/adCampaigns.route.ts` uses for its budget-affecting mutations.
+// Previously this checked `req.user?.role` inline without ever running
+// `requireAuth`, so `req.user` was always `undefined` and the route was
+// permanently unreachable (a 403 regardless of who called it).
+router.patch(
+  "/:id/visibility",
+  requireAdmin,
+  requireAuth,
+  requireSuperAdminRole,
+  async (req: Request, res: Response) => {
   try {
-    if (req.user?.role !== "SUPER_ADMIN" || req.user?.roleType !== "PLATFORM") {
-      res.status(403).json({ error: "Super admin only" });
-      return;
-    }
-
     const id = paramId(req);
     const { admin_override } = req.body as { admin_override?: number };
 

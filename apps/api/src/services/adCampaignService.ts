@@ -208,7 +208,14 @@ export async function generateAdCampaign(agencyId: string) {
   const campaign = await prisma.adCampaign.create({
     data: {
       agencyId,
-      status: "PENDING_APPROVAL",
+      // A freshly generated campaign is a draft the agency still has to
+      // configure targeting for and submit — `targetingBuilderService.ts`'s
+      // `updateTargetingParams`/`submitCampaignForApproval` both require
+      // `PENDING` and move it to `PENDING_APPROVAL` themselves on submit.
+      // Creating it already at `PENDING_APPROVAL` (the previous behaviour)
+      // skipped both steps entirely — they were unreachable through the
+      // real generate → configure → submit flow.
+      status: "PENDING",
       imageUrls: allPhotos,
       copyText: creativeVariations.map((c) => c.copyText).join(" | "),
       targetingParams: {

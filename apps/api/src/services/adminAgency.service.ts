@@ -109,19 +109,23 @@ export async function updateAgencyTier(id: string, tierName: string) {
 }
 
 // Change status
+//
+// `statusReason`/`statusUpdatedAt` were never columns on `Agency` — this
+// previously 500'd on every call. The route already requires and records the
+// reason via `writeAuditLog` (see `agencyManagement.route.ts`'s
+// `AGENCY_STATUS_CHANGED` entry), which is this change's real system of
+// record, matching how every other admin mutation in this file works; only
+// the ban path (`fraud.service.ts confirmFraud`) stores its reason directly
+// on `Agency` (`banReason`), because that one is read back later by the ban
+// registry, not just logged.
 export async function updateAgencyStatus(
   id: string,
-  status: "ACTIVE" | "SUSPENDED" | "LOCKED",
-  reason?: string
+  status: "ACTIVE" | "SUSPENDED" | "LOCKED"
 ) {
   return prisma.agency.update({
     where: { id },
-    data:  {
-      status,
-      statusReason:    reason ?? null,
-      statusUpdatedAt: new Date(),
-    },
-    select: { id: true, status: true, statusReason: true, statusUpdatedAt: true },
+    data: { status },
+    select: { id: true, status: true },
   });
 }
 
