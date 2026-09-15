@@ -62,7 +62,6 @@ import bookingRoutes from "./routes/booking.routes";
 import emailRoutes from "./routes/emailRoutes";
 import sosRoutes from "./routes/sosRoutes";
 import adminRoutes from "./routes/admin/index";
-import fraudRouter from "./routes/admin/fraud.route";
 import paymentWebhookRoutes from "./routes/payment.webhook.routes";
 import stripeWebhookRoutes from "./routes/webhooks/stripe";
 
@@ -164,7 +163,9 @@ export function createApp(): Express {
 
   app.use("/admin", adminRoutes);
   app.use("/admin/bugs", bugRoutes); // same router, super-admin sub-routes
-  app.use("/fraud", fraudRouter);
+  // NOTE: the fraud review queue is mounted at /admin/fraud via adminRoutes
+  // (behind requireAdmin). It used to also be mounted unprotected at "/fraud" —
+  // removed, since ban/blocklist actions must be admin-only.
 
   // 6. Error handler — must be last.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
