@@ -15,6 +15,9 @@ const router = Router();
  * /customers/{id}/notes:
  *   get: { tags: [Customers], summary: List notes on a customer, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Notes } } }
  *   post: { tags: [Customers], summary: Add a note to a customer, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Created } } }
+ * /agencies/me/customers/{id}:
+ *   patch: { tags: [Customers], summary: Update a customer's details, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated }, 404: { description: Not found } } }
+ *   delete: { tags: [Customers], summary: Remove a customer from the agency's list, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Removed }, 404: { description: Not found } } }
  */
 router.route('/agencies/me/customers')
     .get(authenticateWithRefreshToken, getAgencyCustomers);

@@ -104,6 +104,14 @@ router.get("/", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaf
  *   patch: { tags: [Bookings], summary: Check in a booking (trek start), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked in }, 400: { description: Not in a checkable-in state } } }
  * /bookings/{id}/check-out:
  *   patch: { tags: [Bookings], summary: Check out a booking (trek complete), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked out }, 400: { description: Not in a checkable-out state } } }
+ * /bookings/{id}/set-stage:
+ *   patch:
+ *     tags: [Bookings]
+ *     summary: Move a booking to any step of its journey (INQUIRY → PAYMENT_PENDING runs the normal accept flow)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object, required: [stage], properties: { stage: { type: string, enum: [INQUIRY, PAYMENT_PENDING, PAID, CONFIRMED, ACTIVE, COMPLETED] } } } } } }
+ *     responses: { 200: { description: "{ bookingId, status, changed }" }, 400: { description: Invalid stage }, 403: { description: Not this agency's booking }, 404: { description: Not found }, 409: { description: Booking is cancelled/rejected, or ACTIVE without an assigned guide } }
  */
 // /agencies/me/bookings/:id
 router.get("/:id", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, getBookingByIdController);

@@ -52,11 +52,13 @@ function fail(res: Response, err: unknown) {
  *     tags: [Admin]
  *     summary: Update a discount code (activate/deactivate, dates, limit, value)
  *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
  *     responses: { 200: { description: Updated }, 404: { description: Not found } }
  *   delete:
  *     tags: [Admin]
  *     summary: Delete a discount code that has never been redeemed
  *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
  *     responses: { 204: { description: Deleted }, 400: { description: Has real redemptions — deactivate instead }, 404: { description: Not found } }
  */
 router.get("/", async (_req, res) => {

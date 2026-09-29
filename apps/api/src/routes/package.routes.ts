@@ -33,6 +33,17 @@ router.route("/agencies/packages/:id/publish")
  * /agencies/packages/{id}/duplicate:
  *   post: { tags: [Packages], summary: Duplicate a package (as a new DRAFT, no departure dates copied), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Duplicated }, 404: { description: Not found } } }
  */
+/**
+ * @openapi
+ * /agencies/packages/{id}/restore:
+ *   post: { tags: [Packages], summary: Restore an archived package (back to DRAFT), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Restored }, 400: { description: All departure dates have passed }, 404: { description: Not found }, 409: { description: Not archived } } }
+ * /agencies/packages/{id}/unpublish:
+ *   post: { tags: [Packages], summary: Take a published package off the site and marketplace (back to DRAFT), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Unpublished }, 404: { description: Not found }, 409: { description: Not published } } }
+ * /agencies/packages/{id}/activity:
+ *   get: { tags: [Packages], summary: Who did what to a package (newest first), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: limit, in: query, schema: { type: integer, default: 30 } }], responses: { 200: { description: Activity }, 401: { description: Unauthorized } } }
+ * /agencies/me/package-activity:
+ *   get: { tags: [Packages], summary: Agency-wide package activity feed, security: [{ refreshToken: [] }], parameters: [{ name: limit, in: query, schema: { type: integer, default: 20 } }, { name: others, in: query, schema: { type: boolean }, description: "true hides the caller's own actions (for notifications)" }], responses: { 200: { description: Activity }, 401: { description: Unauthorized } } }
+ */
 router.route("/agencies/packages/:id/restore")
   .post(authenticateWithRefreshToken, restorePackage);
 

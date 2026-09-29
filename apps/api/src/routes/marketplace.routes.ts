@@ -17,6 +17,15 @@ import {
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /marketplace/packages/{slug}:
+ *   get: { tags: [Marketplace], summary: One package's public detail page (records a page view), parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Package }, 404: { description: Not found } } }
+ * /marketplace/recommendations:
+ *   get: { tags: [Marketplace], summary: "Personalised \"recommended for you\"; curated picks for a visitor with no history yet", responses: { 200: { description: Recommendations } } }
+ * /marketplace/stats:
+ *   get: { tags: [Marketplace], summary: Real platform-scale counts (agencies, packages, reviews) for the homepage hero, responses: { 200: { description: Stats } } }
+ */
 // GET /marketplace/packages            → all published packages, ranked by visibility score
 // GET /marketplace/packages?q=everest&difficulty=moderate&price_max=1500 → full-text + filters
 // NEW: impressions recorded on response

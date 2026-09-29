@@ -17,6 +17,9 @@ type Handler = (req: unknown, res: unknown, next: (err?: unknown) => void) => un
 const wrap = (fn: Handler): Handler => {
   // 4-argument functions are error handlers; leave those alone
   if (fn.length === 4) return fn;
+  // Mounted sub-routers dispatch synchronously; wrapping them would hide their
+  // `.stack`, which route introspection (duplicate / OpenAPI-coverage tests) walks
+  if (Array.isArray((fn as unknown as { stack?: unknown }).stack)) return fn;
   return function wrapped(this: unknown, req, res, next) {
     const result = fn.call(this, req, res, next);
     if (result && typeof (result as Promise<unknown>).catch === "function") {

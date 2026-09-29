@@ -41,7 +41,14 @@ router.get("/agencies/me/coupons", ...);
 - Security: `bearerAuth` = `Authorization: Bearer <JWT>`; `refreshToken` =
   `x-refresh-token` header (used by most `/agencies/me/*` routes).
 
-## Not yet documented (Phase 2)
+## Coverage is enforced
 
-blog, blog categories, videos, gallery, agency destinations, site advertisements,
-widgets, and the admin sub-routes beyond dashboard/agencies/kyc.
+[`openapi.coverage.test.ts`](./openapi.coverage.test.ts) walks the real Express
+route table and fails when:
+
+- a mounted route has no OpenAPI entry, or a documented path is no longer mounted;
+- an operation is missing `tags`, `summary`, or `responses`;
+- a `{param}` in a path is not declared under `parameters`.
+
+So a new route needs its `@openapi` block in the same PR. The test needs no infra
+(`npx vitest run src/docs/openapi.coverage.test.ts`).

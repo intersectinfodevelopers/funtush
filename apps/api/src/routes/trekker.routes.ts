@@ -29,6 +29,11 @@ const router = Router();
  *   get: { tags: [Trekkers], summary: Unread notification count, security: [{ bearerAuth: [] }], responses: { 200: { description: Count } } }
  * /trekker/notifications/read:
  *   post: { tags: [Trekkers], summary: Mark notifications read (body ids, or omit to mark all), security: [{ bearerAuth: [] }], responses: { 200: { description: Updated } } }
+ * /trekker/saved-destinations:
+ *   get: { tags: [Trekkers], summary: The signed-in trekker's saved (wishlisted) destinations, security: [{ bearerAuth: [] }], responses: { 200: { description: Saved destinations }, 401: { description: Unauthorized } } }
+ * /trekker/saved-destinations/{id}:
+ *   put: { tags: [Trekkers], summary: Save a destination (idempotent), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Saved }, 404: { description: Destination not found } } }
+ *   delete: { tags: [Trekkers], summary: Remove a saved destination, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Removed } } }
  * /trekker-preferences:
  *   patch: { tags: [Trekkers], summary: Set the signed-in trekker's own travel preferences (destinations, budget, group size), security: [{ bearerAuth: [] }], responses: { 200: { description: Saved }, 401: { description: Unauthorized } } }
  */

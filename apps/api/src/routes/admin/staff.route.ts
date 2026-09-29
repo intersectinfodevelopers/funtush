@@ -57,18 +57,35 @@ function fail(res: Response, err: unknown) {
  *     tags: [Admin]
  *     summary: Change a platform staff member's role
  *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
  *     responses: { 200: { description: Updated }, 400: { description: Invalid role or last SUPER_ADMIN }, 404: { description: Not found } }
+ * /admin/staff/permissions:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Catalog of admin modules a PLATFORM_SUPPORT member can be granted (powers the invite/edit checkboxes)
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Grouped permission catalog } }
+ * /admin/staff/{id}/permissions:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Replace a platform staff member's module permissions (audit-logged)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object, required: [permissions], properties: { permissions: { type: array, items: { type: string } } } } } } }
+ *     responses: { 200: { description: Updated }, 400: { description: Invalid permissions, or target is not a PLATFORM_SUPPORT account }, 404: { description: Not found } }
  * /admin/staff/{id}/status:
  *   patch:
  *     tags: [Admin]
  *     summary: Activate or deactivate a platform staff member (reason required)
  *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
  *     responses: { 200: { description: Updated }, 400: { description: Missing reason, self-deactivation, or last SUPER_ADMIN }, 404: { description: Not found } }
  * /admin/staff/{id}:
  *   delete:
  *     tags: [Admin]
  *     summary: Permanently delete a platform staff member — only once already deactivated
  *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
  *     responses: { 204: { description: Deleted }, 400: { description: Still active, or has real bug-triage history }, 404: { description: Not found } }
  */
 // Catalog of admin modules a PLATFORM_SUPPORT member can be granted — powers

@@ -13,6 +13,8 @@ import * as svc from "../services/siteContent.service";
  *   get: { tags: [Site], summary: "Public: published destinations", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Destinations } } }
  * /site/{slug}/destinations/{destination}:
  *   get: { tags: [Site], summary: "Public: one published destination by slug", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }, { name: destination, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Destination }, 404: { description: Not found } } }
+ * /site/{slug}/destinations/{destination}/view:
+ *   post: { tags: [Site], summary: "Public: count one view of a published destination (deduped per visitor)", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }, { name: destination, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Recorded }, 404: { description: Not found } } }
  * /site/{slug}/blog:
  *   get: { tags: [Site], summary: "Public: published blog posts", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Posts } } }
  * /site/{slug}/blog/{id}:

@@ -35,6 +35,8 @@ const router = Router();
  * /admin/bugs:
  *   post: { tags: [Admin], summary: "Submit a bug report (same route as /agencies/me/bugs, reachable under both prefixes)", security: [{ bearerAuth: [] }], responses: { 201: { description: Submitted }, 400: { description: Missing required field } } }
  *   get: { tags: [Admin], summary: "List bug reports across every agency (agencyId is null for a platform-admin caller), same route as /agencies/me/bugs", security: [{ bearerAuth: [] }], responses: { 200: { description: Reports } } }
+ * /agencies/me/bugs/staff:
+ *   get: { tags: [Admin], summary: "List platform staff a bug can be assigned to (platform 'bugs' permission — same route as /admin/bugs/staff, reachable under both prefixes)", security: [{ bearerAuth: [] }], responses: { 200: { description: Staff }, 403: { description: Missing bugs permission } } }
  * /admin/bugs/staff:
  *   get: { tags: [Admin], summary: List platform staff a bug can be assigned to (super admin), security: [{ bearerAuth: [] }], responses: { 200: { description: Staff } } }
  * /admin/bugs/{id}/priority:

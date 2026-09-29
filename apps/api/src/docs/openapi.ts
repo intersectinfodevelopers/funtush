@@ -313,6 +313,95 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
         responses: { "200": { description: "Registered" }, "400": { description: "fcmToken is required" } },
       },
     },
+    "/auth/forgot-password": {
+      post: {
+        tags: ["Auth"],
+        summary: "Email a password-reset link. Always the same 200, whether or not the account exists",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["email"], properties: { email: { type: "string", format: "email" } } } } },
+        },
+        responses: { "200": { description: "Accepted (no account enumeration)" } },
+      },
+    },
+    "/auth/reset-password": {
+      post: {
+        tags: ["Auth"],
+        summary: "Set a new password with the token from the reset email",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", required: ["token", "password"], properties: { token: { type: "string" }, password: { type: "string" } } },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Password updated" },
+          "400": { description: "Invalid/expired token, or weak password" },
+          "429": { description: "Too many attempts" },
+        },
+      },
+    },
+    "/auth/change-password": {
+      post: {
+        tags: ["Auth"],
+        summary: "Signed-in password change (any user type). Not available during an admin support session",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["currentPassword", "newPassword"],
+                properties: { currentPassword: { type: "string" }, newPassword: { type: "string" } },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Password updated — sign in again" },
+          "400": { description: "Wrong current password, or weak new password" },
+          "401": { description: "Unauthorized" },
+          "403": { description: "Not available during a support session" },
+        },
+      },
+    },
+    "/auth/support-session/exchange": {
+      post: {
+        tags: ["Auth"],
+        summary: "Exchange the one-time code from an admin's \"View agency dashboard\" click for support-session tokens",
+        description: "Public by design (the new tab has no session yet). Single use, valid 60 s, rate-limited. Response is Cache-Control: no-store.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["code"], properties: { code: { type: "string" } } } } },
+        },
+        responses: {
+          "200": { description: "Support-session tokens" },
+          "400": { description: "Invalid, expired, or already-used code" },
+          "429": { description: "Too many attempts" },
+        },
+      },
+    },
+    "/auth/break-glass/redeem": {
+      post: {
+        tags: ["Auth"],
+        summary: "Redeem an admin-issued break-glass recovery code and set a new password",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", required: ["token", "password"], properties: { token: { type: "string" }, password: { type: "string" } } },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Password updated" },
+          "400": { description: "Invalid/expired/used code, or weak password" },
+        },
+      },
+    },
     "/subscription-tiers": {
       get: {
         tags: ["Agency"],
@@ -344,7 +433,24 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
         responses: { "200": { description: "Summary stats" }, "401": { description: "Unauthorized" } },
       },
     },
+    "/agencies/me/access": {
+      get: {
+        tags: ["Agency"],
+        summary: "What the signed-in agency user may see: the owner gets every permission, staff get their role's",
+        security: [{ refreshToken: [] }],
+        responses: {
+          "200": { description: "{ role: AGENCY_ADMIN | STAFF, admin, permissions[] }" },
+          "401": { description: "Unauthorized" },
+        },
+      },
+    },
     "/agencies/me/profile": {
+      get: {
+        tags: ["Agency"],
+        summary: "The agency's public profile",
+        security: [{ refreshToken: [] }],
+        responses: { "200": { description: "Profile" }, "401": { description: "Unauthorized" } },
+      },
       patch: {
         tags: ["Agency"],
         summary: "Update the agency's public profile (logo, description, address, contacts, regions)",
@@ -686,6 +792,33 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
           "401": { description: "No platform-admin bearer token" },
           "403": { description: "Not a super admin" },
         },
+      },
+    },
+    "/admin/agencies/{id}/break-glass": {
+      post: {
+        tags: ["Admin"],
+        summary: "Issue a single-use recovery code for an agency owner who can't use \"Forgot password\"",
+        description:
+          "The code is returned ONCE, for the admin to hand to the verified owner out-of-band; the owner redeems it at POST /auth/break-glass/redeem. Requires a platform super-admin JWT plus the IP-whitelisted admin context. A reason is mandatory and audit-logged. Response is Cache-Control: no-store.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["reason"], properties: { reason: { type: "string" } } } } },
+        },
+        responses: {
+          "201": { description: "Code issued (shown once)" },
+          "400": { description: "reason is required" },
+          "403": { description: "Not a super admin, or the agency is banned" },
+          "404": { description: "Agency not found, or has no AGENCY_ADMIN user" },
+        },
+      },
+      delete: {
+        tags: ["Admin"],
+        summary: "Revoke any outstanding break-glass code for the agency",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Revoked" }, "403": { description: "Not a super admin" } },
       },
     },
     "/admin/ad-campaigns/pending": {
