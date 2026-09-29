@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { assignGuideToBranchService, assignPackageToBranchService, assignStaffToBranchService, createBranchService, getBranchesService, getBranchReportService, getConsolidatedFinanceService, updateBranchService } from "src/services/branches.service";
+import { BranchError, deleteBranchService, assignGuideToBranchService, assignPackageToBranchService, assignStaffToBranchService, createBranchService, getBranchesService, getBranchReportService, getConsolidatedFinanceService, updateBranchService } from "src/services/branches.service";
 
 export const createBranch = async (
     req: Request,
@@ -19,7 +19,7 @@ export const createBranch = async (
         });
 
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -48,7 +48,7 @@ export const updateBranch = async (
             data: branch,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -75,7 +75,7 @@ export const getAgencyBranches = async (
             data: branches,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -105,7 +105,7 @@ export const assignStaffToBranch = async (
             data: result,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -134,7 +134,7 @@ export const assignGuideToBranch = async (
             data: result,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -164,7 +164,7 @@ export const assignPackageBranches = async (
             data: result,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -192,7 +192,7 @@ export const getBranchReportController = async (
             data: result,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -218,12 +218,24 @@ export const getConsolidatedFinanceController = async (
             data: result,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof BranchError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
                     ? err.message
                     : "Something went wrong",
+        });
+    }
+};
+
+export const deleteBranch = async (req: Request, res: Response) => {
+    try {
+        await deleteBranchService(req.tenantId as string, req.params.id as string);
+        return res.status(204).send();
+    } catch (err) {
+        return res.status(err instanceof BranchError ? err.status : 400).json({
+            success: false,
+            message: err instanceof Error ? err.message : "Something went wrong",
         });
     }
 };

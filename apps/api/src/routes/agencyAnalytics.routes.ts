@@ -29,6 +29,17 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+/**
+ * @openapi
+ * /agencies/me/marketplace/impressions:
+ *   get:
+ *     tags: [Analytics]
+ *     summary: Daily marketplace impression/click/conversion breakdown and aggregated CTR
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: period, in: query, schema: { type: string, enum: [last_7_days, last_30_days, last_90_days] } }
+ *     responses: { 200: { description: Performance }, 400: { description: Invalid period } }
+ */
 router.get(
   "/agencies/me/marketplace/impressions",
   authenticateWithRefreshToken,
@@ -36,7 +47,17 @@ router.get(
   getAgencyMarketplacePerformance
 );
 
-// GET /agencies/me/marketplace/conversions?window_hours=24
+/**
+ * @openapi
+ * /agencies/me/marketplace/conversions:
+ *   get:
+ *     tags: [Analytics]
+ *     summary: Marketplace clicks that converted to a booking within a time window (click → inquiry → booking)
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: window_hours, in: query, schema: { type: integer, minimum: 1, maximum: 168 }, description: "Default 24" }
+ *     responses: { 200: { description: Conversions }, 400: { description: Invalid window_hours } }
+ */
 router.get(
   "/agencies/me/marketplace/conversions",
   authenticateWithRefreshToken,
@@ -44,7 +65,15 @@ router.get(
   getAgencyMarketplaceConversionsData
 );
 
-// Admin dashboards
+/**
+ * @openapi
+ * /admin/marketplace/top-agencies:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Top agencies by marketplace impressions (super admin only — platform-admin JWT)
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Ranking }, 401: { description: Unauthorized }, 403: { description: Not a super admin } }
+ */
 router.get(
   "/admin/marketplace/top-agencies",
   requireSuperAdmin,

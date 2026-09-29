@@ -47,6 +47,10 @@ const navigationFindUnique = vi.fn();
 const navigationUpsert = vi.fn();
 const itemDeleteMany = vi.fn();
 const itemCreate = vi.fn();
+const socialLinksFindUnique = vi.fn();
+const socialLinksUpsert = vi.fn();
+const seoSettingsFindUnique = vi.fn();
+const seoSettingsUpsert = vi.fn();
 
 vi.mock("@funtush/database", () => ({
   db: {
@@ -66,6 +70,14 @@ vi.mock("@funtush/database", () => ({
     agencyNavigationItem: {
       deleteMany: (...a: unknown[]) => itemDeleteMany(...a),
       create: (...a: unknown[]) => itemCreate(...a),
+    },
+    agencySocialLinks: {
+      findUnique: (...a: unknown[]) => socialLinksFindUnique(...a),
+      upsert: (...a: unknown[]) => socialLinksUpsert(...a),
+    },
+    agencySeoSettings: {
+      findUnique: (...a: unknown[]) => seoSettingsFindUnique(...a),
+      upsert: (...a: unknown[]) => seoSettingsUpsert(...a),
     },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
@@ -112,6 +124,8 @@ import {
 import { updateAgencyBranding } from "../../services/branding.service";
 import { updateSiteConfig } from "../../services/siteConfig.service";
 import { updateNavigation } from "../../services/navigation.service";
+import { updateSocialLinks } from "../../services/socialLinks.service";
+import { updateSeoSettings } from "../../services/seoSettings.service";
 
 /* ── Fixtures ────────────────────────────────────────────────────────────── */
 
@@ -153,6 +167,9 @@ const EXPECTED_API_URL: Record<RegenerationScope, string> = {
   branding: "https://api.funtush.com/site/himalayan-trails/branding",
   siteConfig: "https://api.funtush.com/site/himalayan-trails/config",
   navigation: "https://api.funtush.com/site/himalayan-trails/navigation",
+  socialLinks: "https://api.funtush.com/site/himalayan-trails/social-links",
+  seoSettings: "https://api.funtush.com/site/himalayan-trails/seo",
+  sitePage: "https://api.funtush.com/site/himalayan-trails/site-page",
 };
 
 /** The cache tag each scope's save invalidates, tenant slug included. */
@@ -160,6 +177,9 @@ const EXPECTED_TAG: Record<RegenerationScope, string> = {
   branding: "branding:himalayan-trails",
   siteConfig: "config:himalayan-trails",
   navigation: "nav:himalayan-trails",
+  socialLinks: "social:himalayan-trails",
+  seoSettings: "seo:himalayan-trails",
+  sitePage: "page:himalayan-trails",
 };
 
 function agencyRow(overrides: Record<string, unknown> = {}) {
@@ -277,6 +297,24 @@ beforeEach(() => {
   navigationUpsert.mockResolvedValue({ id: "nav-1" });
   itemDeleteMany.mockResolvedValue({ count: 0 });
   itemCreate.mockResolvedValue({ id: "item-1" });
+
+  socialLinksFindUnique.mockResolvedValue({
+    facebookUrl: null,
+    instagramUrl: null,
+    tiktokUrl: null,
+    whatsappNumber: null,
+    youtubeUrl: null,
+    updatedAt: SAVED_AT,
+  });
+  socialLinksUpsert.mockResolvedValue({});
+
+  seoSettingsFindUnique.mockResolvedValue({
+    metaTitle: null,
+    metaDescription: null,
+    ogImageUrl: null,
+    updatedAt: SAVED_AT,
+  });
+  seoSettingsUpsert.mockResolvedValue({});
 });
 
 afterEach(async () => {
@@ -299,6 +337,8 @@ describe("every white-label save triggers a regeneration", () => {
     { scope: "branding", save: () => updateAgencyBranding(AGENCY_ID, { brandName: "Himalaya Co" }) },
     { scope: "siteConfig", save: () => updateSiteConfig(AGENCY_ID, { underConstruction: false }) },
     { scope: "navigation", save: () => updateNavigation(AGENCY_ID, { bookNowHidden: true }) },
+    { scope: "socialLinks", save: () => updateSocialLinks(AGENCY_ID, { facebookUrl: "https://facebook.com/himalayan-trails" }) },
+    { scope: "seoSettings", save: () => updateSeoSettings(AGENCY_ID, { metaTitle: "Himalayan Trails" }) },
   ];
 
   for (const { scope, save } of SAVES) {

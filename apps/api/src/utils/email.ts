@@ -8,17 +8,50 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+/**
+ * Every function below is a fire-and-forget notification sent *after* the
+ * state change it describes has already committed to the database (a
+ * booking already exists, a staff account was already created, an OTP was
+ * already stored in Redis). None of them has a legitimate reason to block
+ * or fail the request that triggered it — a Gmail SMTP hiccup, or simply
+ * `EMAIL_USER`/`EMAIL_PASS` not being configured (any local/staging/CI
+ * environment, this test suite included), should not mean an agency can't
+ * accept a booking or a trekker can't submit an inquiry.
+ *
+ * Previously some of these functions re-threw after logging and some had
+ * no try/catch at all — either way, `sendMail` rejecting propagated
+ * straight to the caller and aborted the booking/staff/OTP flow that
+ * called it. All 12 now share one shape: try, log on failure, never throw.
+ */
+/**
+ * Skips the real SMTP connection entirely when unconfigured, rather than
+ * attempting (and paying the real network round-trip for) a Gmail TLS
+ * handshake that can only fail on auth — the same "not configured, running
+ * in mock mode" convention `lib/emailQueue.ts`/`emailService.ts` already
+ * use elsewhere in this codebase, applied here too.
+ */
+async function send(subject: string, mail: Parameters<typeof transporter.sendMail>[0]): Promise<void> {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn(`[EMAIL] EMAIL_USER/EMAIL_PASS not configured — skipping (${subject}) to ${String(mail.to)}`);
+    return;
+  }
+  try {
+    await transporter.sendMail(mail);
+  } catch (error) {
+    console.error(`Email sending failed (${subject}):`, error);
+  }
+}
+
 export const sendStaffInviteEmail = async (
   email: string,
   tempPassword: string,
   agencyId: string
 ) => {
-  try {
-    await transporter.sendMail({
-      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "You've been added to an agency on Funtush",
-      text: `
+  await send("staff invite", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "You've been added to an agency on Funtush",
+    text: `
 Hello,
 
 A staff account has been created for you on Funtush (agency ${agencyId}).
@@ -31,53 +64,66 @@ Please sign in and change your password immediately.
 
 Thank you!
       `,
-    });
-  } catch (error) {
-    console.error("Email sending failed:", error);
-    throw error;
-  }
+  });
 };
 
+export const sendPlatformStaffInviteEmail = async (
+  email: string,
+  tempPassword: string,
+  role: string
+) => {
+  await send("platform staff invite", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "You've been added to the Funtush platform team",
+    text: `
+Hello,
+
+A platform staff account has been created for you on Funtush admin, with role ${role}.
+
+Login credentials:
+Email: ${email}
+Temporary password: ${tempPassword}
+
+Please sign in at the admin dashboard and change your password immediately.
+
+Thank you!
+      `,
+  });
+};
+
+// Deliberately does NOT include the password: email is not a safe place for a credential, and the
+// owner already chose it at sign-up. "Forgot password" covers a lost one.
 export const sendWelcomeEmail = async (
   email: string,
-  password: string,
   name: string
 ) => {
-  try {
-    await transporter.sendMail({
-      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Welcome to Trekking System",
-      text: `
+  await send("welcome", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Welcome to Trekking System",
+    text: `
 Hello ${name},
 
     Your Agency "${name}" has been successfully registered.
 
-Login credentials:
-Email: ${email}
-Password: ${password}
-
-Please change your password after first login.
+You can sign in with this email address (${email}) and the password you chose.
+If you ever forget it, use "Forgot password" on the login page.
 
 Thank you!
       `,
-    });
-  } catch (error) {
-    console.error("Email sending failed:", error);
-    throw error;
-  }
+  });
 };
 
 export const sendTrialExpiredEmail = async (
   email: string,
   name: string
 ) => {
-  try {
-    await transporter.sendMail({
-      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Trial Expired - Action Required",
-      text: `
+  await send("trial expired", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Trial Expired - Action Required",
+    text: `
 Hello ${name},
 
 Your free trial has expired and your account is now LOCKED.
@@ -89,20 +135,15 @@ If you believe this is a mistake, please contact support.
 Thank you,
 Funtush Team
       `,
-    });
-  } catch (error) {
-    console.error("Email sending failed:", error);
-    throw error;
-  }
+  });
 };
 
 export const sendOtpEmail = async (email: string, otp: string) => {
-  try {
-    await transporter.sendMail({
-      from: `"Trekking System" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Your OTP Code",
-      text: `
+  await send("OTP", {
+    from: `"Trekking System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Your OTP Code",
+    text: `
 Hello,
 
 Your verification code is: ${otp}
@@ -111,11 +152,7 @@ This code will expire in 15 minutes.
 
 Thank you!
       `,
-    });
-  } catch (error) {
-    console.error("OTP email sending failed:", error);
-    throw error;
-  }
+  });
 };
 
 export const sendInquiryConfirmationEmail = async (
@@ -124,7 +161,7 @@ export const sendInquiryConfirmationEmail = async (
   packageTitle: string,
   departureDate: Date,
 ) => {
-  await transporter.sendMail({
+  await send("inquiry confirmation", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "Your inquiry has been submitted",
@@ -146,7 +183,7 @@ export const sendAgencyInquiryAlertEmail = async (
   packageTitle: string,
   bookingId: string,
 ) => {
-  await transporter.sendMail({
+  await send("agency inquiry alert", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: agencyEmail,
     subject: `New Inquiry from ${trekkerName}`,
@@ -169,7 +206,7 @@ export const sendBookingAcceptedEmail = async (
   paymentLink: string,
   expiresAt: Date,
 ) => {
-  await transporter.sendMail({
+  await send("booking accepted", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "Your booking has been confirmed!",
@@ -194,7 +231,7 @@ export const sendBookingRejectedEmail = async (
   packageTitle: string,
   reason: string,
 ) => {
-  await transporter.sendMail({
+  await send("booking rejected", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "Update on your booking inquiry",
@@ -219,7 +256,7 @@ export const sendAlternativeDateEmail = async (
   packageTitle: string,
   proposedDate: Date,
 ) => {
-  await transporter.sendMail({
+  await send("alternative date proposed", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: "Alternative date proposed for your booking",
@@ -247,7 +284,7 @@ export const sendBookingConfirmationEmail = async (
   guideName: string | null,
   pdfBuffer: Buffer
 ) => {
-  await transporter.sendMail({
+  await send("booking confirmation", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: trekkerEmail,
     subject: `Booking Confirmed — ${packageTitle}`,
@@ -287,7 +324,7 @@ export const sendGuideAssignmentEmail = async (
   groupSize: number,
   bookingId: string
 ) => {
-  await transporter.sendMail({
+  await send("guide assignment", {
     from: `"Funtush" <${process.env.EMAIL_USER}>`,
     to: guideEmail,
     subject: `Trek Assignment — ${packageTitle}`,
@@ -314,18 +351,41 @@ Funtush Team
   });
 };
 
+export const sendSupportAccessNotificationEmail = async (
+  email: string,
+  agencyName: string,
+  reason: string,
+  timestamp: Date,
+) => {
+  await send("support access notification", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "A Funtush admin accessed your account for support",
+    text: `
+Hello,
+
+A Funtush platform admin started a support session on "${agencyName}"'s account at ${timestamp.toISOString()}.
+
+Reason given: ${reason}
+
+This session is time-limited and every action taken during it is logged. If you did not expect this, please contact support immediately.
+
+Thank you,
+Funtush Team
+    `.trim(),
+  });
+};
 
 export const sendReviewInvitationEmail = async (
   email: string,
   name: string,
   invitationLink: string,
 ) => {
-  try {
-    await transporter.sendMail({
-      from: `"Funtush System" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Review Invitation - Share Your Trek Experience",
-      html: `
+  await send("review invitation", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Review Invitation - Share Your Trek Experience",
+    html: `
       <h2>Hello ${name},</h2>
 
       <p>
@@ -336,7 +396,7 @@ export const sendReviewInvitationEmail = async (
         We'd love to hear about your experience.
       </p>
 
-      <a href=${invitationLink}">
+      <a href="${invitationLink}">
         Leave Review
       </a>
 
@@ -344,9 +404,59 @@ export const sendReviewInvitationEmail = async (
         Thank you for choosing Funtush.
       </p>
     `,
-    });
-  } catch (error) {
-    console.error("Email sending failed:", error);
-    throw error;
-  }
+  });
+};
+
+export const sendPasswordResetEmail = async (email: string, resetUrl: string) => {
+  await send("password reset", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Reset your Funtush password",
+    text: `
+Hello,
+
+We received a request to reset your Funtush password. Use the link below within 30 minutes:
+
+${resetUrl}
+
+The link works once. If you did not ask for this, ignore this email — your password has not changed.
+
+Funtush Team
+    `.trim(),
+  });
+};
+
+export const sendPasswordChangedEmail = async (email: string, how: string) => {
+  await send("password changed", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Your Funtush password was changed",
+    text: `
+Hello,
+
+Your Funtush account password was just changed (${how}). All existing sessions were signed out.
+
+If this was not you, contact Funtush support immediately.
+
+Funtush Team
+    `.trim(),
+  });
+};
+
+export const sendBreakGlassIssuedEmail = async (email: string, agencyName: string, reason: string, expiresAt: Date) => {
+  await send("break-glass issued", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "A Funtush admin started emergency account recovery",
+    text: `
+Hello,
+
+A Funtush platform admin issued an emergency account-recovery code for "${agencyName}" (reason: ${reason}).
+The code expires at ${expiresAt.toISOString()} and can be used once, to set a new password. The admin will give it to you directly.
+
+If you did not ask for account recovery, contact Funtush support immediately.
+
+Funtush Team
+    `.trim(),
+  });
 };

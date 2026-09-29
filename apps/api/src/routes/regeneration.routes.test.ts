@@ -225,7 +225,7 @@ describe(`POST ${PATH}`, () => {
       agencyId: AGENCY_ID,
       slug: "himalayan-trails",
       customDomain: "everest-treks.com",
-      scopes: ["branding", "siteConfig", "navigation"],
+      scopes: ["branding", "siteConfig", "navigation", "socialLinks", "seoSettings", "sitePage"],
     });
   });
 

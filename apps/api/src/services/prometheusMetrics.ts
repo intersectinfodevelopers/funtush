@@ -1,5 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import prometheus from 'prom-client';
+import { timingSafeEqual } from 'crypto';
+import cluster from 'cluster';
 
 /**
  * Prometheus Metrics Service
@@ -8,6 +10,14 @@ import prometheus from 'prom-client';
 
 // Create registry
 const register = new prometheus.Registry();
+
+// When the API runs as several worker processes (see src/cluster.ts) each worker
+// counts only its own requests. Constructing an AggregatorRegistry makes this
+// process answer the primary's "give me your metrics" requests (workers), and
+// pointing it at OUR registry (not prom-client's global one) is what makes those
+// answers include the counters defined below.
+new prometheus.AggregatorRegistry();
+prometheus.AggregatorRegistry.setRegistries([register]);
 
 // Default metrics (CPU, memory, etc)
 prometheus.collectDefaultMetrics({ register });
@@ -167,48 +177,130 @@ const revenueTotal = new prometheus.Counter({
   registers: [register],
 });
 
-// Middleware to track HTTP metrics
+/** Count one booking landing in `status` (created there, or transitioned into it). */
+const trackBooking = (status: string): void => {
+  bookingsTotal.labels(status).inc();
+};
+
+/** One inbound payment-gateway callback and how it ended (success / invalid signature / processing error). */
+const recordPaymentGateway = (gateway: string, outcome: 'success' | 'invalid' | 'error', startedAtMs?: number): void => {
+  paymentGatewayRequests.labels(gateway, outcome).inc();
+  if (outcome !== 'success') paymentGatewayErrors.labels(gateway, outcome).inc();
+  if (startedAtMs !== undefined) paymentGatewayLatency.labels(gateway).observe((Date.now() - startedAtMs) / 1000);
+};
+
+/** Money that actually settled (call once, at the commit point — never on a retried webhook). */
+const recordRevenue = (currency: string, amount: number): void => {
+  if (Number.isFinite(amount) && amount > 0) revenueTotal.labels(currency).inc(amount);
+};
+
+/** An SOS was raised (`triggered`) or dismissed (`cancelled`). */
+const recordSos = (status: 'triggered' | 'cancelled' | 'failed'): void => {
+  sosRequestsTotal.labels(status).inc();
+};
+
+// Middleware to track HTTP metrics. Mounted globally (before routing), so
+// `req.route` isn't set yet when this function body runs — reading it here
+// would always fall back to `req.path`, the *raw* URL (`/admin/agencies/<uuid>`
+// instead of `/admin/agencies/:id`), which explodes Prometheus label
+// cardinality (a distinct time series per id, forever). Express populates
+// `req.route`/`req.baseUrl` by the time the response is sent, though — so
+// the label is read in a `res.on("finish")` handler instead, after routing
+// has actually happened.
+//
+// finish, not a `res.send` override: an unmatched route (no handler ever
+// calls res.send/.json) is answered by Express's internal `finalhandler`,
+// which writes the 404 directly without going through `res.send` at all —
+// wrapping `send` would silently miss every genuine 404. `finish` fires for
+// every response regardless of how it was written (this is the same
+// pattern impersonationAudit.middleware.ts uses, for the same reason).
 const metricsMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
-  const route = req.route?.path || req.path;
 
-  // Track response
-  const originalSend = res.send;
-
-  res.send = function (data: string | Buffer) {
+  res.on("finish", () => {
     const duration = (Date.now() - start) / 1000;
-    const statusCode = res.statusCode || 500;
+    // `.labels()` requires string values — passing the raw number (as this
+    // did before) throws at the first request that hits this middleware.
+    const statusCode = String(res.statusCode || 500);
+    // A matched request is labelled by its route *pattern*. An unmatched one
+    // (404) has no pattern, and falling back to the raw path would let anyone
+    // mint unlimited time series just by requesting /a1, /a2, /a3… — an
+    // unauthenticated memory-growth vector — so they share one bucket.
+    const route = req.route ? (req.baseUrl || "") + req.route.path : "unmatched";
 
-    // Record metrics
     httpRequestsTotal.labels(req.method, route, statusCode).inc();
     httpRequestDurationSeconds.labels(req.method, route, statusCode).observe(duration);
 
-    if (statusCode >= 400) {
+    if (res.statusCode >= 400) {
       httpRequestsError.labels(req.method, route, 'http_error').inc();
     }
-
-    return originalSend.call(this, data);
-  };
+  });
 
   next();
 };
 
-// Export metrics endpoint
+/**
+ * The text a scrape should return. Single process: this process's registry.
+ * Cluster worker: the scrape landed on one arbitrary worker, but Prometheus
+ * needs the *whole service*, so ask the primary to aggregate every worker's
+ * counters (it does, in src/cluster.ts). Falls back to local-only metrics if
+ * the primary doesn't answer, so a scrape never hangs.
+ */
+let metricsReqId = 0;
+const pendingMetrics = new Map<number, (text: string | null) => void>();
+if (cluster.isWorker) {
+  process.on('message', (msg: { type?: string; id?: number; text?: string; error?: string }) => {
+    if (msg?.type !== 'funtush:metrics-res' || msg.id === undefined) return;
+    pendingMetrics.get(msg.id)?.(msg.error ? null : (msg.text ?? null));
+  });
+}
+
+async function getMetricsText(): Promise<string> {
+  if (!cluster.isWorker || !process.send) return register.metrics();
+
+  const id = metricsReqId++;
+  const aggregated = await new Promise<string | null>((resolve) => {
+    const timer = setTimeout(() => { pendingMetrics.delete(id); resolve(null); }, 3000);
+    pendingMetrics.set(id, (text) => { clearTimeout(timer); pendingMetrics.delete(id); resolve(text); });
+    process.send!({ type: 'funtush:metrics-req', id });
+  });
+  return aggregated ?? register.metrics();
+}
+
+// Export metrics endpoint. Deliberately just `/metrics` — no duplicate
+// `/health` here, since app.ts already has a real one that checks live
+// Postgres/Redis connectivity; this file's version would only have reported
+// process uptime, silently shadowing or being shadowed depending on mount
+// order.
 const metricsRouter = Router();
 
-metricsRouter.get('/metrics', (_req: Request, res: Response) => {
-  res.set('Content-Type', register.contentType);
-  res.end(register.metrics());
-});
+// Scrape access. Route names, error rates and business counters are
+// reconnaissance data, so this isn't left world-readable in production:
+//   - METRICS_TOKEN set  -> requires `Authorization: Bearer <token>` (Prometheus
+//     `authorization: credentials:` / `bearer_token` scrape config)
+//   - unset, production  -> 404, as if the route didn't exist (fail closed)
+//   - unset, elsewhere   -> open, for local dev
+const tokensMatch = (given: string, expected: string): boolean => {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
 
-// Health check endpoint
-metricsRouter.get('/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-  });
+metricsRouter.get('/metrics', async (req: Request, res: Response) => {
+  const expected = process.env.METRICS_TOKEN;
+  if (expected) {
+    const header = req.headers.authorization ?? '';
+    const given = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
+    if (!tokensMatch(given, expected)) {
+      res.status(401).set('WWW-Authenticate', 'Bearer').json({ error: 'Metrics token required' });
+      return;
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    res.status(404).end();
+    return;
+  }
+  res.set('Content-Type', register.contentType);
+  res.end(await getMetricsText());
 });
 
 export {
@@ -225,6 +317,10 @@ export {
   paymentGatewayRequests,
   paymentGatewayErrors,
   bookingsTotal,
+  trackBooking,
+  recordPaymentGateway,
+  recordRevenue,
+  recordSos,
   revenueTotal,
   // Histograms
   httpRequestDurationSeconds,

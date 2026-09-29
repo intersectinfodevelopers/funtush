@@ -10,6 +10,7 @@ vi.mock("@funtush/database", () => {
       update: vi.fn(),
       delete: vi.fn(),
       groupBy: vi.fn(),
+      aggregate: vi.fn(),
     },
   };
   return { db: client, prisma: client, Prisma: {} };
@@ -29,8 +30,8 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("createSiteAd", () => {
   it("requires title, image and position", async () => {
-    await expect(createSiteAd(AG, { image: "/x", position: "homepage-top" })).rejects.toMatchObject({ status: 400 });
-    await expect(createSiteAd(AG, { title: "X", position: "homepage-top" })).rejects.toMatchObject({ status: 400 });
+    await expect(createSiteAd(AG, { image: "/x", position: "top-ads" })).rejects.toMatchObject({ status: 400 });
+    await expect(createSiteAd(AG, { title: "X", position: "top-ads" })).rejects.toMatchObject({ status: 400 });
     await expect(createSiteAd(AG, { title: "X", image: "/x" })).rejects.toBeInstanceOf(SiteAdError);
   });
 
@@ -49,7 +50,7 @@ describe("createSiteAd", () => {
     const ad = await createSiteAd(AG, {
       title: "Summer Promo",
       image: "/assets/everest.png",
-      position: "homepage-top",
+      position: "top-ads",
       status: "paused",
       startDate: "2026-07-01",
       endDate: "2026-08-31",
@@ -76,21 +77,22 @@ describe("listSiteAds", () => {
   it("filters by ?status=active and ?position=", async () => {
     vi.mocked(db.siteAd.findMany).mockResolvedValue([] as never);
     vi.mocked(db.siteAd.count).mockResolvedValue(0);
-    await listSiteAds(AG, { status: "active", position: "sidebar-1" });
+    vi.mocked(db.siteAd.aggregate).mockResolvedValue({ _sum: { clicks: 0, impressions: 0 } } as never);
+    await listSiteAds(AG, { status: "active", position: "popup-ads" });
     const where = vi.mocked(db.siteAd.findMany).mock.calls[0][0].where as Record<string, unknown>;
     expect(where.status).toBe("ACTIVE");
-    expect(where.position).toBe("sidebar-1");
+    expect(where.position).toBe("popup-ads");
   });
 });
 
 describe("listPositions", () => {
-  it("returns the 3 known slots with active-ad counts + availability", async () => {
+  it("returns the 7 known slots with active-ad counts + availability", async () => {
     vi.mocked(db.siteAd.groupBy).mockResolvedValue([
-      { position: "homepage-top", _count: { _all: 2 } },
+      { position: "top-ads", _count: { _all: 2 } },
     ] as never);
     const out = await listPositions(AG);
-    expect(out.map((p) => p.id)).toEqual(["homepage-top", "sidebar-1", "footer-1"]);
-    expect(out.find((p) => p.id === "homepage-top")).toMatchObject({ activeAds: 2, available: false });
-    expect(out.find((p) => p.id === "footer-1")).toMatchObject({ activeAds: 0, available: true });
+    expect(out.map((p) => p.id)).toEqual(["popup-ads", "top-ads", "inside-blog", "inside-video", "inside-gallery", "inside-destination", "inside-packages"]);
+    expect(out.find((p) => p.id === "top-ads")).toMatchObject({ activeAds: 2, available: false });
+    expect(out.find((p) => p.id === "inside-packages")).toMatchObject({ activeAds: 0, available: true });
   });
 });

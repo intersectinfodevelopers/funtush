@@ -51,6 +51,16 @@ const brandImageUpload = upload.fields([
   { name: "favicon", maxCount: 1 },
 ]);
 
+/**
+ * @openapi
+ * /agencies/me/branding:
+ *   get: { tags: [Branding], summary: Get the agency's own branding, security: [{ refreshToken: [] }], responses: { 200: { description: Branding } } }
+ *   patch: { tags: [Branding], summary: Update branding (colours, and optionally logo/favicon as multipart), security: [{ refreshToken: [] }], responses: { 200: { description: Updated }, 400: { description: Validation failed } } }
+ * /agencies/me/branding/options:
+ *   get: { tags: [Branding], summary: Get the tier-gated branding options available to this agency, security: [{ refreshToken: [] }], responses: { 200: { description: Options } } }
+ * /site/{slug}/branding:
+ *   get: { tags: [Branding], summary: "Public: branding theme for an agency's published site", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Branding } } }
+ */
 router
   .route("/agencies/me/branding")
   .get(authenticateWithRefreshToken, getMyBranding)

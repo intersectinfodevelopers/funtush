@@ -40,10 +40,26 @@ export const RolesController = {
                 });
             }
 
+            const cleanName = name.trim();
+
+            // Case-insensitive check up front — the DB unique index (agencyId, name) is
+            // case-sensitive, so "Agency Admin" and "agency admin" would otherwise both
+            // insert and the agency ends up with two roles that look identical in the UI.
+            const existing = await prisma.role.findFirst({
+                where: { agencyId, name: { equals: cleanName, mode: "insensitive" } },
+                select: { id: true },
+            });
+            if (existing) {
+                return res.status(409).json({
+                    success: false,
+                    error: "Conflict: A role with this name already exists within your agency."
+                });
+            }
+
             const newRole = await prisma.role.create({
                 data: {
                     agencyId,
-                    name: name.trim(),
+                    name: cleanName,
                     description: description ? description.trim() : null,
                 }
             });

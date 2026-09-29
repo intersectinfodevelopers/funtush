@@ -65,7 +65,16 @@ router
  *     responses:
  *       204: { description: Deactivated }
  *       404: { description: Not found }
+ * /agencies/me/guides/assignable:
+ *   get:
+ *     tags: [Guides]
+ *     summary: Every guide, flagged with whether they can take a given trek (availability + certification)
+ *     security: [{ refreshToken: [] }]
+ *     parameters: [{ name: departureDateId, in: query, schema: { type: string } }, { name: bookingId, in: query, schema: { type: string } }]
+ *     responses: { 200: { description: Guides with assignability }, 401: { description: Unauthorized } }
  */
+router.get("/agencies/me/guides/assignable", GuidesController.assignable);
+
 router
   .route("/agencies/me/guides/:id")
   .get(GuidesController.getOne)

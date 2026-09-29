@@ -13,6 +13,8 @@ vi.mock("@funtush/database", () => {
     const mockDb = {
         account: {
             findFirst: vi.fn(),
+            // The agency "already has a chart" — so a missing account is reported, not silently auto-seeded.
+            count: vi.fn().mockResolvedValue(1),
         },
         booking: {
             findFirst: vi.fn(),

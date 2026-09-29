@@ -1,14 +1,41 @@
-import { Router, Request, Response, raw } from "express";
+import { Router, Request, Response, raw, json } from "express";
 import {
   verifyStripeSignature,
   verifyKhaltiPayment,
   verifyEsewaSignature,
   verifyConnectIPSSignature,
 } from "../lib/verifySignature";
-import { processConfirmedPayment } from "../services/payment.service";
+import { processConfirmedPayment, claimGatewayTransaction } from "../services/payment.service";
+import { recordPaymentGateway } from "../services/prometheusMetrics";
 
 const router = Router();
 
+/**
+ * This router is mounted in `app.ts` *before* the app's global
+ * `express.json()` (a comment there already explains why: Stripe needs the
+ * exact raw bytes for its signature, so nothing may parse the body before
+ * its route does). That also means the khalti/esewa/connectips routes
+ * below get **no body parser at all** unless they apply their own — which,
+ * until now, they didn't. Every real callback from those three providers
+ * crashed with `Cannot destructure property 'pidx' of 'req.body' as it is
+ * undefined` (confirmed directly against the real app), so no Khalti/
+ * eSewa/ConnectIPS payment ever actually got confirmed. Unlike Stripe,
+ * these three compute their signatures over reconstructed field strings,
+ * not raw bytes, so a normal `json()` parse is enough — no `raw()` needed.
+ */
+const parseJsonBody = json();
+
+/**
+ * @openapi
+ * /webhooks/payment/{agencyId}/stripe:
+ *   post: { tags: [Payment Webhooks], summary: "Stripe payment_intent.succeeded webhook (HMAC signature + 5-minute replay window)", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed or ignored (non-matching event type) }, 400: { description: Missing/invalid signature or metadata } } }
+ * /webhooks/payment/{agencyId}/khalti:
+ *   post: { tags: [Payment Webhooks], summary: "Khalti callback — verified via a server-to-server lookup call to Khalti's own API, not a request signature", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed }, 400: { description: Verification failed } } }
+ * /webhooks/payment/{agencyId}/esewa:
+ *   post: { tags: [Payment Webhooks], summary: "eSewa callback (base64 payload + HMAC-SHA256 signature)", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed or ignored (non-COMPLETE status) }, 400: { description: Invalid payload or signature } } }
+ * /webhooks/payment/{agencyId}/connectips:
+ *   post: { tags: [Payment Webhooks], summary: "ConnectIPS callback (HMAC-SHA256 signature)", parameters: [{ name: agencyId, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Processed or ignored (non-SUCCESS status) }, 400: { description: Invalid signature } } }
+ */
 // Stripe requires raw body for signature verification — apply raw() before JSON parser
 router.post(
   "/:agencyId/stripe",
@@ -30,6 +57,7 @@ router.post(
 
     const isValid = verifyStripeSignature(req.body as Buffer, signature, secret);
     if (!isValid) {
+      recordPaymentGateway("stripe", "invalid");
       res.status(400).json({ error: "Invalid Stripe signature" });
       return;
     }
@@ -62,10 +90,13 @@ router.post(
     const amountPaid = paymentIntent.amount_received / 100;
 
     try {
-      await processConfirmedPayment(bookingId, agencyId, amountPaid);
+      const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, amountPaid, "USD");
+    recordPaymentGateway("stripe", "success", startedAt);
       res.status(200).json({ received: true });
     } catch (err) {
-      console.error("[Stripe webhook] processConfirmedPayment failed:", err);
+      recordPaymentGateway("stripe", "error");
+    console.error("[Stripe webhook] processConfirmedPayment failed:", err);
       res.status(500).json({ error: "Payment processing failed" });
     }
   }
@@ -73,7 +104,7 @@ router.post(
 
 // POST /webhooks/payment/:agencyId/khalti
 // Khalti sends pidx + purchase_order_id (our bookingId) in the callback body
-router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
+router.post("/:agencyId/khalti", parseJsonBody, async (req: Request, res: Response) => {
   const agencyId = req.params.agencyId as string;
   const { pidx, purchase_order_id: bookingId } = req.body as {
     pidx: string;
@@ -87,15 +118,26 @@ router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
 
   const verified = await verifyKhaltiPayment(pidx);
   if (!verified) {
+    recordPaymentGateway("khalti", "invalid");
     res.status(400).json({ error: "Khalti payment verification failed" });
     return;
   }
 
   try {
-    await processConfirmedPayment(bookingId, agencyId, verified.amount);
+    // one real Khalti payment may confirm only one booking (see claimGatewayTransaction)
+    await claimGatewayTransaction("khalti", pidx, bookingId);
+    const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, verified.amount, "NPR");
+    recordPaymentGateway("khalti", "success", startedAt);
     res.status(200).json({ success: true });
   } catch (err) {
+    recordPaymentGateway("khalti", "error");
     console.error("[Khalti webhook] processConfirmedPayment failed:", err);
+    const status = (err as { status?: number })?.status;
+    if (status === 409) {
+      res.status(409).json({ error: (err as Error).message });
+      return;
+    }
     res.status(500).json({ error: "Payment processing failed" });
   }
 });
@@ -103,7 +145,7 @@ router.post("/:agencyId/khalti", async (req: Request, res: Response) => {
 // eSewa 
 // POST /webhooks/payment/:agencyId/esewa
 // eSewa sends a base64-encoded data param containing JSON + a signature
-router.post("/:agencyId/esewa", async (req: Request, res: Response) => {
+router.post("/:agencyId/esewa", parseJsonBody, async (req: Request, res: Response) => {
   const agencyId = req.params.agencyId as string;
   const { data } = req.body as { data: string };
 
@@ -148,6 +190,7 @@ router.post("/:agencyId/esewa", async (req: Request, res: Response) => {
 
   const isValid = verifyEsewaSignature(message, payload.signature, secret);
   if (!isValid) {
+    recordPaymentGateway("esewa", "invalid");
     res.status(400).json({ error: "Invalid eSewa signature" });
     return;
   }
@@ -157,9 +200,12 @@ router.post("/:agencyId/esewa", async (req: Request, res: Response) => {
   const amountPaid = parseFloat(payload.total_amount.replace(/,/g, ""));
 
   try {
-    await processConfirmedPayment(bookingId, agencyId, amountPaid);
+    const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, amountPaid, "NPR");
+    recordPaymentGateway("esewa", "success", startedAt);
     res.status(200).json({ success: true });
   } catch (err) {
+    recordPaymentGateway("esewa", "error");
     console.error("[eSewa webhook] processConfirmedPayment failed:", err);
     res.status(500).json({ error: "Payment processing failed" });
   }
@@ -167,7 +213,7 @@ router.post("/:agencyId/esewa", async (req: Request, res: Response) => {
 
 // connectIps
 // POST /webhooks/payment/:agencyId/connectips
-router.post("/:agencyId/connectips", async (req: Request, res: Response) => {
+router.post("/:agencyId/connectips", parseJsonBody, async (req: Request, res: Response) => {
   const agencyId = req.params.agencyId as string;
   const {
     TXNAMT,
@@ -199,6 +245,7 @@ router.post("/:agencyId/connectips", async (req: Request, res: Response) => {
 
   const isValid = verifyConnectIPSSignature(message, TOKEN, secret);
   if (!isValid) {
+    recordPaymentGateway("connectips", "invalid");
     res.status(400).json({ error: "Invalid ConnectIPS signature" });
     return;
   }
@@ -207,9 +254,12 @@ router.post("/:agencyId/connectips", async (req: Request, res: Response) => {
   const bookingId = REFERENCEID;
 
   try {
-    await processConfirmedPayment(bookingId, agencyId, amountPaid);
+    const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, amountPaid, "NPR");
+    recordPaymentGateway("connectips", "success", startedAt);
     res.status(200).json({ success: true });
   } catch (err) {
+    recordPaymentGateway("connectips", "error");
     console.error("[ConnectIPS webhook] processConfirmedPayment failed:", err);
     res.status(500).json({ error: "Payment processing failed" });
   }

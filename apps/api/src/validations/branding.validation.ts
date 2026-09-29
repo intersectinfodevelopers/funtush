@@ -24,6 +24,9 @@ import {
   BRAND_PALETTE,
   CARD_IMAGE_RATIO_IDS,
   MAX_CURRENCY_SYMBOL_LENGTH,
+  MAX_LOGO_WIDTH,
+  MAX_RECEIPT_FOOTER_LENGTH,
+  MIN_LOGO_WIDTH,
 } from "../data/brandTheme";
 
 /**
@@ -125,6 +128,39 @@ export const brandingUpdateSchema = z
       .optional(),
 
     currencyDisplay: z.enum(["SYMBOL", "CODE", "SYMBOL_CODE"]).optional(),
+
+    /**
+     * `z.coerce.number()` and not `z.number()` — this endpoint accepts both a
+     * plain JSON body and `multipart/form-data` (when a logo/favicon file
+     * rides along), and every multipart field arrives as a string. Coercing
+     * means `"180"` and `180` both validate the same way; a bare `z.number()`
+     * would 400 every multipart save that also touched this field.
+     */
+    logoWidth: z.coerce
+      .number()
+      .int("Logo width must be a whole number of pixels")
+      .min(MIN_LOGO_WIDTH, `Logo width must be at least ${MIN_LOGO_WIDTH}px`)
+      .max(MAX_LOGO_WIDTH, `Logo width must be at most ${MAX_LOGO_WIDTH}px`)
+      .optional(),
+
+    /**
+     * `.nullable()`, same reasoning as `currencySymbol` above: `null` clears
+     * the override back to the platform default line, omitting the key leaves
+     * it alone. Empty string is left legal (an agency printing no footer line
+     * at all is a real choice, not an error).
+     */
+    receiptFooter: z
+      .string()
+      .trim()
+      .max(
+        MAX_RECEIPT_FOOTER_LENGTH,
+        `Receipt footer must be at most ${MAX_RECEIPT_FOOTER_LENGTH} characters`,
+      )
+      .refine((value) => !/[<>]/.test(value), {
+        message: "Receipt footer must not contain < or >",
+      })
+      .nullable()
+      .optional(),
   })
   /**
    * Reject anything not listed above instead of silently dropping it.

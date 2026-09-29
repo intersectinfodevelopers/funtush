@@ -20,10 +20,15 @@ const agencySummary = {
   email: true,
 } as const;
 
-export async function getPendingCampaigns() {
+const pendingWhere = { status: "PENDING_APPROVAL", agency: { tier: { name: LARGE_TIER } } } as const;
+export const countPendingCampaigns = () => prisma.adCampaign.count({ where: pendingWhere });
+export const countActiveCampaigns = () => prisma.adCampaign.count({ where: { status: "ACTIVE" } });
+
+export async function getPendingCampaigns(page?: { skip: number; take: number }) {
   return prisma.adCampaign.findMany({
-    where: { status: "PENDING_APPROVAL", agency: { tier: { name: LARGE_TIER } } },
-    orderBy: { createdAt: "asc" },
+    where: pendingWhere,
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    ...(page ?? {}),
     select: {
       id: true,
       status: true,
@@ -37,10 +42,11 @@ export async function getPendingCampaigns() {
   });
 }
 
-export async function getActiveCampaigns() {
+export async function getActiveCampaigns(page?: { skip: number; take: number }) {
   return prisma.adCampaign.findMany({
     where: { status: "ACTIVE" },
-    orderBy: { approvedAt: "desc" },
+    orderBy: [{ approvedAt: "desc" }, { id: "asc" }],
+    ...(page ?? {}),
     select: {
       id: true,
       status: true,

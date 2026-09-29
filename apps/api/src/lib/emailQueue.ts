@@ -49,19 +49,33 @@ export async function queueEmail(
 /**
  * Fetches emails from the queue, optionally filtered by status.
  */
-export async function getEmailQueue(
-  filter: { status?: EmailStatus | EmailStatus[] } = {}
-): Promise<EmailQueueDocument[]> {
-  const col = await getEmailCollection();
-
+function statusQuery(filter: { status?: EmailStatus | EmailStatus[] }): Record<string, unknown> {
   const query: Record<string, unknown> = {};
   if (filter.status) {
-    if (Array.isArray(filter.status)) {
-      query.status = { $in: filter.status };
-    } else {
-      query.status = filter.status;
-    }
+    query.status = Array.isArray(filter.status) ? { $in: filter.status } : filter.status;
   }
+  return query;
+}
 
-  return col.find(query).sort({ createdAt: -1 }).toArray();
+/** With `page`, returns just that slice (skip/limit) — the queue keeps every email ever sent, so never load it whole. */
+export async function getEmailQueue(
+  filter: { status?: EmailStatus | EmailStatus[] } = {},
+  page?: { skip: number; limit: number }
+): Promise<EmailQueueDocument[]> {
+  const col = await getEmailCollection();
+  const cursor = col.find(statusQuery(filter)).sort({ createdAt: -1, _id: -1 });
+  return (page ? cursor.skip(page.skip).limit(page.limit) : cursor).toArray();
+}
+
+export async function countEmailQueue(filter: { status?: EmailStatus | EmailStatus[] } = {}): Promise<number> {
+  const col = await getEmailCollection();
+  return col.countDocuments(statusQuery(filter));
+}
+
+/** Global per-status counts (independent of any filter), for the dashboard cards. */
+export async function emailQueueSummary(): Promise<{ pending: number; sent: number; failed: number; total: number }> {
+  const [pending, sent, failed] = await Promise.all(
+    (["pending", "sent", "failed"] as const).map((status) => countEmailQueue({ status }))
+  );
+  return { pending, sent, failed, total: pending + sent + failed };
 }

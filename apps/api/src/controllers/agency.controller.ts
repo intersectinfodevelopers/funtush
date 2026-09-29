@@ -1,20 +1,59 @@
 import type { Request, Response } from "express";
-import {  acceptBookingService, AgencyKYCService, agencySubscription, createAgency, getAgencyDashboardService, getSubscriptionTiers, KYCStatusService, publishPackageService, updateAgencyDomainService, updateAgencyProfileService } from "../services/agency.service";
+import {  assertKycSubmittable, acceptBookingService, AgencyKYCService, agencySubscription, createAgency, getAgencyDashboardService, getSubscriptionTiers, KYCStatusService, publishPackageService, updateAgencyProfileService, getAgencyProfileService, verifyAgencyRegistrationOtp } from "../services/agency.service";
 import { uploadFile } from "@funtush/storage";
-import type { UpdateDomainBody } from "../types/auth-request";
+
+/**
+ * `catch (err) { ... message: err }` used to be this file's error shape
+ * throughout — passing the raw Error object straight into `res.json()`.
+ * `JSON.stringify` on an `Error` produces `{}` (message/stack aren't
+ * enumerable own properties), so every failure here silently became
+ * `{ "message": {} }` on the wire — no clue what actually went wrong. This
+ * pulls the real message out, and forwards a thrown error's own `.status`
+ * (e.g. "Email already exists" → 409) instead of flattening every failure
+ * to a 500.
+ */
+function errorResponse(err: unknown, fallback: string): { status: number; message: string } {
+    const status = typeof (err as { status?: number })?.status === "number"
+        ? (err as { status: number }).status
+        : 500;
+    const message = err instanceof Error ? err.message : fallback;
+    return { status, message };
+}
 
 export const registerAgency = async (req: Request, res: Response) => {
     try {
         const newAgency = await createAgency(req.body);
-        res.status(201).json({
+        // 202: OTP sent, registration not complete yet (phone-OTP toggle is on
+        // via PATCH /admin/settings). 201: the existing "created immediately"
+        // behavior, unchanged when the toggle is off.
+        const status = "otpRequired" in newAgency && newAgency.otpRequired ? 202 : 201;
+        res.status(status).json({
             status: "success",
             data: newAgency,
         });
     } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
+        const { status, message } = errorResponse(err, "Failed to register agency");
+        res.status(status).json({ status: "error", message });
+    }
+};
+
+export const verifyAgencyRegistrationOtpController = async (req: Request, res: Response) => {
+    try {
+        const { sessionToken, otp } = req.body ?? {};
+        if (typeof sessionToken !== "string" || typeof otp !== "string" || !sessionToken || !otp) {
+            res.status(400).json({ status: "error", message: "sessionToken and otp are required" });
+            return;
+        }
+        const result = await verifyAgencyRegistrationOtp(sessionToken, otp);
+        res.status(201).json({ status: "success", data: result });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : "OTP verification failed";
+        const status = typeof (err as { status?: number })?.status === "number"
+            ? (err as { status: number }).status
+            : message.includes("expired") || message.includes("Incorrect")
+                ? 400
+                : 500;
+        res.status(status).json({ status: "error", message });
     }
 };
 
@@ -26,10 +65,8 @@ export const SubscriptionTiers = async (req: Request, res: Response) => {
             data: tiers
         });
     } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
+        const { status, message } = errorResponse(err, "Failed to load subscription tiers");
+        res.status(status).json({ status: "error", message });
     }
 };
 
@@ -50,10 +87,8 @@ export const getAgencyDashboard = async (
             data: dashboard,
         });
     } catch (err) {
-        return res.status(500).json({
-            success: false,
-            message: err,
-        });
+        const { status, message } = errorResponse(err, "Failed to load agency dashboard");
+        return res.status(status).json({ success: false, message });
     }
 };
 
@@ -86,10 +121,8 @@ export const acceptBooking = async (
             data: result,
         });
     } catch (err) {
-        return res.status(500).json({
-            success: false,
-            message: err,
-        });
+        const { status, message } = errorResponse(err, "Failed to accept booking");
+        return res.status(status).json({ success: false, message });
     }
 };
 
@@ -123,10 +156,8 @@ export const publishPackage = async (
             data: result,
         });
     } catch (err) {
-        return res.status(500).json({
-            success: false,
-            message: err,
-        });
+        const { status, message } = errorResponse(err, "Failed to publish package");
+        return res.status(status).json({ success: false, message });
     }
 };
 
@@ -150,13 +181,22 @@ export const updateAgencySubscription = async (req: Request, res: Response) => {
             data: result,
         });
     } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
+        const { status, message } = errorResponse(err, "Failed to update subscription");
+        res.status(status).json({ status: "error", message });
     }
 };
 
+
+export const getAgencyProfile = async (req: Request, res: Response) => {
+    try {
+        const agencyId = req.agencyId as string;
+        if (!agencyId) return res.status(401).json({ success: false, message: "Unauthorized" });
+        return res.status(200).json({ success: true, data: await getAgencyProfileService(agencyId) });
+    } catch (err) {
+        const { status, message } = errorResponse(err, "Failed to load agency profile");
+        res.status(status).json({ success: false, message });
+    }
+};
 
 export const updateAgencyProfile = async (req: Request, res: Response) => {
 
@@ -177,46 +217,8 @@ export const updateAgencyProfile = async (req: Request, res: Response) => {
             data: result.data,
         });
     } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
-    }
-};
-
-
-export const updateAgencyDomain = async (req: Request, res: Response) => {
-    try {
-        const agencyId = req.agencyId as string;
-
-        if (!agencyId) {
-            return res.status(401).json({
-                success: false,
-                message: "Unauthorized",
-            });
-        }
-
-        const { domain }: UpdateDomainBody = req.body;
-
-        if (!domain) {
-            return res.status(400).json({
-                success: false,
-                message: "Domain is required",
-            });
-        }
-
-        const result = await updateAgencyDomainService(agencyId, domain);
-
-        return res.status(200).json({
-            success: true,
-            message: "Custom domain updated successfully",
-            data: result,
-        });
-    } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
+        const { status, message } = errorResponse(err, "Failed to update agency profile");
+        res.status(status).json({ success: false, status: "error", message });
     }
 };
 
@@ -250,8 +252,6 @@ export const agencyKYCSubmission = async (req: Request, res: Response) => {
             bank_details,
         } = files;
 
-        console.log("FILES:", files);
-
         const businessRegistration = business_registration?.[0];
         const panCertificate = pan_certificate?.[0];
         const tourismLicense = tourism_license?.[0];
@@ -270,7 +270,9 @@ export const agencyKYCSubmission = async (req: Request, res: Response) => {
             });
         }
 
-        /** FOR SIMULTANEOUS UPLOAD OF FILES*/
+        await assertKycSubmittable(agencyId);
+
+        /** FOR SIMULTANEOUS UPLOAD OF FILES */
         const [
             businessRegistrationUrl,
             panCertificateUrl,
@@ -295,10 +297,8 @@ export const agencyKYCSubmission = async (req: Request, res: Response) => {
             data: result,
         });
     } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
+        const { status, message } = errorResponse(err, "Failed to submit KYC documents");
+        res.status(status).json({ status: "error", message });
     }
 
 };
@@ -323,9 +323,7 @@ export const agencyKYCStatus = async (req: Request, res: Response) => {
             data: result
         });
     } catch (err) {
-        res.status(500).json({
-            status: "error",
-            message: err
-        });
+        const { status, message } = errorResponse(err, "Failed to load KYC status");
+        res.status(status).json({ status: "error", message });
     }
 };

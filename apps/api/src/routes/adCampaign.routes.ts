@@ -2,10 +2,37 @@ import { Router } from 'express';
 import { authenticateWithRefreshToken } from '../middleware/refreshTokenAuthentication';
 import { checkAgencyStatus } from '../middleware/agencyAccess.middleware';
 import type { AgencyRequest } from '../types/auth-request';
+import { CampaignError } from '../services/adCampaignService';
+import type { Response } from 'express';
 
 const router = Router();
 
-// POST /agencies/me/ad-campaigns/generate
+/**
+ * `CampaignError` already carries the status the service intended
+ * (404/403/409/502/...) — its own doc comment says so — but every handler
+ * below used to hardcode 400 or 500 regardless, so a "not found" or
+ * "not authorized" campaign lookup reported 500. This is that mapping.
+ */
+function respondWithCampaignError(res: Response, err: unknown, fallback: number): void {
+  if (err instanceof CampaignError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  res.status(fallback).json({ error: err instanceof Error ? err.message : 'Something went wrong' });
+}
+
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns/generate:
+ *   post:
+ *     tags: [Ad Campaigns]
+ *     summary: Generate a draft ad campaign (3 creative variations) from the agency's published packages
+ *     security: [{ refreshToken: [] }]
+ *     responses:
+ *       201: { description: Draft campaign created, status PENDING }
+ *       400: { description: No published packages found }
+ *       401: { description: Unauthorized }
+ */
 router.post(
   '/generate',
   authenticateWithRefreshToken,
@@ -28,14 +55,22 @@ router.post(
       });
     } catch (err) {
       console.error('Ad campaign generation error:', err);
-      res.status(400).json({
-        error: err instanceof Error ? err.message : 'Failed to generate campaign',
-      });
+      respondWithCampaignError(res, err, 400);
     }
   }
 );
 
-// GET /agencies/me/ad-campaigns
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns:
+ *   get:
+ *     tags: [Ad Campaigns]
+ *     summary: List the agency's own ad campaigns
+ *     security: [{ refreshToken: [] }]
+ *     responses:
+ *       200: { description: Campaigns }
+ *       401: { description: Unauthorized }
+ */
 router.get(
   '/',
   authenticateWithRefreshToken,
@@ -62,7 +97,20 @@ router.get(
   }
 );
 
-// GET /agencies/me/ad-campaigns/:id
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns/{id}:
+ *   get:
+ *     tags: [Ad Campaigns]
+ *     summary: Get one of the agency's own campaigns
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: Campaign }
+ *       403: { description: Owned by a different agency }
+ *       404: { description: Not found }
+ */
 router.get(
   '/:id',
   authenticateWithRefreshToken,
@@ -85,14 +133,24 @@ router.get(
       });
     } catch (err) {
       console.error('Failed to fetch campaign:', err);
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'Failed to fetch campaign',
-      });
+      respondWithCampaignError(res, err, 500);
     }
   }
 );
 
-// GET /agencies/me/ad-campaigns/:id/performance
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns/{id}/performance:
+ *   get:
+ *     tags: [Ad Campaigns]
+ *     summary: Sync and return a campaign's impressions/clicks/spend (only calls the ad platform once the campaign has been pushed live)
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: Performance metrics }
+ *       400: { description: Not found or not authorized }
+ */
 router.get(
   '/:id/performance',
   authenticateWithRefreshToken,
@@ -132,7 +190,19 @@ router.get(
   }
 );
 
-// POST /agencies/me/ad-campaigns/:id/targeting
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns/{id}/targeting:
+ *   post:
+ *     tags: [Ad Campaigns]
+ *     summary: Set a PENDING (draft) campaign's targeting parameters
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: Updated }
+ *       400: { description: Invalid targeting, or campaign is not PENDING }
+ */
 router.post(
   '/:id/targeting',
   authenticateWithRefreshToken,
@@ -166,7 +236,19 @@ router.post(
   }
 );
 
-// POST /agencies/me/ad-campaigns/:id/submit
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns/{id}/submit:
+ *   post:
+ *     tags: [Ad Campaigns]
+ *     summary: Submit a PENDING campaign (with targeting already set) for admin review — moves it to PENDING_APPROVAL
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: Submitted }
+ *       400: { description: Campaign is not PENDING, or has no targeting parameters yet }
+ */
 router.post(
   '/:id/submit',
   authenticateWithRefreshToken,
@@ -199,7 +281,16 @@ router.post(
   }
 );
 
-// GET /agencies/me/ad-campaigns/targeting/options
+/**
+ * @openapi
+ * /agencies/me/ad-campaigns/targeting/options:
+ *   get:
+ *     tags: [Ad Campaigns]
+ *     summary: The static targeting option catalog (regions, interests, etc.)
+ *     security: [{ refreshToken: [] }]
+ *     responses:
+ *       200: { description: Options }
+ */
 router.get(
   '/targeting/options',
   authenticateWithRefreshToken,

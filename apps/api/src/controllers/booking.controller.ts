@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { parsePagination } from "../utils/pagination";
 import {
   submitInquiry,
   verifyInquiryOtp,
@@ -10,6 +11,7 @@ import {
   cancelBooking,
   getBookingById,
   assignGuide,
+  setBookingStage,
   checkInBooking,
   checkOutBooking,
   createManualBooking,
@@ -30,7 +32,8 @@ export const submitInquiryController = async (req: Request, res: Response) => {
     return res.status(202).json({ success: true, data: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to submit inquiry";
-    const status = message.includes("full") || message.includes("available") ? 409 : 400;
+    const explicit = (err as { status?: number })?.status;
+    const status = explicit ?? (message.includes("full") || message.includes("available") ? 409 : 400);
     return res.status(status).json({ success: false, message });
   }
 };
@@ -38,7 +41,7 @@ export const submitInquiryController = async (req: Request, res: Response) => {
 export const verifyInquiryOtpController = async (req: Request, res: Response) => {
   try {
     const { sessionToken, otp } = req.body;
-    if (!sessionToken || !otp) {
+    if (typeof sessionToken !== "string" || typeof otp !== "string" || !sessionToken || !otp) {
       return res.status(400).json({ success: false, message: "sessionToken and otp are required" });
     }
     const result = await verifyInquiryOtp(sessionToken, otp);
@@ -65,10 +68,15 @@ export const getAgencyBookingsController = async (req: Request, res: Response) =
     const agencyId = req.user!.agencyId!;
 
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
-    const page = typeof req.query.page === "string" ? parseInt(req.query.page) : 1;
-    const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit) : 20;
+    const { page, limit } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
     
-    const result = await getAgencyBookings(agencyId, status, page, limit);
+    // Query values must be plain strings (a repeated/nested key arrives as an array/object).
+    const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    const result = await getAgencyBookings(agencyId, status, page, limit, {
+      search: str(req.query.search),
+      from: str(req.query.from),
+      to: str(req.query.to),
+    });
 
     return res.status(200).json({ success: true, data: result });
   } catch (err) {
@@ -167,7 +175,7 @@ export const assignGuideController = async (req: Request, res: Response) => {
     return res.status(200).json({ success: true, data: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to assign guide";
-    const status = message.includes("Unauthorized") ? 403 : message.includes("not found") ? 404 : 400;
+    const status = (err as { status?: number }).status ?? (message.includes("Unauthorized") ? 403 : message.includes("not found") ? 404 : 400);
     return res.status(status).json({ success: false, message });
   }
 };
@@ -193,5 +201,16 @@ export const checkOutBookingController = async (req: Request, res: Response) => 
     const message = err instanceof Error ? err.message : "Failed to check out booking";
     const status = message.includes("Unauthorized") ? 403 : message.includes("not found") ? 404 : 400;
     return res.status(status).json({ success: false, message });
+  }
+};
+
+export const setBookingStageController = async (req: Request, res: Response) => {
+  try {
+    const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];
+    const result = await setBookingStage(id, req.user!.agencyId!, req.body?.stage);
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to change the booking step";
+    return res.status(bookingErrStatus(err)).json({ success: false, message });
   }
 };

@@ -27,6 +27,9 @@ vi.mock("@funtush/database", () => ({
       findUnique: vi.fn(),
       update:     vi.fn(),
     },
+    agencyUser: {
+      findFirst: vi.fn(),
+    },
     subscriptionTier: {
       findUnique: vi.fn().mockResolvedValue({ id: "tier_large" }),
     },
@@ -53,12 +56,13 @@ vi.mock("../src/services/redis.service", () => ({
   cacheDel: vi.fn(),
 }));
 
+import jwt from "jsonwebtoken";
 import {
   listAgencies,
   getAgencyProfile,
   updateAgencyTier,
   updateAgencyStatus,
-  issueImpersonationToken,
+  impersonateAgency,
 } from "../src/services/adminAgency.service";
 import { writeAuditLog } from "../src/services/auditLog.service";
 import { prisma } from "@funtush/database";
@@ -152,28 +156,48 @@ describe("updateAgencyStatus()", () => {
   });
 });
 
-describe("issueImpersonationToken()", () => {
+describe("impersonateAgency()", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("issues a 64-char hex token stored in Redis", async () => {
-    vi.mocked(prisma.agency.findUnique).mockResolvedValue({ id: "a1", name: "Test", email: "t@a.com" } as never);
-    const result = await issueImpersonationToken("a1", "admin_1") as Record<string, unknown>;
-    expect(result.token as string).toMatch(/^[0-9a-f]{64}$/);
+  it("issues a real accessToken/refreshToken pair for the agency's primary AGENCY_ADMIN user", async () => {
+    vi.mocked(prisma.agency.findUnique).mockResolvedValue({ id: "a1", name: "Test", email: "t@a.com", status: "ACTIVE" } as never);
+    vi.mocked(prisma.agencyUser.findFirst).mockResolvedValue({ user: { id: "owner_1", email: "owner@a.com" } } as never);
+
+    const result = await impersonateAgency("a1", "admin_1") as Record<string, unknown>;
+
     expect(result.agencyId).toBe("a1");
-    expect(cacheSetMock).toHaveBeenCalled();
+    expect(result.impersonatedUserId).toBe("owner_1");
+    expect(result.impersonatedEmail).toBe("owner@a.com");
+    expect(result.ttlSeconds).toBe(3600);
+
+    // Real, verifiable JWTs — not an opaque cache-only token nothing can
+    // exchange for anything (what this function replaced).
+    const access = jwt.verify(result.accessToken as string, process.env.JWT_ACCESS_SECRET as string) as jwt.JwtPayload;
+    expect(access.userId).toBe("owner_1");
+    expect(access.agencyId).toBe("a1");
+    expect(access.role).toBe("AGENCY_ADMIN");
+    expect(access.roleType).toBe("TENANT");
+
+    const refresh = jwt.verify(result.refreshToken as string, process.env.JWT_REFRESH_SECRET as string) as jwt.JwtPayload;
+    expect(refresh.userId).toBe("owner_1");
+    // ~1 hour, not the normal 7-day refresh-token lifetime.
+    expect(refresh.exp! - refresh.iat!).toBe(3600);
   });
 
-  it("stores token with 15-minute TTL", async () => {
-    vi.mocked(prisma.agency.findUnique).mockResolvedValue({ id: "a1", name: "Test", email: "t@a.com" } as never);
-    const result = await issueImpersonationToken("a1", "admin_1") as Record<string, unknown>;
-    expect(result.ttlSeconds).toBe(900);
-    const call = cacheSetMock.mock.calls[0];
-    expect(call[2]).toBe(900);
-  });
-
-  it("throws if agency not found", async () => {
+  it("throws if the agency is not found", async () => {
     vi.mocked(prisma.agency.findUnique).mockResolvedValue(null);
-    await expect(issueImpersonationToken("missing", "admin_1")).rejects.toThrow("not found");
+    await expect(impersonateAgency("missing", "admin_1")).rejects.toThrow("not found");
+  });
+
+  it("throws if the agency is banned", async () => {
+    vi.mocked(prisma.agency.findUnique).mockResolvedValue({ id: "a1", name: "Test", email: "t@a.com", status: "BANNED" } as never);
+    await expect(impersonateAgency("a1", "admin_1")).rejects.toThrow("banned");
+  });
+
+  it("throws if the agency has no AGENCY_ADMIN user", async () => {
+    vi.mocked(prisma.agency.findUnique).mockResolvedValue({ id: "a1", name: "Test", email: "t@a.com", status: "ACTIVE" } as never);
+    vi.mocked(prisma.agencyUser.findFirst).mockResolvedValue(null);
+    await expect(impersonateAgency("a1", "admin_1")).rejects.toThrow("no AGENCY_ADMIN user");
   });
 });
 

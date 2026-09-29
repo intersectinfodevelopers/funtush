@@ -1,13 +1,19 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
 import { issueSafetyWarning } from "../../services/sosMonitoring.service";
 import { writeAuditLog } from "../../services/auditLog.service";
 
 const router = Router();
 
+// Was gated only by the IP allow-list (`requireAdmin` on the parent router) —
+// require a real platform-admin session too, matching every other admin route.
+router.use(requireAuth, requirePlatformPermission("safety_warnings"));
+
 function clientIp(req: Request): string {
   return (
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.ip ||
     req.socket.remoteAddress ||
     "unknown"
   );
@@ -20,7 +26,9 @@ function paramId(req: Request): string {
   return Array.isArray(v) ? v[0] : v;
 }
 
-// POST /admin/agencies/:id/warning — formal safety warning (permanent)
+// POST /admin/safety-warnings/:id/warning — formal safety warning (permanent)
+// (mounted at /admin/safety-warnings in admin/index.ts — the comment this
+// replaced said /admin/agencies/:id/warning, which was never the real path)
 router.post("/:id/warning", async (req: Request, res: Response) => {
   try {
     const { reason } = req.body as { reason?: string };

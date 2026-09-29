@@ -10,9 +10,9 @@ import { openapiSpec as rawSpec } from "./docs/openapi";
 // touch infra and always run.
 const liveInfraReady: boolean = await (async () => {
   try {
-    const { db } = await import("@funtush/database");
+    const { db, redis } = await import("@funtush/database");
     await db.$queryRaw`SELECT 1`;
-    return (await db.subscriptionTier.count()) > 0;
+    return (await db.subscriptionTier.count()) > 0 && (await redis.ping()) === "PONG";
   } catch {
     return false;
   }
@@ -82,6 +82,7 @@ const MOUNTED_PATHS: Array<[string, string]> = [
   ["post", "/bookings/inquiry"],
   ["patch", "/bookings/bk-x/assign-guide"],
   ["get", "/marketplace/agencies"],
+  ["get", "/marketplace/agencies/compare"],
   ["get", "/marketplace/packages"],
   ["get", "/mobile/trekker/dashboard"],
   ["post", "/sos/trigger"],

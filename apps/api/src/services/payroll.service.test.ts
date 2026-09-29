@@ -13,7 +13,7 @@ import { db } from "@funtush/database";
 // which rows can be paid) rather than Postgres.
 vi.mock("@funtush/database", () => {
     const mockDb = {
-        account: { findFirst: vi.fn() },
+        account: { findFirst: vi.fn(), count: vi.fn().mockResolvedValue(1) },
         agencyStaff: { findFirst: vi.fn() },
         booking: { findFirst: vi.fn() },
         payroll: {

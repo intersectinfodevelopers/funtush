@@ -48,7 +48,7 @@ describe("KYC service", () => {
     const result = await getKycQueue();
     const call   = vi.mocked(prisma.kycSubmission.findMany).mock.calls[0][0] as Record<string, unknown>;
     expect((call.where as Record<string, unknown>).status).toBe("SUBMITTED");
-    expect((call.orderBy as Record<string, unknown>).submittedAt).toBe("asc");
+    expect(call.orderBy).toEqual([{ submittedAt: "asc" }, { id: "asc" }]); // id = stable tiebreak for paging
     expect(result).toHaveLength(1);
   });
 
@@ -132,11 +132,11 @@ describe("KYC service", () => {
 
   it("listEmailQueue queries all statuses by default", async () => {
     await listEmailQueue();
-    expect(getEmailQueueMock).toHaveBeenCalledWith({ status: ["pending", "sent", "failed"] });
+    expect(getEmailQueueMock).toHaveBeenCalledWith({ status: ["pending", "sent", "failed"] }, undefined);
   });
 
   it("listEmailQueue accepts custom status filter", async () => {
     await listEmailQueue(["pending"]);
-    expect(getEmailQueueMock).toHaveBeenCalledWith({ status: ["pending"] });
+    expect(getEmailQueueMock).toHaveBeenCalledWith({ status: ["pending"] }, undefined);
   });
 });

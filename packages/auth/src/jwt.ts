@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 import type { jwtPayload } from "./types";
 
 const resolveSecret = (
@@ -33,8 +34,12 @@ export const generateRefreshToken = (
   userId: string,
   secret?: string
 ): string => {
+  // `jti` makes every refresh token unique. Without it two tokens for the same
+  // user issued within the same second are byte-identical (the payload is just
+  // {userId} + a seconds-resolution iat) — so revoking one (logout/rotation)
+  // would also revoke its twin, and two sessions could share one token row.
   return jwt.sign(
-    { userId },
+    { userId, jti: randomUUID() },
     resolveSecret(secret, "JWT_REFRESH_SECRET"),
     {
       expiresIn: "7d",

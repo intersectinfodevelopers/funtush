@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { RolesController } from '../controllers/roles.controller';
 import { authenticateWithRefreshToken } from '../middleware/refreshTokenAuthentication';
+import { staffDelegationGuard } from '../middleware/staffDelegation.middleware';
 import { checkAgencyStatus } from '../middleware/agencyAccess.middleware';
 
 const router = Router();
 
 // All role management is scoped to the authenticated agency.
-router.use('/agencies/me/roles', authenticateWithRefreshToken, checkAgencyStatus);
+router.use('/agencies/me/roles', authenticateWithRefreshToken, checkAgencyStatus, staffDelegationGuard);
 
 /**
  * @openapi

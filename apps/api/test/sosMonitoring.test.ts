@@ -1,18 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mongo mock with controllable find/findOne/updateOne ────────────────────────
-const { findMock, findOneMock, updateOneMock } = vi.hoisted(() => ({
+const { findMock, findOneMock, updateOneMock, countDocumentsMock } = vi.hoisted(() => ({
   findMock:      vi.fn(),
   findOneMock:   vi.fn(),
   updateOneMock: vi.fn().mockResolvedValue({ matchedCount: 1 }),
+  countDocumentsMock: vi.fn().mockResolvedValue(1),
 }));
 
 function chainReturning(arr: unknown[]) {
+  const limited = { toArray: () => Promise.resolve(arr) };
+  const skipped = {
+    skip: () => ({ ...limited, limit: () => limited }),
+    limit: () => limited,
+    ...limited,
+  };
   return {
-    sort:  () => ({
-      limit:   () => ({ toArray: () => Promise.resolve(arr) }),
-      toArray: () => Promise.resolve(arr),
-    }),
+    sort: () => skipped,
   };
 }
 
@@ -22,6 +26,7 @@ vi.mock("../src/lib/mongo", () => ({
       find:        findMock,
       findOne:     findOneMock,
       updateOne:   updateOneMock,
+      countDocuments: countDocumentsMock,
       createIndex: vi.fn().mockResolvedValue("ok"),
     }),
   }),

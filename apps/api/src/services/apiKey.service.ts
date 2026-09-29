@@ -20,8 +20,12 @@ function generateRawKey(): { rawKey: string; prefix: string } {
   return { rawKey, prefix };
 }
 
-export async function createApiKey(agencyId: string, name: string, scope: "READ_ONLY" | "READ_WRITE") {
-  if (!name?.trim()) throw new ApiKeyError(400, "name is required");
+const MAX_ACTIVE_KEYS = 20;
+
+export async function createApiKey(agencyId: string, name: unknown, scope: unknown) {
+  if (typeof name !== "string" || !name.trim()) throw new ApiKeyError(400, "name is required");
+  if (name.trim().length > 60) throw new ApiKeyError(400, "name must be at most 60 characters");
+  if (scope !== "READ_ONLY" && scope !== "READ_WRITE") throw new ApiKeyError(400, "scope must be READ_ONLY or READ_WRITE");
 
   const agency = await prisma.agency.findUnique({
     where: { id: agencyId },
@@ -31,6 +35,9 @@ export async function createApiKey(agencyId: string, name: string, scope: "READ_
   if (agency.tier.name !== LARGE_TIER) {
     throw new ApiKeyError(403, "API key management is only available on the Large tier");
   }
+
+  const active = await prisma.apiKey.count({ where: { agencyId, revoked: false } });
+  if (active >= MAX_ACTIVE_KEYS) throw new ApiKeyError(400, `You can have at most ${MAX_ACTIVE_KEYS} active API keys. Revoke one first.`);
 
   const { rawKey, prefix } = generateRawKey();
   const keyHash = hashToken(rawKey);

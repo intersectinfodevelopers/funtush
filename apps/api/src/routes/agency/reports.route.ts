@@ -8,13 +8,20 @@ import {
   toCSV,
   toPDF,
 } from "../../services/report.service";
-import {
-  buildReportKey,
-  getCachedReport,
-  setCachedReport,
-} from "../../lib/reportCache";
 
 const router = Router();
+
+/**
+ * `reportCache.ts`'s own doc comment says the file bytes live in S3 for 24h
+ * and Redis holds a pointer (S3 key + signed URL) — but nothing anywhere in
+ * this codebase actually uploads to S3, so every `setCachedReport` call
+ * wrote a pointer with `url: ""`. A second request for the same
+ * month/format within 24h then hit the `cached` branch below and returned
+ * that broken empty-URL JSON instead of the report — worse than no cache at
+ * all. Removed both the read and the write rather than ship a cache that
+ * cannot return the thing it promises; every request regenerates and
+ * streams the file directly, which is what actually worked before.
+ */
 
 type Format = "pdf" | "csv";
 
@@ -23,7 +30,18 @@ function parseFormat(q: unknown): Format {
 }
 
 /**
- * GET /agencies/me/reports/monthly?month=2024-03&format=pdf|csv
+ * @openapi
+ * /agencies/me/reports/monthly:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Download a monthly report (PDF or CSV)
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: month, in: query, required: true, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+ *       - { name: format, in: query, schema: { type: string, enum: [pdf, csv] } }
+ *     responses:
+ *       200: { description: Report file }
+ *       400: { description: Missing or malformed month }
  */
 router.get("/monthly", async (req: Request, res: Response) => {
   try {
@@ -36,11 +54,6 @@ router.get("/monthly", async (req: Request, res: Response) => {
       return;
     }
     const format = parseFormat(req.query.format);
-    const cacheKey = buildReportKey(agencyId, "monthly", month, format);
-
-    // Return cached pointer if present (24h S3 cache)
-    const cached = await getCachedReport(cacheKey);
-    if (cached) { res.json({ cached: true, ...cached }); return; }
 
     const range = monthRange(month);
     const data  = await buildReportData(agencyId, range, monthLabel(month));
@@ -50,12 +63,6 @@ router.get("/monthly", async (req: Request, res: Response) => {
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="report-${month}.csv"`);
       res.send(csv);
-      await setCachedReport(cacheKey, {
-        s3Key: `reports/${agencyId}/monthly/${month}.csv`,
-        url:   "",
-        format: "csv",
-        generatedAt: data.generatedAt,
-      });
       return;
     }
 
@@ -63,12 +70,6 @@ router.get("/monthly", async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="report-${month}.pdf"`);
     res.send(pdf);
-    await setCachedReport(cacheKey, {
-      s3Key: `reports/${agencyId}/monthly/${month}.pdf`,
-      url:   "",
-      format: "pdf",
-      generatedAt: data.generatedAt,
-    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[GET /agencies/me/reports/monthly]", err);
@@ -77,7 +78,18 @@ router.get("/monthly", async (req: Request, res: Response) => {
 });
 
 /**
- * GET /agencies/me/reports/annual?year=2024&format=pdf|csv
+ * @openapi
+ * /agencies/me/reports/annual:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Download an annual report (PDF or CSV)
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: year, in: query, required: true, schema: { type: string, pattern: '^\d{4}$' } }
+ *       - { name: format, in: query, schema: { type: string, enum: [pdf, csv] } }
+ *     responses:
+ *       200: { description: Report file }
+ *       400: { description: Missing or malformed year }
  */
 router.get("/annual", async (req: Request, res: Response) => {
   try {
@@ -90,10 +102,6 @@ router.get("/annual", async (req: Request, res: Response) => {
       return;
     }
     const format = parseFormat(req.query.format);
-    const cacheKey = buildReportKey(agencyId, "annual", year, format);
-
-    const cached = await getCachedReport(cacheKey);
-    if (cached) { res.json({ cached: true, ...cached }); return; }
 
     const range = yearRange(year);
     const data  = await buildReportData(agencyId, range, year);
@@ -103,12 +111,6 @@ router.get("/annual", async (req: Request, res: Response) => {
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="report-${year}.csv"`);
       res.send(csv);
-      await setCachedReport(cacheKey, {
-        s3Key: `reports/${agencyId}/annual/${year}.csv`,
-        url:   "",
-        format: "csv",
-        generatedAt: data.generatedAt,
-      });
       return;
     }
 
@@ -116,12 +118,6 @@ router.get("/annual", async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="report-${year}.pdf"`);
     res.send(pdf);
-    await setCachedReport(cacheKey, {
-      s3Key: `reports/${agencyId}/annual/${year}.pdf`,
-      url:   "",
-      format: "pdf",
-      generatedAt: data.generatedAt,
-    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[GET /agencies/me/reports/annual]", err);

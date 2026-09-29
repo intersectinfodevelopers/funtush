@@ -1,0 +1,89 @@
+# Persistent local dev infrastructure for @funtush/api — distinct from
+# docker-compose.test.yml (ephemeral, tmpfs-backed, torn down after every
+# verification run) so `npm run dev` has a database that survives between
+# sessions instead of getting wiped whenever the test stack goes down.
+#
+# Ports are deliberately different from both docker-compose.test.yml
+# (5542/6399/27217/7701) and the default 5432/6379/27017/7700, so all three
+# can run side by side without colliding.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   npm run db:dev:setup       # migrate (see package.json)
+#   npm run dev
+#   docker compose -f docker-compose.dev.yml down     # (no -v — keeps data)
+#
+# Explicit project `name` below: this file lives next to
+# docker-compose.test.yml, and without it both would default to the same
+# Compose project ("api", from the directory name), so `down` on one could
+# touch the other's containers.
+name: funtush-dev
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: funtush-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: funtush
+      POSTGRES_PASSWORD: funtush
+      POSTGRES_DB: funtush
+    ports:
+      - "5543:5432"
+    volumes:
+      - funtush_dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U funtush -d funtush"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: funtush-dev-redis
+    restart: unless-stopped
+    ports:
+      - "6400:6379"
+    volumes:
+      - funtush_dev_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    container_name: funtush-dev-mongo
+    restart: unless-stopped
+    ports:
+      - "27218:27017"
+    volumes:
+      - funtush_dev_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    container_name: funtush-dev-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: dev-master-key
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "7702:7700"
+    volumes:
+      - funtush_dev_meili_data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:7700/health || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  funtush_dev_postgres_data:
+  funtush_dev_redis_data:
+  funtush_dev_mongo_data:
+  funtush_dev_meili_data:

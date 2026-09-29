@@ -27,7 +27,29 @@ const agencySummary = {
  * account name/email, the flags that fired, registration date, and the
  * evidence summary.
  */
-export async function getFraudQueue() {
+export async function getFraudQueue(page?: { skip: number; take: number }) {
+  if (page) {
+    // Signal rank can't be expressed as a Prisma orderBy, so rank a light
+    // (id + signal only) projection of the whole pending set, slice the page,
+    // then load full rows for just those ids. Stable sort keeps createdAt order
+    // within a signal.
+    const light = await prisma.fraudFlag.findMany({
+      where: { status: "PENDING" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, signal: true },
+    });
+    const ids = [...light]
+      .sort((a, b) => (SIGNAL_RANK[a.signal] ?? 99) - (SIGNAL_RANK[b.signal] ?? 99))
+      .slice(page.skip, page.skip + page.take)
+      .map((f) => f.id);
+    const rows = await prisma.fraudFlag.findMany({
+      where: { id: { in: ids } },
+      include: { agency: { select: agencySummary } },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return ids.flatMap((id) => byId.get(id) ?? []);
+  }
+
   const flags = await prisma.fraudFlag.findMany({
     where: { status: "PENDING" },
     orderBy: { createdAt: "asc" },
@@ -117,11 +139,15 @@ export async function dismissFraud(id: string) {
   return updatedFlag;
 }
 
+export const countFraudQueue = () => prisma.fraudFlag.count({ where: { status: "PENDING" } });
+export const countBanRegistry = () => prisma.agency.count({ where: { status: "BANNED" } });
+
 /** Every permanently banned account, with ban reason and timestamp. */
-export async function getBanRegistry() {
+export async function getBanRegistry(page?: { skip: number; take: number }) {
   return prisma.agency.findMany({
     where: { status: "BANNED" },
-    orderBy: { bannedAt: "desc" },
+    orderBy: [{ bannedAt: "desc" }, { id: "asc" }],
+    ...(page ?? {}),
     select: {
       id: true,
       name: true,

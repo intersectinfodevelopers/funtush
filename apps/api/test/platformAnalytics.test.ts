@@ -25,11 +25,18 @@ vi.mock("../src/lib/mongo", () => ({
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
 vi.mock("../src/packages/database/prisma", () => ({
   prisma: {
+    booking: {
+      count: vi.fn().mockResolvedValue(0),
+      aggregate: vi.fn().mockResolvedValue({ _sum: { totalPrice: null } }),
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
     agency: {
       count:   vi.fn().mockResolvedValue(0),
       groupBy: vi.fn().mockResolvedValue([]),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    trekPackage: { findMany: vi.fn().mockResolvedValue([]) },
+    subscriptionTier: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -85,10 +92,14 @@ describe("getPlatformOverview()", () => {
     expect(result.activeAgencies).toBe(42);
   });
 
-  it("agenciesByTier is built from prisma.agency.findMany (tier name)", async () => {
-    vi.mocked(prisma.agency.findMany).mockResolvedValue([
-      ...Array(10).fill({ tier: { name: "FREE" } }),
-      ...Array(5).fill({ tier: { name: "PRO" } }),
+  it("agenciesByTier is a GROUP BY over tierId, named via the tier table (not a full-table load)", async () => {
+    vi.mocked(prisma.agency.groupBy).mockResolvedValue([
+      { tierId: "t-free", _count: { _all: 10 } },
+      { tierId: "t-pro", _count: { _all: 5 } },
+    ] as never);
+    vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([
+      { id: "t-free", name: "FREE" },
+      { id: "t-pro", name: "PRO" },
     ] as never);
     const result = await getPlatformOverview() as Record<string, unknown>;
     const tiers = result.agenciesByTier as Record<string, number>;
@@ -126,12 +137,10 @@ describe("getAgencyPerformance()", () => {
   });
 
   it("topByBookings is sorted by bookings desc", async () => {
-    aggregateMock.mockReturnValue({
-      toArray: vi.fn().mockResolvedValue([
-        { _id: "agency_1", bookings: 100 },
-        { _id: "agency_2", bookings: 50  },
-      ]),
-    });
+    vi.mocked(prisma.booking.groupBy).mockResolvedValueOnce([
+      { agencyId: "agency_1", _count: { _all: 100 } },
+      { agencyId: "agency_2", _count: { _all: 50 } },
+    ] as never);
     const result = await getAgencyPerformance() as Record<string, unknown>;
     const top = result.topByBookings as Array<{ agency_id: string; bookings: number }>;
     expect(top[0].bookings).toBeGreaterThanOrEqual(top[1]?.bookings ?? 0);
@@ -152,38 +161,37 @@ describe("getMarketplaceAnalytics()", () => {
     const result = await getMarketplaceAnalytics() as Record<string, unknown>;
     expect(result).toHaveProperty("topSearchedDestinations");
     expect(result).toHaveProperty("popularFilters");
-    expect(result).toHaveProperty("conversionFunnel");
+    expect(result).toHaveProperty("bookingStatusBreakdown");
   });
 
-  it("conversionFunnel has all required fields", async () => {
+  it("bookingStatusBreakdown has all required fields", async () => {
     const result = await getMarketplaceAnalytics() as Record<string, unknown>;
-    const funnel = result.conversionFunnel as Record<string, unknown>;
-    expect(funnel).toHaveProperty("pageViews");
-    expect(funnel).toHaveProperty("inquiries");
-    expect(funnel).toHaveProperty("bookingsConfirmed");
-    expect(funnel).toHaveProperty("bookingsPaid");
-    expect(funnel).toHaveProperty("viewToInquiryRate");
-    expect(funnel).toHaveProperty("inquiryToBookingRate");
-    expect(funnel).toHaveProperty("bookingToPaymentRate");
+    const breakdown = result.bookingStatusBreakdown as Record<string, unknown>;
+    expect(breakdown).toHaveProperty("totalBookings");
+    expect(breakdown).toHaveProperty("byStatus");
+    expect(breakdown).toHaveProperty("conversionRate");
+    expect(breakdown).toHaveProperty("completionRate");
+    expect(breakdown).toHaveProperty("cancellationRate");
   });
 
-  it("calculates viewToInquiryRate correctly", async () => {
-    countDocsMock
-      .mockResolvedValueOnce(1000)  // pageViews
-      .mockResolvedValueOnce(100)   // inquiries
-      .mockResolvedValueOnce(50)    // confirmed
-      .mockResolvedValueOnce(40);   // paid
+  it("calculates conversionRate from paid bookings", async () => {
+    vi.mocked(prisma.booking.groupBy).mockResolvedValueOnce([
+      { status: "INQUIRY", _count: { _all: 900 } },
+      { status: "PAID", _count: { _all: 100 } },
+    ] as never);
 
     const result = await getMarketplaceAnalytics() as Record<string, unknown>;
-    const funnel = result.conversionFunnel as Record<string, unknown>;
-    expect(funnel.viewToInquiryRate).toBe(10);
+    const breakdown = result.bookingStatusBreakdown as Record<string, unknown>;
+    expect(breakdown.conversionRate).toBe(10);
   });
 
-  it("returns 0 rates when no page views", async () => {
-    countDocsMock.mockResolvedValue(0);
+  it("returns 0 rates when there are no bookings", async () => {
+    vi.mocked(prisma.booking.groupBy).mockResolvedValueOnce([] as never);
     const result = await getMarketplaceAnalytics() as Record<string, unknown>;
-    const funnel = result.conversionFunnel as Record<string, unknown>;
-    expect(funnel.viewToInquiryRate).toBe(0);
+    const breakdown = result.bookingStatusBreakdown as Record<string, unknown>;
+    expect(breakdown.conversionRate).toBe(0);
+    expect(breakdown.completionRate).toBe(0);
+    expect(breakdown.cancellationRate).toBe(0);
   });
 });
 

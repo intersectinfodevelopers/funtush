@@ -1,12 +1,21 @@
 import { Router } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
+import { parsePagination, buildMeta } from "../../utils/pagination.js";
 import {
   getFraudQueue,
+  countFraudQueue,
   confirmFraud,
   dismissFraud,
   getBanRegistry,
+  countBanRegistry,
 } from "../../services/fraud.service.js";
 
 const router = Router();
+
+// Was gated only by the IP allow-list (`requireAdmin` on the parent router) —
+// require a real platform-admin session too, matching every other admin route.
+router.use(requireAuth, requirePlatformPermission("fraud"));
 
 /**
  * @openapi
@@ -43,8 +52,9 @@ const router = Router();
 // GET /admin/fraud/queue � flagged accounts, strongest signal first
 router.get("/queue", async (req, res) => {
   try {
-    const queue = await getFraudQueue();
-    res.json({ data: queue, total: queue.length });
+    const page = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const [queue, total] = await Promise.all([getFraudQueue({ skip: page.skip, take: page.take }), countFraudQueue()]);
+    res.json({ data: queue, total, meta: buildMeta(total, page.page, page.limit) });
   } catch (err) {
     console.error("[GET /admin/fraud/queue]", err);
     res.status(500).json({ error: "Failed to fetch fraud queue" });
@@ -54,8 +64,9 @@ router.get("/queue", async (req, res) => {
 // GET /admin/fraud/ban-registry � all permanently banned accounts
 router.get("/ban-registry", async (req, res) => {
   try {
-    const registry = await getBanRegistry();
-    res.json({ data: registry, total: registry.length });
+    const page = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const [registry, total] = await Promise.all([getBanRegistry({ skip: page.skip, take: page.take }), countBanRegistry()]);
+    res.json({ data: registry, total, meta: buildMeta(total, page.page, page.limit) });
   } catch (err) {
     console.error("[GET /admin/fraud/ban-registry]", err);
     res.status(500).json({ error: "Failed to fetch ban registry" });

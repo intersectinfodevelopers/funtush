@@ -36,6 +36,9 @@ import {
   DEFAULT_BRANDING,
   FAVICON_SPEC,
   LOGO_SPEC,
+  MAX_LOGO_WIDTH,
+  MAX_RECEIPT_FOOTER_LENGTH,
+  MIN_LOGO_WIDTH,
   allowsFreeColorPicker,
   findCurrency,
   findFont,
@@ -96,6 +99,11 @@ export interface ResolvedBranding {
   currencyExample: string;
   /** `"curated"` or `"free"` — what this agency's tier allows. */
   colorPickerMode: "curated" | "free";
+  /** Rendered logo width in px — see `MAX_LOGO_WIDTH` in `data/brandTheme.ts`. */
+  logoWidth: number;
+  /** Printed at the bottom of every POS receipt/invoice. Never `null` — falls
+   * back to the platform's own thank-you line. */
+  receiptFooter: string;
   updatedAt: Date | null;
 }
 
@@ -272,6 +280,8 @@ export interface BrandingRow {
   currencyCode: string;
   currencySymbol: string | null;
   currencyDisplay: string;
+  logoWidth: number | null;
+  receiptFooter: string | null;
   updatedAt: Date;
 }
 
@@ -353,6 +363,13 @@ export function resolveBranding(
   const currencyDisplay = (row?.currencyDisplay ??
     DEFAULT_BRANDING.currencyDisplay) as CurrencyDisplayMode;
 
+  // Clamped, not just defaulted: a row saved under a wider allowed range in
+  // the past must not hand the renderer a value outside today's bounds.
+  const logoWidth = Math.min(
+    Math.max(row?.logoWidth ?? DEFAULT_BRANDING.logoWidth, MIN_LOGO_WIDTH),
+    MAX_LOGO_WIDTH,
+  );
+
   return {
     brandName: row?.brandName ?? agency.name,
     logoUrl: row?.logoUrl ?? null,
@@ -369,6 +386,8 @@ export function resolveBranding(
     currencyDisplay,
     currencyExample: formatCurrencyExample(currencySymbol, currencyCode, currencyDisplay),
     colorPickerMode: allowsFreeColorPicker(agency.tier) ? "free" : "curated",
+    logoWidth,
+    receiptFooter: row?.receiptFooter ?? DEFAULT_BRANDING.receiptFooter,
     updatedAt: row?.updatedAt ?? null,
   };
 }
@@ -392,6 +411,7 @@ export function brandingCssVariables(branding: ResolvedBranding): Record<string,
     "--brand-on-primary": branding.onPrimaryColor,
     "--brand-font": branding.fontStack,
     "--brand-card-ratio": branding.cardImageRatioValue,
+    "--brand-logo-width": `${branding.logoWidth}px`,
   };
 }
 
@@ -475,6 +495,8 @@ export async function getBrandingOptions(agencyId: string) {
         maxBytes: FAVICON_SPEC.maxBytes,
       },
     },
+    logoWidth: { min: MIN_LOGO_WIDTH, max: MAX_LOGO_WIDTH },
+    receiptFooter: { maxLength: MAX_RECEIPT_FOOTER_LENGTH },
   };
 }
 
@@ -556,6 +578,9 @@ export async function updateAgencyBranding(
   // against `undefined`, not against falsiness. `if (input.currencySymbol)`
   // would make clearing the override impossible.
   if (input.currencySymbol !== undefined) data.currencySymbol = input.currencySymbol;
+
+  if (input.logoWidth !== undefined) data.logoWidth = input.logoWidth;
+  if (input.receiptFooter !== undefined) data.receiptFooter = input.receiptFooter;
 
   if (color) {
     data.primaryColor = color.primaryColor;

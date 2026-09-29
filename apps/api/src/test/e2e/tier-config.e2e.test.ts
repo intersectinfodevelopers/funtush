@@ -12,13 +12,29 @@
 import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { db } from "@funtush/database";
+import { generateAccessToken } from "@funtush/auth";
 import { app } from "../../app";
 import { dbAvailable } from "./helpers";
 
 const RUN = await dbAvailable();
 const d = RUN ? describe : describe.skip;
 
-const adminHeaders = { Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" };
+// Tier config is platform-wide and sensitive — the route itself now requires a real
+// SUPER_ADMIN/PLATFORM_ADMIN bearer token (requireAuth + requireSuperAdminRole), not
+// just the IP allow-list context.
+function platformAdminToken(): string {
+  return generateAccessToken({
+    userId: "e2e-platform-admin",
+    roleType: "PLATFORM",
+    role: "SUPER_ADMIN",
+  } as Parameters<typeof generateAccessToken>[0]);
+}
+
+const adminHeaders = {
+  Host: "admin.funtush.com",
+  "X-Forwarded-For": "127.0.0.1",
+  Authorization: `Bearer ${platformAdminToken()}`,
+};
 
 d("Admin tier config (e2e)", () => {
   const createdTierIds: string[] = [];
@@ -34,14 +50,44 @@ d("Admin tier config (e2e)", () => {
     expect([401, 403, 404]).toContain(res.status);
   });
 
+  it("rejects the admin IP context alone, without a real platform-admin token", async () => {
+    const res = await request(app)
+      .get("/admin/tiers")
+      .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a non-platform (agency) token with 403", async () => {
+    const agencyToken = generateAccessToken({
+      userId: "e2e-agency-user",
+      roleType: "TENANT",
+      role: "AGENCY_ADMIN",
+      agencyId: "e2e-agency-id",
+    } as Parameters<typeof generateAccessToken>[0]);
+    const res = await request(app)
+      .get("/admin/tiers")
+      .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1", Authorization: `Bearer ${agencyToken}` });
+    expect(res.status).toBe(403);
+  });
+
   it("GET /admin/tiers lists tiers with the full Concept §6 config", async () => {
+    // Don't rely on rows other test files may have left behind — this file
+    // can also run alone against a freshly migrated, empty table.
+    const name = `E2E_TIER_LIST_${Date.now()}`;
+    const create = await request(app).post("/admin/tiers").set(adminHeaders).send({ name });
+    createdTierIds.push(create.body.data.id);
+
     const res = await request(app).get("/admin/tiers").set(adminHeaders);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
     expect(res.body.data.length).toBeGreaterThan(0);
-    expect(res.body.data[0]).toHaveProperty("marketplaceWeight");
-    expect(res.body.data[0]).toHaveProperty("adsEnabled");
-    expect(res.body.data[0]).toHaveProperty("trialDays");
+
+    const row = res.body.data.find((t: { id: string }) => t.id === create.body.data.id);
+    expect(row).toHaveProperty("marketplaceWeight");
+    expect(row).toHaveProperty("adsEnabled");
+    expect(row).toHaveProperty("trialDays");
+    expect(row).toHaveProperty("maxBookingsPerMonth");
+    expect(row).toHaveProperty("blogEnabled");
   });
 
   it("POST creates a tier; PATCH updates limits + flags; negatives are rejected", async () => {
@@ -68,6 +114,60 @@ d("Admin tier config (e2e)", () => {
       .patch(`/admin/tiers/${create.body.data.id}`)
       .set(adminHeaders)
       .send({ maxStaff: -1 });
+    expect(bad.status).toBe(400);
+  });
+
+  it("a freshly created tier defaults to unlimited bookings and every feature flag off", async () => {
+    const name = `E2E_TIER_DEFAULTS_${Date.now()}`;
+    const create = await request(app).post("/admin/tiers").set(adminHeaders).send({ name });
+    expect(create.status).toBe(201);
+    createdTierIds.push(create.body.data.id);
+
+    expect(create.body.data.maxBookingsPerMonth).toBeNull();
+    expect(create.body.data.blogEnabled).toBe(false);
+    expect(create.body.data.analyticsEnabled).toBe(false);
+    expect(create.body.data.prioritySupportEnabled).toBe(false);
+  });
+
+  it("PATCH sets a numeric booking cap and the blog/analytics/priority-support flags", async () => {
+    const name = `E2E_TIER_FEATURES_${Date.now()}`;
+    const create = await request(app).post("/admin/tiers").set(adminHeaders).send({ name });
+    createdTierIds.push(create.body.data.id);
+
+    const patch = await request(app)
+      .patch(`/admin/tiers/${create.body.data.id}`)
+      .set(adminHeaders)
+      .send({ maxBookingsPerMonth: 200, blogEnabled: true, analyticsEnabled: true, prioritySupportEnabled: false });
+    expect(patch.status).toBe(200);
+    expect(patch.body.data.maxBookingsPerMonth).toBe(200);
+    expect(patch.body.data.blogEnabled).toBe(true);
+    expect(patch.body.data.analyticsEnabled).toBe(true);
+    expect(patch.body.data.prioritySupportEnabled).toBe(false);
+  });
+
+  it("PATCH with maxBookingsPerMonth: null clears the cap back to unlimited", async () => {
+    const name = `E2E_TIER_UNLIMITED_${Date.now()}`;
+    const create = await request(app).post("/admin/tiers").set(adminHeaders).send({ name, maxBookingsPerMonth: 50 });
+    createdTierIds.push(create.body.data.id);
+    expect(create.body.data.maxBookingsPerMonth).toBe(50);
+
+    const patch = await request(app)
+      .patch(`/admin/tiers/${create.body.data.id}`)
+      .set(adminHeaders)
+      .send({ maxBookingsPerMonth: null });
+    expect(patch.status).toBe(200);
+    expect(patch.body.data.maxBookingsPerMonth).toBeNull();
+  });
+
+  it("rejects a negative maxBookingsPerMonth with 400", async () => {
+    const name = `E2E_TIER_NEGATIVE_${Date.now()}`;
+    const create = await request(app).post("/admin/tiers").set(adminHeaders).send({ name });
+    createdTierIds.push(create.body.data.id);
+
+    const bad = await request(app)
+      .patch(`/admin/tiers/${create.body.data.id}`)
+      .set(adminHeaders)
+      .send({ maxBookingsPerMonth: -5 });
     expect(bad.status).toBe(400);
   });
 

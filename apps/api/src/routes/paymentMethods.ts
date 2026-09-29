@@ -7,14 +7,53 @@ import type { AgencyRequest } from '../types/auth-request';
 
 const router = Router();
 
-// POST /agencies/me/payment-methods
+/** Providers we can store credentials for, and the exact fields each needs. */
+export const PROVIDER_FIELDS: Record<string, string[]> = {
+  ESEWA: ['merchantId', 'secretKey'],
+  KHALTI: ['publicKey', 'secretKey'],
+  FONEPAY: ['merchantCode', 'terminalId'],
+  STRIPE: ['publishableKey', 'secretKey'],
+};
+
+/** Returns an error message, or null when `provider` + `credentials` are well-formed. */
+function checkCredentials(provider: unknown, credentials: Record<string, unknown>): string | null {
+  if (typeof provider !== 'string' || !PROVIDER_FIELDS[provider]) {
+    return `Provider must be one of ${Object.keys(PROVIDER_FIELDS).join(', ')}`;
+  }
+  const fields = PROVIDER_FIELDS[provider];
+  for (const key of Object.keys(credentials)) if (!fields.includes(key)) return `Unknown field "${key}" for ${provider}`;
+  for (const f of fields) {
+    const v = credentials[f];
+    if (typeof v !== 'string' || !v.trim()) return `${f} is required`;
+    if (v.length > 500) return `${f} is too long`;
+  }
+  return null;
+}
+
+/**
+ * @openapi
+ * /agencies/me/payment-methods:
+ *   post:
+ *     tags: [Payment Methods]
+ *     summary: Save (or replace) a payment provider's credentials, AES-256-GCM encrypted at rest
+ *     security: [{ refreshToken: [] }]
+ *     responses:
+ *       200: { description: Saved — credentials never included in the response }
+ *       400: { description: provider is required }
+ *   get:
+ *     tags: [Payment Methods]
+ *     summary: List the agency's connected payment providers
+ *     security: [{ refreshToken: [] }]
+ *     responses: { 200: { description: Payment methods } }
+ */
 router.post(
   '/',
   authenticateWithRefreshToken,
   checkAgencyStatus,
   async (req: AgencyRequest, res) => {
     try {
-      const { provider, ...credentials } = req.body;
+      const { provider: rawProvider, ...credentials } = req.body ?? {};
+      const provider = typeof rawProvider === 'string' ? rawProvider.toUpperCase() : rawProvider;
       const agencyId = req.agencyId;
 
       if (!agencyId) {
@@ -24,6 +63,9 @@ router.post(
       if (!provider) {
         return res.status(400).json({ error: 'Provider is required' });
       }
+
+      const problem = checkCredentials(provider, credentials);
+      if (problem) return res.status(400).json({ error: problem });
 
       const encryptedCreds = encryptCredentials(credentials);
 
@@ -87,7 +129,19 @@ router.get(
   }
 );
 
-// PATCH /agencies/me/payment-methods/:id/toggle
+/**
+ * @openapi
+ * /agencies/me/payment-methods/{id}/toggle:
+ *   patch:
+ *     tags: [Payment Methods]
+ *     summary: Toggle a payment method active/inactive
+ *     security: [{ refreshToken: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: string } }
+ *     responses:
+ *       200: { description: Toggled }
+ *       404: { description: Not found (or belongs to a different agency) }
+ */
 router.patch(
   '/:id/toggle',
   authenticateWithRefreshToken,

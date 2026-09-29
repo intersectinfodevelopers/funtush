@@ -5,11 +5,12 @@
   "description": "Funtush backend API (Node.js + Express).",
   "type": "commonjs",
   "main": "./src/index.ts",
-  
   "scripts": {
     "dev": "nodemon",
-    "start": "tsx --env-file=.env src/index.ts",
+    "start": "tsx --env-file=.env src/cluster.ts",
+    "start:single": "tsx --env-file=.env src/index.ts",
     "search:reindex": "tsx --env-file=.env src/scripts/reindexSearch.ts",
+    "admin:reset-password": "tsx --env-file=.env src/scripts/resetAdminPassword.ts",
     "lint": "eslint src",
     "test:security": "vitest run --dir security",
     "typecheck": "tsc --noEmit",
@@ -17,8 +18,11 @@
     "test:infra:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:infra:down": "docker compose -f docker-compose.test.yml down -v",
     "db:test:setup": "cd ../../packages/database && DATABASE_URL=\"postgresql://funtush:funtush@localhost:5542/funtush?schema=public\" prisma migrate deploy",
+    "dev:infra:up": "docker compose -f docker-compose.dev.yml up -d --wait",
+    "dev:infra:down": "docker compose -f docker-compose.dev.yml down",
+    "db:dev:setup": "cd ../../packages/database && DATABASE_URL=\"postgresql://funtush:funtush@localhost:5543/funtush?schema=public\" prisma migrate deploy",
+    "db:dev:seed": "cd ../../packages/database && DATABASE_URL=\"postgresql://funtush:funtush@localhost:5543/funtush?schema=public\" npx tsx prisma/seed.ts",
     "clean": "rimraf .turbo coverage"
-    
   },
   "dependencies": {
     "@funtush/auth": "workspace:*",
@@ -29,6 +33,7 @@
     "@react-email/components": "^1.0.12",
     "axios": "^1.19.0",
     "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
     "cron": "^4.4.0",
     "date-fns": "^4.4.0",
     "express": "^4.22.2",
@@ -45,6 +50,7 @@
     "puppeteer": "^25.1.0",
     "react-email": "^6.9.0",
     "resend": "^6.17.2",
+    "sanitize-html": "^2.17.7",
     "stripe": "^22.3.2",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
@@ -54,6 +60,7 @@
   "devDependencies": {
     "@jest/globals": "^30.4.1",
     "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",
@@ -62,6 +69,7 @@
     "@types/nodemailer": "^8.0.0",
     "@types/pdfkit": "^0.17.6",
     "@types/react": "^19.2.18",
+    "@types/sanitize-html": "^2.16.1",
     "@types/stripe": "^8.0.417",
     "@types/supertest": "^7.2.0",
     "@types/swagger-jsdoc": "^6.0.4",

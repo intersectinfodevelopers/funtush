@@ -1,5 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
 import {
   getActiveIncidents,
   getIncidentHistory,
@@ -10,9 +12,13 @@ import { writeAuditLog } from "../../services/auditLog.service";
 
 const router = Router();
 
+// Was gated only by the IP allow-list (`requireAdmin` on the parent router) —
+// require a real platform-admin session too, matching every other admin route.
+router.use(requireAuth, requirePlatformPermission("sos"));
+
 function clientIp(req: Request): string {
   return (
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.ip ||
     req.socket.remoteAddress ||
     "unknown"
   );
@@ -36,11 +42,12 @@ router.get("/active", async (_req: Request, res: Response) => {
   }
 });
 
-// GET /admin/sos/history — past incidents
+// GET /admin/sos/history — past incidents, paginated
 router.get("/history", async (req: Request, res: Response) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
-    const data  = await getIncidentHistory(limit);
+    const page  = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 1;
+    const limit = req.query.limit ? Math.max(1, parseInt(req.query.limit as string, 10)) : 20;
+    const data  = await getIncidentHistory(page, limit);
     res.json(data);
   } catch (err) {
     console.error("[GET /admin/sos/history]", err);

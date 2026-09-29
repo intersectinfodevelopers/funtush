@@ -1,4 +1,5 @@
 import express from "express";
+import { requireStaffPermission } from "../middleware/requireStaffPermission.middleware";
 import {
   submitInquiryController,
   verifyInquiryOtpController,
@@ -10,16 +11,33 @@ import {
   cancelBookingController,
   getBookingByIdController,
   assignGuideController,
+  setBookingStageController,
   checkInBookingController,
   checkOutBookingController,
   createBookingController,
 } from "../controllers/booking.controller";
 import { requireAuth, requireRole } from "@funtush/auth";
+import { checkImpersonationActive } from "../middleware/checkImpersonationActive.middleware";
 
 const router = express.Router();
 
 // Public — trekker inquiry
 
+/**
+ * @openapi
+ * /bookings/inquiry/verify-otp:
+ *   post:
+ *     tags: [Bookings]
+ *     summary: Verify the OTP sent by POST /bookings/inquiry and create the real INQUIRY booking
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [sessionToken, otp], properties: { sessionToken: { type: string }, otp: { type: string, minLength: 6, maxLength: 6 } } }
+ *     responses:
+ *       201: { description: Booking created }
+ *       400: { description: sessionToken/otp missing, expired, or incorrect }
+ */
 // /bookings/inquiry
 router.post("/inquiry", submitInquiryController);
 // /bookings/inquiry/verify-otp
@@ -66,25 +84,54 @@ router.post("/inquiry/verify-otp", verifyInquiryOtpController);
  */
 
 // /agencies/me/bookings
-router.post("/", requireAuth, requireRole(["AGENCY_ADMIN"]), createBookingController);
-router.get("/", requireAuth, requireRole(["AGENCY_ADMIN"]), getAgencyBookingsController);
+router.post("/", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, createBookingController);
+router.get("/", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, getAgencyBookingsController);
+/**
+ * @openapi
+ * /bookings/{id}:
+ *   get: { tags: [Bookings], summary: Get one of the agency's bookings, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Booking }, 404: { description: Not found } } }
+ * /bookings/{id}/reject:
+ *   patch: { tags: [Bookings], summary: Reject an INQUIRY booking with a reason, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Rejected }, 400: { description: Reason required, or not in INQUIRY state } } }
+ * /bookings/{id}/propose-date:
+ *   patch: { tags: [Bookings], summary: Propose an alternative departure date for an INQUIRY booking, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated }, 400: { description: proposedDate required, or not in INQUIRY state } } }
+ * /bookings/{id}/confirm:
+ *   patch: { tags: [Bookings], summary: Confirm a PAID booking, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Confirmed }, 400: { description: Not in PAID state } } }
+ * /bookings/{id}/cancel:
+ *   patch: { tags: [Bookings], summary: Cancel a booking (from PAYMENT_PENDING/PAID/CONFIRMED/ACTIVE) and release its slots, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Cancelled }, 400: { description: Reason required, or not in a cancellable state } } }
+ * /bookings/{id}/assign-guide:
+ *   patch: { tags: [Bookings], summary: Assign a guide to a booking, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Assigned }, 404: { description: Booking or guide not found } } }
+ * /bookings/{id}/check-in:
+ *   patch: { tags: [Bookings], summary: Check in a booking (trek start), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked in }, 400: { description: Not in a checkable-in state } } }
+ * /bookings/{id}/check-out:
+ *   patch: { tags: [Bookings], summary: Check out a booking (trek complete), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked out }, 400: { description: Not in a checkable-out state } } }
+ * /bookings/{id}/set-stage:
+ *   patch:
+ *     tags: [Bookings]
+ *     summary: Move a booking to any step of its journey (INQUIRY → PAYMENT_PENDING runs the normal accept flow)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object, required: [stage], properties: { stage: { type: string, enum: [INQUIRY, PAYMENT_PENDING, PAID, CONFIRMED, ACTIVE, COMPLETED] } } } } } }
+ *     responses: { 200: { description: "{ bookingId, status, changed }" }, 400: { description: Invalid stage }, 403: { description: Not this agency's booking }, 404: { description: Not found }, 409: { description: Booking is cancelled/rejected, or ACTIVE without an assigned guide } }
+ */
 // /agencies/me/bookings/:id
-router.get("/:id", requireAuth, requireRole(["AGENCY_ADMIN"]), getBookingByIdController);
+router.get("/:id", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, getBookingByIdController);
 // /agencies/me/bookings/:id/accept
-router.patch("/:id/accept", requireAuth, requireRole(["AGENCY_ADMIN"]), acceptBookingController);
+router.patch("/:id/accept", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, acceptBookingController);
 // /agencies/me/bookings/:id/reject
-router.patch("/:id/reject", requireAuth, requireRole(["AGENCY_ADMIN"]), rejectBookingController);
+router.patch("/:id/reject", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, rejectBookingController);
 // /agencies/me/bookings/:id/propose-date
-router.patch("/:id/propose-date", requireAuth, requireRole(["AGENCY_ADMIN"]), proposeDateController);
+router.patch("/:id/propose-date", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, proposeDateController);
 // /agencies/me/bookings/:id/confirm
-router.patch("/:id/confirm", requireAuth, requireRole(["AGENCY_ADMIN"]), confirmBookingController);
+router.patch("/:id/confirm", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, confirmBookingController);
 // /agencies/me/bookings/:id/cancel
-router.patch("/:id/cancel", requireAuth, requireRole(["AGENCY_ADMIN"]), cancelBookingController);
+router.patch("/:id/cancel", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, cancelBookingController);
 // /agencies/me/bookings/:id/assign-guide
-router.patch("/:id/assign-guide", requireAuth, requireRole(["AGENCY_ADMIN"]), assignGuideController);
+router.patch("/:id/assign-guide", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, assignGuideController);
 // /agencies/me/bookings/:id/check-in
-router.patch("/:id/check-in", requireAuth, requireRole(["AGENCY_ADMIN"]), checkInBookingController);
+router.patch("/:id/check-in", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, checkInBookingController);
 // /agencies/me/bookings/:id/check-out
-router.patch("/:id/check-out", requireAuth, requireRole(["AGENCY_ADMIN"]), checkOutBookingController);
+router.patch("/:id/check-out", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, checkOutBookingController);
+// /bookings/:id/set-stage — move the booking to any step of its journey (body: { stage })
+router.patch("/:id/set-stage", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, setBookingStageController);
 
 export default router;

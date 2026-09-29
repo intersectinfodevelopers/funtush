@@ -34,6 +34,25 @@ import {
 const router = Router();
 
 /**
+ * @openapi
+ * /mobile/trekker/dashboard:
+ *   get: { tags: [Mobile], summary: Trekker's mobile dashboard, security: [{ bearerAuth: [] }], responses: { 200: { description: Dashboard }, 403: { description: Not a trekker } } }
+ * /mobile/guide/dashboard:
+ *   get: { tags: [Mobile], summary: Guide's mobile dashboard (their own agency/treks only), security: [{ bearerAuth: [] }], responses: { 200: { description: Dashboard } } }
+ * /mobile/bookings/{id}/offline-package/version:
+ *   get: { tags: [Mobile], summary: Version probe for a booking's offline package (compare before refetching), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Version } } }
+ * /mobile/bookings/{id}/offline-package:
+ *   get: { tags: [Mobile], summary: Full offline itinerary bundle for on-device caching, security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Bundle } } }
+ * /mobile/register-device:
+ *   post: { tags: [Mobile], summary: Register this device's push token, security: [{ bearerAuth: [] }], responses: { 200: { description: Registered } } }
+ *   delete: { tags: [Mobile], summary: Unregister a device's push token, security: [{ bearerAuth: [] }], responses: { 200: { description: Unregistered } } }
+ * /mobile/emergency-numbers/version:
+ *   get: { tags: [Mobile], summary: Version probe for the local emergency-number bundle, security: [{ bearerAuth: [] }], responses: { 200: { description: Version } } }
+ * /mobile/emergency-numbers:
+ *   get: { tags: [Mobile], summary: Local emergency numbers bundle (refreshes the app's built-in copy), security: [{ bearerAuth: [] }], responses: { 200: { description: Numbers } } }
+ */
+
+/**
  * GET /mobile/trekker/dashboard
  * Trekkers only. A trekker's data is platform-level, so no agency scope here.
  */

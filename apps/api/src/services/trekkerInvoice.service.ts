@@ -25,20 +25,59 @@ interface LineItem {
   unitPrice: number;
 }
 
-function normalizeLineItems(raw: LineItemInput[] | undefined): LineItem[] {
-  return (raw ?? [])
-    .filter((li) => li && (li.description ?? "").trim() !== "")
-    .map((li) => ({
-      description: (li.description ?? "").trim(),
-      quantity: Number.isFinite(li.quantity) && (li.quantity as number) > 0 ? Number(li.quantity) : 1,
-      unitPrice: Number.isFinite(li.unitPrice) && (li.unitPrice as number) >= 0 ? Number(li.unitPrice) : 0,
-    }));
+const bad = (m: string): never => {
+  throw new TrekkerInvoiceError(400, m);
+};
+
+function text(v: unknown, label: string, max: number): string | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") return bad(`${label} must be text.`);
+  const t = v.trim();
+  if (t.length > max) return bad(`${label} must be at most ${max} characters.`);
+  return t === "" ? null : t;
 }
 
-function computeTotals(items: LineItem[], discount: number) {
+function money(v: unknown, label: string, { min = 0, max = 1_000_000_000 } = {}): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) return bad(`${label} must be a number between ${min} and ${max}.`);
+  return v;
+}
+
+function currency(v: unknown): string {
+  if (v === undefined || v === null || v === "") return "NPR";
+  if (typeof v !== "string" || !/^[A-Za-z]{3}$/.test(v.trim())) return bad("currencyCode must be a 3-letter code like NPR.");
+  return v.trim().toUpperCase();
+}
+
+const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/;
+function email(v: unknown): string | null {
+  const t = text(v, "trekkerEmail", 254);
+  if (t && !EMAIL_RE.test(t)) return bad("trekkerEmail must be a valid email address.");
+  return t;
+}
+
+function normalizeLineItems(raw: unknown): LineItem[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return bad("lineItems must be a list.");
+  if (raw.length > 50) return bad("An invoice can have at most 50 line items.");
+  const out: LineItem[] = [];
+  for (const li of raw as LineItemInput[]) {
+    if (!li || typeof li !== "object") return bad("Each line item must be an object.");
+    const description = text(li.description, "Line item description", 200);
+    if (!description) continue; // blank rows are ignored, as before
+    out.push({
+      description,
+      quantity: li.quantity === undefined ? 1 : money(li.quantity, "Quantity", { min: 0.001, max: 100000 }),
+      unitPrice: li.unitPrice === undefined ? 0 : money(li.unitPrice, "Unit price"),
+    });
+  }
+  return out;
+}
+
+function computeTotals(items: LineItem[], discount: unknown) {
   const subtotal = items.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
-  const d = Number.isFinite(discount) && discount > 0 ? discount : 0;
-  return { subtotal, discount: d, total: Math.max(0, subtotal - d) };
+  const d = discount === undefined || discount === null ? 0 : money(discount, "Discount");
+  if (d > subtotal) bad("The discount can't be more than the invoice subtotal.");
+  return { subtotal, discount: d, total: subtotal - d };
 }
 
 function ymd(d: Date | null): string | null {
@@ -47,8 +86,9 @@ function ymd(d: Date | null): string | null {
 function toDate(v: unknown): Date | null | undefined {
   if (v === undefined) return undefined;
   if (v === null || v === "") return null;
-  const d = new Date(String(v));
-  return Number.isNaN(d.getTime()) ? null : d;
+  const d = typeof v === "string" ? new Date(v) : new Date(NaN);
+  if (Number.isNaN(d.getTime())) return bad("Invalid date.");
+  return d;
 }
 
 const SELECT = {
@@ -155,10 +195,15 @@ export async function listInvoices(
 }
 
 export async function createInvoice(agencyId: string, body: CreateInvoiceInput) {
-  let trekkerName = body.trekkerName?.trim() || "";
-  let trekkerEmail = body.trekkerEmail?.trim() || null;
-  let packageName = body.packageName?.trim() || null;
+  let trekkerName = text(body.trekkerName, "trekkerName", 120) ?? "";
+  let trekkerEmail = email(body.trekkerEmail);
+  let packageName = text(body.packageName, "packageName", 150);
   let items = normalizeLineItems(body.lineItems);
+  const notes = text(body.notes, "notes", 1000);
+  const currencyCode = currency(body.currencyCode);
+  const issueDate = toDate(body.issueDate) ?? new Date();
+  const dueDate = toDate(body.dueDate) ?? null;
+  if (dueDate && dueDate < issueDate && ymd(dueDate) !== ymd(issueDate)) bad("The due date can't be before the issue date.");
 
   // If created from a booking, pull the defaults from it.
   if (body.bookingId) {
@@ -190,7 +235,7 @@ export async function createInvoice(agencyId: string, body: CreateInvoiceInput) 
   if (!trekkerName) throw new TrekkerInvoiceError(400, "A trekker name is required.");
   if (items.length === 0) throw new TrekkerInvoiceError(400, "At least one line item is required.");
 
-  const { subtotal, discount, total } = computeTotals(items, body.discount ?? 0);
+  const { subtotal, discount, total } = computeTotals(items, body.discount);
   const invoiceNumber = await nextInvoiceNumber(agencyId);
 
   const row = await db.trekkerInvoice.create({
@@ -205,10 +250,10 @@ export async function createInvoice(agencyId: string, body: CreateInvoiceInput) 
       subtotal,
       discount,
       total,
-      currencyCode: body.currencyCode?.trim() || "NPR",
-      issueDate: toDate(body.issueDate) ?? new Date(),
-      dueDate: toDate(body.dueDate) ?? null,
-      notes: body.notes?.trim() || null,
+      currencyCode,
+      issueDate,
+      dueDate,
+      notes,
     },
     select: SELECT,
   });
@@ -237,14 +282,14 @@ export async function updateInvoice(agencyId: string, id: string, body: UpdateIn
 
   const data: Prisma.TrekkerInvoiceUpdateInput = {};
   if (body.trekkerName !== undefined) {
-    const n = body.trekkerName.trim();
+    const n = text(body.trekkerName, "trekkerName", 120);
     if (!n) throw new TrekkerInvoiceError(400, "Trekker name cannot be empty.");
     data.trekkerName = n;
   }
-  if (body.trekkerEmail !== undefined) data.trekkerEmail = body.trekkerEmail?.trim() || null;
-  if (body.packageName !== undefined) data.packageName = body.packageName?.trim() || null;
-  if (body.currencyCode !== undefined) data.currencyCode = body.currencyCode?.trim() || "NPR";
-  if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
+  if (body.trekkerEmail !== undefined) data.trekkerEmail = email(body.trekkerEmail);
+  if (body.packageName !== undefined) data.packageName = text(body.packageName, "packageName", 150);
+  if (body.currencyCode !== undefined) data.currencyCode = currency(body.currencyCode);
+  if (body.notes !== undefined) data.notes = text(body.notes, "notes", 1000);
   const issue = toDate(body.issueDate);
   if (issue !== undefined) data.issueDate = issue;
   const due = toDate(body.dueDate);
@@ -256,7 +301,7 @@ export async function updateInvoice(agencyId: string, id: string, body: UpdateIn
         ? normalizeLineItems(body.lineItems)
         : (existing.lineItems as unknown as LineItem[]);
     if (items.length === 0) throw new TrekkerInvoiceError(400, "At least one line item is required.");
-    const discount = body.discount !== undefined ? body.discount : Number(existing.discount);
+    const discount: unknown = body.discount !== undefined ? body.discount : Number(existing.discount);
     const totals = computeTotals(items, discount);
     data.lineItems = items as unknown as Prisma.InputJsonValue;
     data.subtotal = totals.subtotal;
