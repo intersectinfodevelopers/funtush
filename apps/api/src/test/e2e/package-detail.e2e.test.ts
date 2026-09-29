@@ -94,10 +94,8 @@ d("GET /agencies/packages/:id (e2e)", () => {
   });
 });
 
-describe("Destination media URLs (e2e)", () => {
+d("Destination media URLs (e2e)", () => {
   it("accepts http(s) media URLs and rejects javascript:/data:/junk", async () => {
-    const RUN2 = await dbAvailable();
-    if (!RUN2) return;
     const c = await createAgencyContext();
     try {
       const post = (b: object) => request(app).post("/agencies/me/destinations").set("x-refresh-token", c.refreshToken).send(b);
