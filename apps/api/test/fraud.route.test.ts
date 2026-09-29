@@ -20,6 +20,12 @@ const { mockPrisma, queueEmailMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/packages/database/prisma", () => ({ prisma: mockPrisma }));
+vi.mock("@funtush/auth", () => ({
+  requireAuth: (_req: any, _res: any, next: any) => next(),
+}));
+vi.mock("../src/middleware/requirePlatformPermission.middleware", () => ({
+  requirePlatformPermission: () => (_req: any, _res: any, next: any) => next(),
+}));
 vi.mock("../src/lib/emailQueue", () => ({
   queueEmail: (...args: unknown[]) => queueEmailMock(...args),
 }));

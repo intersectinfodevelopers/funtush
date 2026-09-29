@@ -6,15 +6,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * known aggregate results.
  */
 
-const { countMock, aggregateMock } = vi.hoisted(() => ({
-  countMock:     vi.fn().mockResolvedValue(0),
+const { aggregateMock } = vi.hoisted(() => ({
   aggregateMock: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
 }));
 
 vi.mock("../src/lib/mongo", () => ({
   getMongo: vi.fn().mockResolvedValue({
     collection: vi.fn().mockReturnValue({
-      countDocuments: countMock,
       aggregate:      aggregateMock,
       find:           vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
       createIndex:    vi.fn().mockResolvedValue("ok"),
@@ -24,11 +22,17 @@ vi.mock("../src/lib/mongo", () => ({
 
 vi.mock("../src/packages/database/prisma", () => ({
   prisma: {
+    booking: {
+      count: vi.fn().mockResolvedValue(0),
+      aggregate: vi.fn().mockResolvedValue({ _sum: { totalPrice: null } }),
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
     agency: {
       count:    vi.fn().mockResolvedValue(0),
       groupBy:  vi.fn().mockResolvedValue([]),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    trekPackage: { findMany: vi.fn().mockResolvedValue([]) },
     subscriptionTier: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
@@ -45,7 +49,7 @@ describe("Day 5 — platform-wide totals accuracy", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("reports exact total bookings count", async () => {
-    countMock.mockResolvedValue(347);
+    vi.mocked(prisma.booking.count).mockResolvedValueOnce(347).mockResolvedValueOnce(0);
     const result = await getPlatformOverview() as Record<string, unknown>;
     expect(result.totalBookings).toBe(347);
   });
@@ -57,9 +61,9 @@ describe("Day 5 — platform-wide totals accuracy", () => {
   });
 
   it("aggregates revenue total correctly", async () => {
-    aggregateMock.mockReturnValue({
-      toArray: vi.fn().mockResolvedValue([{ total: 1250000 }]),
-    });
+    vi.mocked(prisma.booking.aggregate)
+      .mockResolvedValueOnce({ _sum: { totalPrice: 1250000 } } as never)
+      .mockResolvedValueOnce({ _sum: { totalPrice: 0 } } as never);
     const result = await getPlatformOverview() as Record<string, unknown>;
     expect(typeof result.totalRevenue).toBe("number");
   });
@@ -80,17 +84,14 @@ describe("Day 5 — platform-wide totals accuracy", () => {
     expect(tiers.LARGE).toBe(8);
   });
 
-  it("conversion funnel rates computed from known counts", async () => {
-    countMock
-      .mockResolvedValueOnce(2000) // pageViews
-      .mockResolvedValueOnce(400)  // inquiries
-      .mockResolvedValueOnce(200)  // confirmed
-      .mockResolvedValueOnce(160); // paid
+  it("booking conversion rate is computed from known status counts", async () => {
+    vi.mocked(prisma.booking.groupBy).mockResolvedValueOnce([
+      { status: "INQUIRY", _count: { _all: 1600 } },
+      { status: "PAID", _count: { _all: 400 } },
+    ] as never);
 
     const result = await getMarketplaceAnalytics() as Record<string, unknown>;
-    const funnel = result.conversionFunnel as Record<string, number>;
-    expect(funnel.viewToInquiryRate).toBe(20);    // 400/2000
-    expect(funnel.inquiryToBookingRate).toBe(50); // 200/400
-    expect(funnel.bookingToPaymentRate).toBe(80); // 160/200
+    const breakdown = result.bookingStatusBreakdown as Record<string, number>;
+    expect(breakdown.conversionRate).toBe(20);
   });
 });

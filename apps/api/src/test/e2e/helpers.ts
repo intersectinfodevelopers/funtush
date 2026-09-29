@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
-import { db, connectMongo } from "@funtush/database";
+import { db, redis, connectMongo } from "@funtush/database";
 import { generateAccessToken } from "@funtush/auth";
 import { normalizeEmail } from "@funtush/shared";
 
@@ -31,6 +31,7 @@ export async function dbAvailable(): Promise<boolean> {
   try {
     await db.$queryRaw`SELECT 1`;
     await connectMongo();
+    if ((await redis.ping()) !== "PONG") return false;
     return true;
   } catch {
     return false;

@@ -6,6 +6,10 @@ vi.mock('@funtush/auth', () => ({
   requireAuth: (_req: any, _res: any, next: any) => next(),
 }));
 
+vi.mock("../src/middleware/requirePlatformPermission.middleware", () => ({
+  requirePlatformPermission: () => (_req: any, _res: any, next: any) => next(),
+}));
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import express, { type Express } from "express";

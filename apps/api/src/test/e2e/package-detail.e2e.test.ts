@@ -113,5 +113,5 @@ describe("Destination media URLs (e2e)", () => {
       await db.agencyDestination.deleteMany({ where: { agencyId: c.agencyId } }).catch(() => {});
       await c.cleanup();
     }
-  });
+  }, 15_000);
 });

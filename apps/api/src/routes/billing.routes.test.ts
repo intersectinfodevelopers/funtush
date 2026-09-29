@@ -187,14 +187,14 @@ describe("payment initiation routes", () => {
     initiateKhaltiPayment.mockResolvedValue({ paymentUrl: "https://khalti.example" });
     const res = await post("/subscribe/khalti/initiate", { subscriptionTierId: "tier-1" });
     expect(res.status).toBe(200);
-    expect(initiateKhaltiPayment).toHaveBeenCalledWith("agency-1", "tier-1");
+    expect(initiateKhaltiPayment).toHaveBeenCalledWith("agency-1", "tier-1", undefined);
   });
 
   it("POST /subscribe/esewa/initiate", async () => {
     initiateEsewaPayment.mockResolvedValue({ paymentUrl: "https://esewa.example" });
     const res = await post("/subscribe/esewa/initiate", { subscriptionTierId: "tier-1" });
     expect(res.status).toBe(200);
-    expect(initiateEsewaPayment).toHaveBeenCalledWith("agency-1", "tier-1");
+    expect(initiateEsewaPayment).toHaveBeenCalledWith("agency-1", "tier-1", undefined);
   });
 
   it("POST /subscribe/connectips/initiate requires bankCode/accountNumber", async () => {
