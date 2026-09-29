@@ -37,7 +37,7 @@ export function sanitizeRichText(html: unknown): string {
   // word instead of real spaces. A run of NBSP-joined text has no spot to line-break at, so it
   // overflows its container on the page instead of wrapping. Safe to do on the sanitized string:
   // U+00A0 never appears inside tag syntax, only in text content.
-  return clean.replace(/ /g, " ");
+  return clean.replace(/\u00A0/g, " ");
 }
 
 /** For fields that must be plain text (titles, tags): strip every tag, keep the text. */
