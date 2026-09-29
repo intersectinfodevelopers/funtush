@@ -1,0 +1,15 @@
+ALTER TABLE "trek_packages"
+  ADD COLUMN "destination" TEXT,
+  ADD COLUMN "category" TEXT,
+  ADD COLUMN "min_duration_days" INTEGER,
+  ADD COLUMN "max_duration_days" INTEGER,
+  ADD COLUMN "altitude_min_m" INTEGER,
+  ADD COLUMN "altitude_max_m" INTEGER,
+  ADD COLUMN "region" TEXT,
+  ADD COLUMN "best_time_to_visit" TEXT,
+  ADD COLUMN "activities" TEXT[] DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN "routes" TEXT[] DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN "short_summary" TEXT,
+  ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'NPR',
+  ADD COLUMN "is_featured" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN "volume_discounts" JSONB NOT NULL DEFAULT '[]';

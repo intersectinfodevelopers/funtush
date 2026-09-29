@@ -69,3 +69,22 @@ describe("validateItineraryUpdateInput", () => {
     expect(() => validateItineraryUpdateInput({ location: 5 })).toThrow("location");
   });
 });
+
+describe("validateRegistrationInput — client errors are 400s, never TypeErrors", () => {
+  const status = (fn: () => void) => {
+    try { fn(); } catch (e) { return (e as { status?: number }).status; }
+    return undefined;
+  };
+
+  it("tags every rule violation with 400", () => {
+    expect(status(() => validateRegistrationInput({ email: "nope", password: "longenough", phone: "9800000000" }))).toBe(400);
+    expect(status(() => validateRegistrationInput({ email: "a@b.c", password: "short", phone: "9800000000" }))).toBe(400);
+    expect(status(() => validateRegistrationInput({ email: "a@b.c", password: "longenough", phone: "123" }))).toBe(400);
+  });
+
+  it("treats missing / non-string fields as a 400 instead of crashing", () => {
+    expect(status(() => validateRegistrationInput({}))).toBe(400);
+    expect(status(() => validateRegistrationInput({ email: 5 as never, password: "longenough", phone: "9800000000" }))).toBe(400);
+    expect(status(() => validateRegistrationInput({ email: "a@b.c", password: undefined, phone: "9800000000" }))).toBe(400);
+  });
+});

@@ -1,21 +1,20 @@
 import { db } from "@funtush/database";
 
-interface CreateBranchPayload {
-    name: string;
-    address: string;
-    phone: string;
-    whatsapp?: string;
-    managerStaffId?: string;
-    isHeadOffice?: boolean;
+export class BranchError extends Error {
+    status: number;
+    constructor(message: string, status = 400) {
+        super(message);
+        this.status = status;
+    }
 }
 
-interface UpdateBranchPayload {
-    name?: string;
-    address?: string;
-    phone?: string;
-    whatsapp?: string;
-    managerStaffId?: string;
-    isHeadOffice?: boolean;
+interface BranchPayload {
+    name?: unknown;
+    address?: unknown;
+    phone?: unknown;
+    whatsapp?: unknown;
+    managerStaffId?: unknown;
+    isHeadOffice?: unknown;
 }
 
 const BRANCH_LIMIT = {
@@ -25,198 +24,171 @@ const BRANCH_LIMIT = {
     LARGE: Infinity,
 };
 
+const PHONE_RE = /^[+()\d][\d\s()+.-]{5,24}$/;
+
+const text = (v: unknown, label: string, max: number): string => {
+    if (typeof v !== "string" || !v.trim()) throw new BranchError(`${label} is required.`);
+    if (v.trim().length > max) throw new BranchError(`${label} is too long (max ${max} characters).`);
+    return v.trim();
+};
+
+const phone = (v: unknown, label: string): string => {
+    const p = text(v, label, 25);
+    if (!PHONE_RE.test(p)) throw new BranchError(`${label} doesn't look like a phone number.`);
+    return p;
+};
+
+/**
+ * Validates and copies ONLY the editable fields. The request body is never
+ * spread into Prisma: `agencyId`, `id`, timestamps etc. must not be writable.
+ */
+function pickBranchFields(body: BranchPayload, partial: boolean) {
+    const out: {
+        name?: string;
+        address?: string;
+        phone?: string;
+        whatsapp?: string | null;
+        managerStaffId?: string | null;
+        isHeadOffice?: boolean;
+    } = {};
+    if (!partial || body.name !== undefined) out.name = text(body.name, "Branch name", 100);
+    if (!partial || body.address !== undefined) out.address = text(body.address, "Address", 300);
+    if (!partial || body.phone !== undefined) out.phone = phone(body.phone, "Phone");
+    if (body.whatsapp !== undefined) out.whatsapp = body.whatsapp === null || body.whatsapp === "" ? null : phone(body.whatsapp, "WhatsApp number");
+    if (body.managerStaffId !== undefined) {
+        if (body.managerStaffId !== null && body.managerStaffId !== "" && typeof body.managerStaffId !== "string") throw new BranchError("Invalid manager.");
+        out.managerStaffId = body.managerStaffId ? (body.managerStaffId as string) : null;
+    }
+    if (body.isHeadOffice !== undefined) {
+        if (typeof body.isHeadOffice !== "boolean") throw new BranchError("isHeadOffice must be true or false.");
+        out.isHeadOffice = body.isHeadOffice;
+    }
+    return out;
+}
+
+async function agencyIdOf(agencyUserId: string): Promise<string> {
+    const u = await db.agencyUser.findUnique({ where: { id: agencyUserId }, select: { agencyId: true } });
+    if (!u) throw new BranchError("Agency user not found", 404);
+    return u.agencyId;
+}
+
+async function assertNameFree(agencyId: string, name: string, exceptId?: string) {
+    const dup = await db.branch.findFirst({
+        where: { agencyId, name: { equals: name, mode: "insensitive" }, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+        select: { id: true },
+    });
+    if (dup) throw new BranchError("You already have a branch with that name.");
+}
+
+const BRANCH_SELECT = {
+    id: true,
+    name: true,
+    address: true,
+    phone: true,
+    whatsapp: true,
+    isHeadOffice: true,
+    managerStaffId: true,
+    managerStaff: { select: { id: true, name: true } },
+    createdAt: true,
+    _count: { select: { guides: true, bookings: true, packageBranches: true } },
+} as const;
+
 export const createBranchService = async (
     agencyUserId: string,
-    data: CreateBranchPayload
+    data: BranchPayload
 ) => {
-
-    const agencyUser = await db.agencyUser.findUnique({
-        where: {
-            id: agencyUserId
-        },
-        select: {
-            agencyId: true
-        }
-    });
-
-    if (!agencyUser)
-        throw new Error("Agency user not found");
+    const agencyId = await agencyIdOf(agencyUserId);
+    const fields = pickBranchFields(data ?? {}, false);
 
     const agency = await db.agency.findUnique({
-        where: {
-            id: agencyUser.agencyId
-        },
-        select: {
-            id: true,
-            tier: {
-                select: {
-                    name: true
-                }
-            }
-        }
+        where: { id: agencyId },
+        select: { id: true, tier: { select: { name: true } } },
     });
+    if (!agency) throw new BranchError("Agency not found", 404);
 
-    if (!agency)
-        throw new Error("Agency not found");
-
-    const totalBranches = await db.branch.count({
-        where: {
-            agencyId: agency.id
-        }
-    });
-
+    const totalBranches = await db.branch.count({ where: { agencyId } });
     const tier = agency.tier.name as keyof typeof BRANCH_LIMIT;
-
     const limit = BRANCH_LIMIT[tier];
-
     if (totalBranches >= limit) {
-        throw new Error(
-            `Your ${tier} plan allows only ${limit} branch(es).`
-        );
+        throw new BranchError(`Your ${tier} plan allows only ${limit} branch(es).`);
     }
 
-    if (data.managerStaffId) {
-        const manager = await db.agencyStaff.findFirst({
-            where: {
-                id: data.managerStaffId,
-                agencyId: agency.id,
-                isActive: true
-            }
-        });
+    await assertNameFree(agencyId, fields.name!);
 
-        if (!manager)
-            throw new Error("Manager does not belong to your agency.");
+    if (fields.managerStaffId) {
+        const manager = await db.agencyStaff.findFirst({ where: { id: fields.managerStaffId, agencyId, isActive: true } });
+        if (!manager) throw new BranchError("Manager does not belong to your agency.");
     }
 
-    if (data.isHeadOffice === true) {
-        const existing = await db.branch.findFirst({
-            where: {
-                agencyId: agency.id,
-                isHeadOffice: true
-            }
-        });
-
-        if (existing)
-            throw new Error("Head office already exists.");
+    if (fields.isHeadOffice === true) {
+        const existing = await db.branch.findFirst({ where: { agencyId, isHeadOffice: true } });
+        if (existing) throw new BranchError("Head office already exists.");
     }
 
-    return await db.branch.create({
+    return db.branch.create({
         data: {
-            agencyId: agency.id,
-            name: data.name,
-            address: data.address,
-            phone: data.phone,
-            whatsapp: data.whatsapp,
-            managerStaffId: data.managerStaffId,
-            isHeadOffice: data.isHeadOffice ?? false
-        }
+            agencyId,
+            name: fields.name!,
+            address: fields.address!,
+            phone: fields.phone!,
+            whatsapp: fields.whatsapp ?? null,
+            managerStaffId: fields.managerStaffId ?? null,
+            isHeadOffice: fields.isHeadOffice ?? false,
+        },
+        select: BRANCH_SELECT,
     });
-
-}
+};
 
 export const updateBranchService = async (
     agencyUserId: string,
     branchId: string,
-    data: UpdateBranchPayload
+    data: BranchPayload
 ) => {
-    const agencyUser = await db.agencyUser.findUnique({
-        where: {
-            id: agencyUserId
-        },
-        select: {
-            agencyId: true
-        }
-    });
+    const agencyId = await agencyIdOf(agencyUserId);
+    const branch = await db.branch.findFirst({ where: { id: branchId, agencyId } });
+    if (!branch) throw new BranchError("Branch not found", 404);
 
-    if (!agencyUser)
-        throw new Error("Agency user not found");
+    const fields = pickBranchFields(data ?? {}, true);
 
+    if (fields.name !== undefined) await assertNameFree(agencyId, fields.name, branch.id);
+
+    if (fields.managerStaffId) {
+        const manager = await db.agencyStaff.findFirst({ where: { id: fields.managerStaffId, agencyId, isActive: true } });
+        if (!manager) throw new BranchError("Invalid manager");
+    }
+
+    if (fields.isHeadOffice === true) {
+        const existing = await db.branch.findFirst({ where: { agencyId, isHeadOffice: true, NOT: { id: branch.id } } });
+        if (existing) throw new BranchError("Another head office already exists.");
+    }
+
+    return db.branch.update({ where: { id: branch.id }, data: fields, select: BRANCH_SELECT });
+};
+
+export const deleteBranchService = async (agencyUserId: string, branchId: string) => {
+    const agencyId = await agencyIdOf(agencyUserId);
     const branch = await db.branch.findFirst({
-        where: {
-            id: branchId,
-            agencyId: agencyUser.agencyId
-        }
+        where: { id: branchId, agencyId },
+        select: { id: true, _count: { select: { bookings: true } } },
     });
-
-    if (!branch)
-        throw new Error("Branch not found");
-
-    if (data.managerStaffId) {
-        const manager = await db.agencyStaff.findFirst({
-            where: {
-                id: data.managerStaffId,
-                agencyId: agencyUser.agencyId,
-                isActive: true
-            }
-        });
-
-        if (!manager)
-            throw new Error("Invalid manager");
+    if (!branch) throw new BranchError("Branch not found", 404);
+    // Deleting would silently detach these bookings from their branch's reports.
+    if (branch._count.bookings > 0) {
+        throw new BranchError(`This branch has ${branch._count.bookings} booking(s) and can't be deleted.`);
     }
-
-    if (data.isHeadOffice === true) {
-        const existing = await db.branch.findFirst({
-            where: {
-                agencyId: agencyUser.agencyId,
-                isHeadOffice: true,
-                NOT: {
-                    id: branch.id
-                }
-            }
-        });
-
-        if (existing)
-            throw new Error("Another head office already exists.");
-    }
-
-    return await db.branch.update({
-        where: {
-            id: branch.id
-        },
-        data: {
-            ...data
-        }
-    });
-}
+    await db.branch.delete({ where: { id: branch.id } });
+};
 
 export const getBranchesService = async (
     agencyUserId: string
 ) => {
-
-    const agencyUser = await db.agencyUser.findUnique({
-        where: {
-            id: agencyUserId
-        },
-        select: {
-            agencyId: true
-        }
+    const agencyId = await agencyIdOf(agencyUserId);
+    return db.branch.findMany({
+        where: { agencyId },
+        select: BRANCH_SELECT,
+        orderBy: { createdAt: "asc" },
     });
-
-    if (!agencyUser)
-        throw new Error("Agency user not found");
-
-    return await db.branch.findMany({
-        where: {
-            agencyId: agencyUser.agencyId
-        },
-        select: {
-            id: true,
-            name: true,
-            address: true,
-            phone: true,
-            whatsapp: true,
-            isHeadOffice: true,
-            managerStaff: {
-                select: {
-                    id: true
-                }
-            },
-        },
-        orderBy: {
-            createdAt: "asc"
-        }
-    });
-}
+};
 
 interface assignstaffpayload {
     branchId: string
@@ -256,6 +228,10 @@ export const assignStaffToBranchService = async (
 
     if (!staff) {
         throw new Error("Staff not found");
+    }
+
+    if (!data?.branchId || typeof data.branchId !== "string") {
+        throw new Error("Please select a branch.");
     }
 
     if (data.branchId) {
@@ -593,6 +569,10 @@ export const getBranchReportService = async (
         }
     });
 
+    const pkgTitles = new Map(
+        (await db.trekPackage.findMany({ where: { id: { in: topPackages.map((t) => t.packageId) } }, select: { id: true, title: true } })).map((p) => [p.id, p.title]),
+    );
+
     const customers = await db.booking.findMany({
         where: {
             branchId
@@ -625,7 +605,7 @@ export const getBranchReportService = async (
         totalRevenue: revenue._sum.totalPrice ?? 0,
         averageBookingValue: revenue._avg.totalPrice ?? 0,
         totalCustomers: customers.length,
-        topPackages
+        topPackages: topPackages.slice(0, 5).map((t) => ({ packageId: t.packageId, title: pkgTitles.get(t.packageId) ?? "Package", confirmedBookings: t._count.packageId }))
     };
 };
 

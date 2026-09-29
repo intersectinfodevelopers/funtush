@@ -52,6 +52,7 @@ d("Agency Destinations (real DB)", () => {
       bestSeason: "Autumn/Spring",
       activities: ["Trekking", "Photography"],
       shortDescription: "The classic.",
+      featuredImage: "https://cdn.example.com/ebc.jpg",
     });
     expect(created.slug).toBe("everest-base-camp");
     expect(created.published).toBe(false);

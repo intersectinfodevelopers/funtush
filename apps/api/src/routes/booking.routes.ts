@@ -1,4 +1,5 @@
 import express from "express";
+import { requireStaffPermission } from "../middleware/requireStaffPermission.middleware";
 import {
   submitInquiryController,
   verifyInquiryOtpController,
@@ -10,11 +11,13 @@ import {
   cancelBookingController,
   getBookingByIdController,
   assignGuideController,
+  setBookingStageController,
   checkInBookingController,
   checkOutBookingController,
   createBookingController,
 } from "../controllers/booking.controller";
 import { requireAuth, requireRole } from "@funtush/auth";
+import { checkImpersonationActive } from "../middleware/checkImpersonationActive.middleware";
 
 const router = express.Router();
 
@@ -81,8 +84,8 @@ router.post("/inquiry/verify-otp", verifyInquiryOtpController);
  */
 
 // /agencies/me/bookings
-router.post("/", requireAuth, requireRole(["AGENCY_ADMIN"]), createBookingController);
-router.get("/", requireAuth, requireRole(["AGENCY_ADMIN"]), getAgencyBookingsController);
+router.post("/", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, createBookingController);
+router.get("/", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, getAgencyBookingsController);
 /**
  * @openapi
  * /bookings/{id}:
@@ -103,22 +106,24 @@ router.get("/", requireAuth, requireRole(["AGENCY_ADMIN"]), getAgencyBookingsCon
  *   patch: { tags: [Bookings], summary: Check out a booking (trek complete), security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Checked out }, 400: { description: Not in a checkable-out state } } }
  */
 // /agencies/me/bookings/:id
-router.get("/:id", requireAuth, requireRole(["AGENCY_ADMIN"]), getBookingByIdController);
+router.get("/:id", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, getBookingByIdController);
 // /agencies/me/bookings/:id/accept
-router.patch("/:id/accept", requireAuth, requireRole(["AGENCY_ADMIN"]), acceptBookingController);
+router.patch("/:id/accept", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, acceptBookingController);
 // /agencies/me/bookings/:id/reject
-router.patch("/:id/reject", requireAuth, requireRole(["AGENCY_ADMIN"]), rejectBookingController);
+router.patch("/:id/reject", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, rejectBookingController);
 // /agencies/me/bookings/:id/propose-date
-router.patch("/:id/propose-date", requireAuth, requireRole(["AGENCY_ADMIN"]), proposeDateController);
+router.patch("/:id/propose-date", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, proposeDateController);
 // /agencies/me/bookings/:id/confirm
-router.patch("/:id/confirm", requireAuth, requireRole(["AGENCY_ADMIN"]), confirmBookingController);
+router.patch("/:id/confirm", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, confirmBookingController);
 // /agencies/me/bookings/:id/cancel
-router.patch("/:id/cancel", requireAuth, requireRole(["AGENCY_ADMIN"]), cancelBookingController);
+router.patch("/:id/cancel", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, cancelBookingController);
 // /agencies/me/bookings/:id/assign-guide
-router.patch("/:id/assign-guide", requireAuth, requireRole(["AGENCY_ADMIN"]), assignGuideController);
+router.patch("/:id/assign-guide", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, assignGuideController);
 // /agencies/me/bookings/:id/check-in
-router.patch("/:id/check-in", requireAuth, requireRole(["AGENCY_ADMIN"]), checkInBookingController);
+router.patch("/:id/check-in", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, checkInBookingController);
 // /agencies/me/bookings/:id/check-out
-router.patch("/:id/check-out", requireAuth, requireRole(["AGENCY_ADMIN"]), checkOutBookingController);
+router.patch("/:id/check-out", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, checkOutBookingController);
+// /bookings/:id/set-stage — move the booking to any step of its journey (body: { stage })
+router.patch("/:id/set-stage", requireAuth, requireRole(["AGENCY_ADMIN", "STAFF"]), requireStaffPermission("bookings"), checkImpersonationActive, setBookingStageController);
 
 export default router;

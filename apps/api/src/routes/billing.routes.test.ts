@@ -51,17 +51,15 @@ vi.mock("../services/stripeSubscriptionService", () => ({
 
 const initiateKhaltiPayment = vi.fn();
 const verifyAndCompleteKhaltiPayment = vi.fn();
-vi.mock("../services/khaltiSubscriptionService", () => ({
-  initiateKhaltiPayment: (...a: unknown[]) => initiateKhaltiPayment(...a),
-  verifyAndCompleteKhaltiPayment: (...a: unknown[]) => verifyAndCompleteKhaltiPayment(...a),
-}));
-
 const initiateEsewaPayment = vi.fn();
 const verifyAndCompleteEsewaPayment = vi.fn();
-vi.mock("../services/esewaSubscriptionService", () => ({
+vi.mock("../services/subscriptionPayments.service", () => ({
+  initiateKhaltiPayment: (...a: unknown[]) => initiateKhaltiPayment(...a),
+  verifyAndCompleteKhaltiPayment: (...a: unknown[]) => verifyAndCompleteKhaltiPayment(...a),
   initiateEsewaPayment: (...a: unknown[]) => initiateEsewaPayment(...a),
   verifyAndCompleteEsewaPayment: (...a: unknown[]) => verifyAndCompleteEsewaPayment(...a),
 }));
+
 
 const initiateConnectIPSPayment = vi.fn();
 const checkAndUpdateConnectIPSPayment = vi.fn();

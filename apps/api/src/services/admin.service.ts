@@ -5,17 +5,24 @@ import crypto from "crypto";
 const DASHBOARD_TTL = 60;
 
 
+const AGENCY_STATUSES = ["TRIAL", "ACTIVE", "LOCKED", "SUSPENDED", "BANNED"] as const;
+const KYC_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED"] as const;
+
+/**
+ * The platform-overview landing page's numbers — deliberately lifecycle/KYC
+ * counts, not revenue or bookings (those live on the dedicated Analytics
+ * page). "Paid" here means "on any tier other than FREE," independent of
+ * status — an agency can be SUSPENDED and still be on a paid tier.
+ */
 export async function getDashboardStats() {
   const cacheKey = "admin:dashboard";
   const cached = await cacheGet<object>(cacheKey);
   if (cached) return cached;
 
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [tiersWithAgencyCounts, activeSubscriptions, monthlyRevenue, activeTreks] =
+  const [tiersWithAgencyCounts, statusCounts, kycCounts, agenciesWithoutKyc, totalAgencies] =
     await Promise.all([
-
       // `Agency.tier` is a relation (`tierId` is the scalar FK), so the
       // breakdown is built from the tier side rather than a `groupBy` on a
       // non-scalar field.
@@ -23,33 +30,36 @@ export async function getDashboardStats() {
         select: { name: true, _count: { select: { agencies: true } } },
       }),
 
-      prisma.subscription.count({
-        where: { status: "ACTIVE" },
-      }),
+      prisma.agency.groupBy({ by: ["status"], _count: { _all: true } }),
 
+      prisma.kycSubmission.groupBy({ by: ["status"], _count: { _all: true } }),
 
-      prisma.trekkerInvoice.aggregate({
-        _sum: { total: true },
-        where: {
-          status: "PAID",
-          paidAt: { gte: startOfMonth },
-        },
-      }),
+      // No KycSubmission row at all is the implicit "hasn't started KYC"
+      // state — never assumed to be REJECTED or any other real status.
+      prisma.agency.count({ where: { kyc: null } }),
 
-
-      prisma.trekPackage.count({
-        where: { status: "PUBLISHED" },
-      }),
+      prisma.agency.count(),
     ]);
 
+  const agenciesByTier = tiersWithAgencyCounts.reduce((acc: Record<string, number>, row) => {
+    acc[row.name] = row._count.agencies;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const agenciesByStatus = Object.fromEntries(AGENCY_STATUSES.map((s) => [s, 0])) as Record<(typeof AGENCY_STATUSES)[number], number>;
+  for (const row of statusCounts) agenciesByStatus[row.status] = row._count._all;
+
+  const kycByStatus = Object.fromEntries(KYC_STATUSES.map((s) => [s, 0])) as Record<(typeof KYC_STATUSES)[number], number>;
+  for (const row of kycCounts) kycByStatus[row.status] = row._count._all;
+
   const stats = {
-    agenciesByTier: tiersWithAgencyCounts.reduce((acc: Record<string, number>, row) => {
-      acc[row.name] = row._count.agencies;
-      return acc;
-    }, {} as Record<string, number>),
-    totalActiveSubscriptions: activeSubscriptions,
-    revenueThisMonth: monthlyRevenue._sum.total ?? 0,
-    activeTreksLive: activeTreks,
+    totalAgencies,
+    agenciesOnTrial: agenciesByStatus.TRIAL,
+    agenciesOnPaidPlan: totalAgencies - (agenciesByTier["FREE"] ?? 0),
+    kycVerified: kycByStatus.APPROVED,
+    agenciesByTier,
+    agenciesByStatus,
+    kycByStatus: { ...kycByStatus, NOT_SUBMITTED: agenciesWithoutKyc },
     generatedAt: now.toISOString(),
   };
 
@@ -58,123 +68,11 @@ export async function getDashboardStats() {
 }
 
 
-export interface AgencyListFilter {
-  tier?: string;
-  status?: string;
-  country?: string;
-  search?: string;
-  page?: number;
-  limit?: number;
-}
+// (agency list/profile/tier/status live in adminAgency.service.ts — the copies
+// that used to sit here were unused and referenced fields/models that don't exist.)
 
-export async function listAgencies(filters: AgencyListFilter) {
-  const page = Math.max(1, filters.page ?? 1);
-  const limit = Math.min(100, Math.max(1, filters.limit ?? 20));
-  const skip = (page - 1) * limit;
-
-  const where: Record<string, unknown> = {};
-  if (filters.tier) where.tier = filters.tier;
-  if (filters.status) where.status = filters.status;
-  if (filters.country) where.country = filters.country;
-  if (filters.search) {
-    where.OR = [
-      { name: { contains: filters.search, mode: "insensitive" } },
-      { email: { contains: filters.search, mode: "insensitive" } },
-    ];
-  }
-
-  const [total, agencies] = await Promise.all([
-    prisma.agency.count({ where }),
-    prisma.agency.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true, name: true, email: true, tier: true,
-        status: true, country: true, createdAt: true,
-        slug: true,
-      },
-    }),
-  ]);
-
-  return {
-    data: agencies,
-    meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-  };
-}
-
-
-
-export async function getAgencyProfile(id: string) {
-  const agency = await prisma.agency.findUnique({
-    where: { id },
-    include: {
-      subscription: true,
-      domainMappings: true,
-      settings: true,
-      _count: {
-        select: { bookings: true, treks: true },
-      },
-    },
-  });
-
-
-  if (!agency) return null;
-
-  const [bookingSummary, financialSummary] = await Promise.all([
-    prisma.booking.aggregate({
-      _count: { _all: true },
-      _sum: { totalAmount: true },
-      where: { agencyId: id },
-    }),
-    prisma.invoice.aggregate({
-      _sum: { amount: true },
-      _count: { _all: true },
-      where: { agencyId: id, status: "PAID" },
-    }),
-  ]);
-
-  return {
-    ...agency,
-    bookingSummary: {
-      totalBookings: bookingSummary._count._all,
-      totalRevenue: bookingSummary._sum.totalAmount ?? 0,
-    },
-    financialSummary: {
-      totalInvoicesPaid: financialSummary._count._all,
-      totalPaidAmount: financialSummary._sum.amount ?? 0,
-    },
-  };
-}
-
-
-
-export async function updateAgencyStatus(
-  id: string,
-  status: "ACTIVE" | "SUSPENDED" | "LOCKED",
-  reason: string
-) {
-  return prisma.agency.update({
-    where: { id },
-    data: {
-      status,
-      statusReason: reason,
-      statusUpdatedAt: new Date(),
-    },
-    select: { id: true, status: true, statusReason: true, statusUpdatedAt: true },
-  });
-}
-
-
-export async function updateAgencyTier(id: string, tier: string) {
-  return prisma.agency.update({
-    where: { id },
-    data: { tier },
-    select: { id: true, tier: true },
-  });
-}
-
+// SUPERSEDED — dead code (this file is not compiled; see tsconfig excludes). The real,
+// working break-glass flow is services/breakGlass.service.ts.
 const BREAK_GLASS_TTL_SECONDS = 30 * 60;
 
 export async function issueBreakGlassToken(agencyId: string, issuedByIp: string) {

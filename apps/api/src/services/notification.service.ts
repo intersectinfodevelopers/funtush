@@ -66,6 +66,15 @@ export async function notifyTrekker(
         return;
     }
 
+    // In-app inbox first: it must exist even when there's no push token or FCM is down. Never blocks the push.
+    try {
+        await prisma.trekkerNotification.create({
+            data: { trekkerId, title: payload.title.slice(0, 200), body: payload.body.slice(0, 1000), data: payload.data ?? undefined },
+        });
+    } catch (err) {
+        console.error("[notifications] could not store trekker notification:", (err as Error).message);
+    }
+
     const token = trekker.user.fcmToken;
 
     if (!token) {

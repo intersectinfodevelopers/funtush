@@ -1,8 +1,15 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
 import { listTiers, createTier, updateTier, TierConfigError } from "../../services/tierConfig.service.js";
 
 const router = Router();
+
+// Subscription-tier config (pricing, limits, and per-tier rights) is platform-wide and
+// sensitive — restrict to real platform staff (SUPER_ADMIN / PLATFORM_ADMIN), not just
+// the IP allow-list `requireAdmin` on the parent router.
+router.use(requireAuth, requirePlatformPermission("tiers"));
 
 function pid(req: Request): string {
   const v = req.params.id;

@@ -1,3 +1,4 @@
+import { assignableGuidesFor } from "../services/guideAvailability.service.js";
 import type { Request, Response } from "express";
 import {
   listGuides,
@@ -19,13 +20,27 @@ function paramId(req: Request): string {
 
 function handleError(res: Response, err: unknown) {
   if (err instanceof GuideServiceError) {
-    return res.status(err.status).json({ success: false, message: err.message });
+    return res.status(err.status).json({ success: false, message: err.message, ...(err.field ? { errors: { [err.field]: err.message } } : {}) });
   }
   const message = err instanceof Error ? err.message : "Something went wrong";
   return res.status(400).json({ success: false, message });
 }
 
 export const GuidesController = {
+  /** GET /agencies/me/guides/assignable?departureDateId=…&bookingId=… — every guide + whether that trek can use them. */
+  async assignable(req: Request, res: Response) {
+    try {
+      const agencyId = agencyIdOf(req);
+      if (!agencyId) return res.status(401).json({ success: false, message: "Unauthorized" });
+      const departureDateId = typeof req.query.departureDateId === "string" ? req.query.departureDateId : "";
+      if (!departureDateId) return res.status(400).json({ success: false, message: "departureDateId is required." });
+      const bookingId = typeof req.query.bookingId === "string" ? req.query.bookingId : undefined;
+      return res.status(200).json({ success: true, guides: await assignableGuidesFor(agencyId, departureDateId, bookingId) });
+    } catch (err) {
+      return handleError(res, err);
+    }
+  },
+
   async list(req: Request, res: Response) {
     try {
       const agencyId = agencyIdOf(req);

@@ -276,9 +276,49 @@ d("Bookings & staff (e2e)", () => {
       expect(res.body.staff.role.id).toBe(other.body.data.id);
     });
 
-    it("DELETE /:id deactivates (removed from the active list)", async () => {
+    it("POST /agencies/me/roles rejects a duplicate name, even with different case/whitespace", async () => {
+      const name = `Agency Admin ${Date.now()}`;
+      const first = await request(app).post("/agencies/me/roles").set(rt()).send({ name });
+      expect(first.status).toBe(201);
+
+      const exact = await request(app).post("/agencies/me/roles").set(rt()).send({ name });
+      expect(exact.status).toBe(409);
+
+      const differentCase = await request(app).post("/agencies/me/roles").set(rt()).send({ name: `  ${name.toUpperCase()}  ` });
+      expect(differentCase.status).toBe(409);
+    });
+
+    it("DELETE /:id deactivates (stays visible in the list as inactive, not removed)", async () => {
       const res = await request(app).delete(`/agencies/me/staff/${staffId}`).set(bearer());
       expect(res.status).toBe(200);
+      const list = await request(app).get("/agencies/me/staff").set(bearer());
+      const member = list.body.staff.find((s: { id: string }) => s.id === staffId);
+      expect(member).toBeDefined();
+      expect(member.isActive).toBe(false);
+    });
+
+    it("PATCH /:id/reactivate undoes a deactivation", async () => {
+      // staffId is already inactive from the previous test — these run in sequence
+      // and share one staff record. Reactivate it directly (no extra DELETE here:
+      // a second DELETE on an already-inactive member now purges it for real —
+      // see the next test — which would 404 this one).
+      const res = await request(app).patch(`/agencies/me/staff/${staffId}/reactivate`).set(bearer());
+      expect(res.status).toBe(200);
+      expect(res.body.staff.isActive).toBe(true);
+      const list = await request(app).get("/agencies/me/staff").set(bearer());
+      const member = list.body.staff.find((s: { id: string }) => s.id === staffId);
+      expect(member.isActive).toBe(true);
+    });
+
+    it("DELETE /:id a second time (already inactive) purges the record for real", async () => {
+      const first = await request(app).delete(`/agencies/me/staff/${staffId}`).set(bearer());
+      expect(first.status).toBe(200);
+      expect(first.body.deleted).toBe(false);
+
+      const second = await request(app).delete(`/agencies/me/staff/${staffId}`).set(bearer());
+      expect(second.status).toBe(200);
+      expect(second.body.deleted).toBe(true);
+
       const list = await request(app).get("/agencies/me/staff").set(bearer());
       expect(list.body.staff.some((s: { id: string }) => s.id === staffId)).toBe(false);
     });

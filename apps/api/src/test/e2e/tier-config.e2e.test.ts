@@ -12,13 +12,29 @@
 import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { db } from "@funtush/database";
+import { generateAccessToken } from "@funtush/auth";
 import { app } from "../../app";
 import { dbAvailable } from "./helpers";
 
 const RUN = await dbAvailable();
 const d = RUN ? describe : describe.skip;
 
-const adminHeaders = { Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" };
+// Tier config is platform-wide and sensitive — the route itself now requires a real
+// SUPER_ADMIN/PLATFORM_ADMIN bearer token (requireAuth + requireSuperAdminRole), not
+// just the IP allow-list context.
+function platformAdminToken(): string {
+  return generateAccessToken({
+    userId: "e2e-platform-admin",
+    roleType: "PLATFORM",
+    role: "SUPER_ADMIN",
+  } as Parameters<typeof generateAccessToken>[0]);
+}
+
+const adminHeaders = {
+  Host: "admin.funtush.com",
+  "X-Forwarded-For": "127.0.0.1",
+  Authorization: `Bearer ${platformAdminToken()}`,
+};
 
 d("Admin tier config (e2e)", () => {
   const createdTierIds: string[] = [];
@@ -32,6 +48,26 @@ d("Admin tier config (e2e)", () => {
   it("is not reachable without the admin context", async () => {
     const res = await request(app).get("/admin/tiers");
     expect([401, 403, 404]).toContain(res.status);
+  });
+
+  it("rejects the admin IP context alone, without a real platform-admin token", async () => {
+    const res = await request(app)
+      .get("/admin/tiers")
+      .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a non-platform (agency) token with 403", async () => {
+    const agencyToken = generateAccessToken({
+      userId: "e2e-agency-user",
+      roleType: "TENANT",
+      role: "AGENCY_ADMIN",
+      agencyId: "e2e-agency-id",
+    } as Parameters<typeof generateAccessToken>[0]);
+    const res = await request(app)
+      .get("/admin/tiers")
+      .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1", Authorization: `Bearer ${agencyToken}` });
+    expect(res.status).toBe(403);
   });
 
   it("GET /admin/tiers lists tiers with the full Concept §6 config", async () => {

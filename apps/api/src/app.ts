@@ -5,6 +5,7 @@
  * or start background jobs — `index.ts` does that. Tests import `{ app }` (or
  * call `createApp()`) directly.
  */
+import "./lib/asyncErrors";
 import express, {
   type Express,
   type Request,
@@ -14,6 +15,7 @@ import express, {
 import { MulterError } from "multer";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
+import { useLocalStorage, localUploadDir } from "@funtush/storage";
 
 import { db, redis } from "@funtush/database";
 
@@ -21,7 +23,12 @@ import { db, redis } from "@funtush/database";
 import { requestLogger } from "./middleware/requestLogger.middleware";
 import { resolveTenant } from "./middleware/resolveTenant.middleware";
 import { rateLimitMiddleware } from "./middleware/rateLimit.middleware";
+import { impersonationAuditMiddleware } from "./middleware/impersonationAudit.middleware";
 import { authenticateWithRefreshToken } from "./middleware/refreshTokenAuthentication";
+import { metricsMiddleware, metricsRouter } from "./services/prometheusMetrics";
+import { loadShedding } from "./middleware/loadShedding.middleware";
+import { securityHeaders } from "./middleware/securityHeaders.middleware";
+import { sanitizeServerErrors } from "./middleware/sanitizeServerErrors.middleware";
 
 // ── Routers ─────────────────────────────────────────────────────────────────
 import uploadRoutes from "./routes/upload.routes";
@@ -40,6 +47,7 @@ import notificationPreferencesRoutes from "./routes/notificationPreferences.rout
 import emailSettingsRoutes from "./routes/emailSettings.routes";
 import domainRoutes from "./routes/domain.routes";
 import sitePageRoutes from "./routes/sitePage.routes";
+import siteContentRoutes from "./routes/siteContent.routes";
 import regenerationRoutes from "./routes/regeneration.routes";
 import widgetsRoutes from "./routes/widgets/widgets.routes";
 import instagramRoutes from "./routes/widgets/instagram.routes";
@@ -84,7 +92,8 @@ const docsEnabled =
 // this. Origins are configurable via CORS_ALLOWED_ORIGINS (comma-separated)
 // for deployed environments; defaults cover the local frontend dev ports.
 const allowedOrigins = (
-  process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:3000,http://localhost:3001"
+  process.env.CORS_ALLOWED_ORIGINS ??
+  "http://localhost:3000,http://localhost:3001,http://localhost:3002"
 )
   .split(",")
   .map((o) => o.trim())
@@ -93,9 +102,42 @@ const allowedOrigins = (
 export function createApp(): Express {
   const app = express();
 
+  // Client IP comes from `req.ip`, which Express derives from X-Forwarded-For
+  // ONLY across this many trusted proxy hops, counting from the right (the
+  // address our own proxy actually saw). Reading the *first* header value —
+  // as this used to — lets any client pick its own IP by sending the header,
+  // which bypassed every rate limit (login, OTP) and the admin IP whitelist
+  // (`X-Forwarded-For: 127.0.0.1`). Set TRUSTED_PROXY_HOPS=0 if the API is
+  // exposed directly with no proxy in front.
+  app.set("trust proxy", Number(process.env.TRUSTED_PROXY_HOPS ?? 1));
+  // `simple` = Node querystring: `?status[not]=X` stays a flat key instead of becoming
+  // the object { status: { not: "X" } }. With qs's nested parsing, any handler that
+  // passes a query value into a Prisma `where` lets the caller inject operators
+  // (not/in/contains/…) instead of supplying a value.
+  app.set("query parser", "simple");
+  app.disable("x-powered-by"); // don't advertise the framework to scanners
+
   // 0. CORS, ahead of everything else so a preflight (OPTIONS) request never
   //    reaches route-matching at all.
+  // Public, cookie-less routes an agency's own website calls from ITS origin — `{slug}.funtush.io`, a custom
+  // domain, a preview URL — so no fixed allow-list can cover them. Safe to open to any origin: no
+  // credentials are ever accepted here (`Access-Control-Allow-Credentials` is not sent) and they expose
+  // only what the agency already publishes, or take a form that verifies by emailed code.
+  // Local dev without an object store: serve the files the uploader wrote to disk (see @funtush/storage).
+  if (useLocalStorage()) {
+    app.use("/cdn", (_req, res, next) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      next();
+    }, express.static(localUploadDir(), { index: false, dotfiles: "ignore" }));
+  }
+  app.use(["/site", "/bookings/inquiry"], cors({ origin: "*", methods: ["GET", "POST", "HEAD", "OPTIONS"], maxAge: 600 }));
   app.use(cors({ origin: allowedOrigins, credentials: true }));
+
+  app.use(securityHeaders);
+
+  // Refuse excess load early (before any parsing/DB work) — see the middleware.
+  app.use(loadShedding);
 
   // 1. Payment webhooks need the RAW request body for signature verification,
   //    so they must be mounted before express.json() consumes the stream.
@@ -106,10 +148,20 @@ export function createApp(): Express {
   // 2. Everything else is JSON.
   app.use(express.json());
 
-  // 3. Cross-cutting middleware.
+  // 3. Cross-cutting middleware. metricsMiddleware first, so its timing
+  // wraps the whole request (including requestLogger's own overhead), not
+  // just what runs after it.
+  app.use(metricsMiddleware);
+  app.use(sanitizeServerErrors);
   app.use(requestLogger);
   app.use(resolveTenant);
   app.use(rateLimitMiddleware);
+  // Registered before any route's own auth middleware runs, but it doesn't
+  // read req.user until res.on("finish") fires — by then, whichever auth
+  // middleware the matched route used has already run. See the file for why
+  // that ordering trick is what makes this work without touching every
+  // route file.
+  app.use(impersonationAuditMiddleware);
 
   // 4. Health + docs.
   app.get("/health", async (_req: Request, res: Response) => {
@@ -139,6 +191,12 @@ export function createApp(): Express {
     app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
   }
 
+  // Prometheus scrape target — request rate/latency/error-rate, labeled by
+  // method + route pattern (not raw URLs, so ids don't blow up cardinality).
+  // Not gated behind docsEnabled (a scraper needs it in production), but it
+  // authenticates itself: see the METRICS_TOKEN handling in prometheusMetrics.ts.
+  app.use(metricsRouter);
+
   // 5. Feature routers. Several declare fully-qualified paths and are mounted at
   //    "/" — order is not significant between them as long as concrete paths
   //    don't collide (asserted by app.smoke.test.ts).
@@ -160,6 +218,7 @@ export function createApp(): Express {
   app.use("/", emailSettingsRoutes);
   app.use("/", domainRoutes);
   app.use("/", sitePageRoutes);
+  app.use("/", siteContentRoutes);
   app.use("/", regenerationRoutes);
   app.use("/", instagramRoutes);
   app.use("/", trekkerRoutes);
@@ -202,11 +261,19 @@ export function createApp(): Express {
     if (err instanceof MulterError && err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({ error: "File too large. Max 10MB allowed." });
     }
+    // Too many files / unexpected field name are the caller's mistake, not a 500.
+    if (err instanceof MulterError) {
+      return res.status(400).json({ error: "Invalid upload request." });
+    }
     const message = err instanceof Error ? err.message : "Internal server error";
     if (message.includes("Invalid file type")) {
       return res.status(400).json({ error: message });
     }
-    return res.status(500).json({ error: message });
+    // Honor a status the error carries (404 "Staff not found", 409, …) instead of
+    // flattening everything to 500. Only 4xx/5xx values are trusted.
+    const carried = (err as { status?: unknown; statusCode?: unknown })?.status ?? (err as { statusCode?: unknown })?.statusCode;
+    const status = typeof carried === "number" && carried >= 400 && carried < 600 ? carried : 500;
+    return res.status(status).json({ error: message });
   });
 
   return app;

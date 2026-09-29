@@ -79,6 +79,7 @@ router
       const result = await svc.listSiteAds(a, {
         status: q.status,
         position: q.position,
+        search: q.search,
         page: q.page ? parseInt(q.page, 10) : undefined,
         limit: q.limit ? parseInt(q.limit, 10) : undefined,
       });

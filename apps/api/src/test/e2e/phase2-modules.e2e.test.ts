@@ -165,7 +165,7 @@ d("Phase 2 modules (e2e)", () => {
     });
 
     it("PATCH toggles published", async () => {
-      const res = await request(app).patch(`/agencies/me/destinations/${id}`).set(auth()).send({ published: true });
+      const res = await request(app).patch(`/agencies/me/destinations/${id}`).set(auth()).send({ published: true, featuredImage: "https://cdn.example.com/ebc.jpg" });
       expect(res.status).toBe(200);
       expect(res.body.data.published).toBe(true);
     });
@@ -201,7 +201,7 @@ d("Phase 2 modules (e2e)", () => {
       const create = await request(app)
         .post("/agencies/me/advertisements")
         .set(auth())
-        .send({ title: "Spring sale", image: "https://cdn/ad.jpg", position: "homepage-top", linkUrl: "https://x" });
+        .send({ title: "Spring sale", image: "https://cdn/ad.jpg", position: "top-ads", linkUrl: "https://x" });
       expect(create.status).toBe(201);
       id = create.body.data.id;
 

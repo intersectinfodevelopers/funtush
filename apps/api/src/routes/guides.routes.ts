@@ -66,6 +66,8 @@ router
  *       204: { description: Deactivated }
  *       404: { description: Not found }
  */
+router.get("/agencies/me/guides/assignable", GuidesController.assignable);
+
 router
   .route("/agencies/me/guides/:id")
   .get(GuidesController.getOne)

@@ -1,3 +1,4 @@
+import { usdToNpr } from "./subscriptionPayments.service";
 import { db, Prisma } from "@funtush/database";
 
 /**
@@ -45,7 +46,9 @@ function toApi(r: Row) {
     maxGuides: r.maxGuides,
     maxPackages: r.maxPackages,
     monthlyPrice: Number(r.monthlyPrice),
+    monthlyPriceNpr: usdToNpr(Number(r.monthlyPrice)),
     annualPrice: r.annualPrice === null ? null : Number(r.annualPrice),
+    annualPriceNpr: r.annualPrice === null ? null : usdToNpr(Number(r.annualPrice)),
     trialDays: r.trialDays,
     marketplaceWeight: r.marketplaceWeight,
     adsEnabled: r.adsEnabled,

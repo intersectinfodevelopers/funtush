@@ -50,6 +50,7 @@ export const getTransactions = async (req: Request, res: Response) => {
 
         const result = await getTransactionsService(agencyId, {
             accountCode: req.query.accountCode as string | undefined,
+            type: req.query.type as string | undefined,
             from: req.query.from as string | undefined,
             to: req.query.to as string | undefined,
             page: req.query.page ? Number(req.query.page) : undefined,

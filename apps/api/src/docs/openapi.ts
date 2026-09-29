@@ -128,6 +128,7 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     { name: "Reviews" },
     { name: "Marketplace" },
     { name: "Admin" },
+    { name: "Meta" },
   ],
   paths: {
     "/health": {
@@ -138,6 +139,23 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
           "200": { description: "All dependencies OK" },
           "503": { description: "A dependency (Postgres/Redis) is down" },
         },
+      },
+    },
+    "/docs.json": {
+      get: {
+        tags: ["Meta"],
+        summary: "This OpenAPI spec, as raw JSON",
+        description: "Same document /docs (Swagger UI) renders. Disabled in production unless ENABLE_DOCS=true.",
+        responses: { "200": { description: "The OpenAPI 3.0 document" } },
+      },
+    },
+    "/metrics": {
+      get: {
+        tags: ["Meta"],
+        summary: "Prometheus scrape target",
+        description: "Request rate, latency, and error-rate histograms labeled by method + route pattern, plus default Node.js process metrics. Not disabled in production (a scraper needs it there) — restrict access at the reverse-proxy/network layer instead.",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "text/plain; version=0.0.4 Prometheus exposition format" }, "401": { description: "METRICS_TOKEN is set and the bearer token is missing/wrong" }, "404": { description: "Production with no METRICS_TOKEN configured" } },
       },
     },
     "/auth/agency/login": {
@@ -403,9 +421,10 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     "/agencies/packages": {
       get: {
         tags: ["Packages"],
-        summary: "List the agency's trek packages",
+        summary: "List the agency's trek packages (paginated, newest first)",
         security: [{ refreshToken: [] }],
-        responses: { "200": { description: "Packages" } },
+        parameters: [{ name: "status", in: "query", schema: { type: "string" } }, { name: "destination", in: "query", schema: { type: "string" } }, { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } }, { name: "limit", in: "query", description: "Page size, clamped to 1-100. Non-numeric values fall back to the default (50).", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } }],
+        responses: { "200": { description: "{ success, data: Package[], meta: { total, page, limit, pages } }" } },
       },
       post: {
         tags: ["Packages"],
@@ -415,6 +434,13 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       },
     },
     "/agencies/packages/{id}": {
+      get: {
+        tags: ["Packages"],
+        summary: "Get one package with its itinerary, departure dates (with seat counts), add-ons and destinations",
+        security: [{ refreshToken: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "The package" }, "404": { description: "Not found (or another agency's)" } },
+      },
       patch: {
         tags: ["Packages"],
         summary: "Update a package",
@@ -444,8 +470,8 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
         tags: ["Bookings"],
         summary: "List the agency's bookings (filterable by status)",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "status", in: "query", schema: { type: "string" } }],
-        responses: { "200": { description: "Bookings" } },
+        parameters: [{ name: "status", in: "query", schema: { type: "string" } }, { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } }, { name: "limit", in: "query", description: "Page size, clamped to 1-100. Non-numeric values fall back to the default (20).", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } }],
+        responses: { "200": { description: "{ success, data: { bookings, total, page, limit } }" } },
       },
     },
     "/bookings/inquiry": {
@@ -469,7 +495,8 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
         tags: ["Customers"],
         summary: "List the agency's trekker customers",
         security: [{ refreshToken: [] }],
-        responses: { "200": { description: "Customers" } },
+        parameters: [{ name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } }, { name: "limit", in: "query", description: "Page size, clamped to 1-100. Non-numeric values fall back to the default (20).", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } }, { name: "search", in: "query", schema: { type: "string" } }, { name: "customerType", in: "query", schema: { type: "string", enum: ["repeat", "new"] } }, { name: "destination", in: "query", schema: { type: "string" } }, { name: "bookingStatus", in: "query", schema: { type: "string" } }, { name: "sortBy", in: "query", schema: { type: "string", enum: ["lastBookingDate", "totalBookings", "totalSpending"] } }, { name: "sortOrder", in: "query", schema: { type: "string", enum: ["asc", "desc"] } }],
+        responses: { "200": { description: "{ success, result: { data: Customer[], meta: { page, limit, total, totalPages } } }" } },
       },
     },
     "/agencies/me/staff": {
@@ -623,10 +650,42 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     "/admin/agencies/{id}/impersonate": {
       post: {
         tags: ["Admin"],
-        summary: "Issue a short-lived (15 min) impersonation token for support",
+        summary: "Start a real, working 1-hour agency session as the agency's primary AGENCY_ADMIN user, for support",
+        description:
+          "Returns a real accessToken/refreshToken pair (same shape as /auth/agency/login), signed for the agency's own primary AGENCY_ADMIN — not the calling admin. Send the returned refreshToken as x-refresh-token to any agency-dashboard route to use it. Deliberately not persisted server-side, so POST /auth/refresh cannot extend it past the 1-hour window. A reason is required — it's recorded on the AGENCY_IMPERSONATED audit entry and emailed to the agency as a support-access notification. Every mutating request made with the issued tokens is separately audit-logged (IMPERSONATION_ACTION). Requires a platform super-admin JWT (Authorization: Bearer) in addition to the IP-whitelisted admin context. Can be ended early with DELETE on this same path.",
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { "201": { description: "Token issued" }, "404": { description: "Agency not found" } },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["reason"],
+                properties: { reason: { type: "string", description: "Why this session is needed — required, audit-logged, and emailed to the agency" } },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Session started — { accessToken, refreshToken, expiresAt, ttlSeconds, agencyId, agencyName, impersonatedUserId, impersonatedEmail, sessionId }" },
+          "400": { description: "reason is required" },
+          "403": { description: "Agency is banned" },
+          "404": { description: "Agency not found, or has no AGENCY_ADMIN user" },
+        },
+      },
+      delete: {
+        tags: ["Admin"],
+        summary: "End the agency's active support session before its natural 1-hour expiry",
+        description:
+          "Impersonation tokens are stateless JWTs that can't be recalled once issued, so this deletes the Redis pointer authenticateWithRefreshToken / checkImpersonationActive check on every request one of those tokens makes — the tokens still decode fine afterward, but every request they make 401s with 'This support session has ended.' Works even from a session that didn't start the impersonation (e.g. to confirm nothing is left running). Audit-logged as AGENCY_IMPERSONATION_REVOKED.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "{ revoked: true } — a no-op if no session was active" },
+          "401": { description: "No platform-admin bearer token" },
+          "403": { description: "Not a super admin" },
+        },
       },
     },
     "/admin/ad-campaigns/pending": {

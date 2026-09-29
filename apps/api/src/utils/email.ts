@@ -67,9 +67,35 @@ Thank you!
   });
 };
 
+export const sendPlatformStaffInviteEmail = async (
+  email: string,
+  tempPassword: string,
+  role: string
+) => {
+  await send("platform staff invite", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "You've been added to the Funtush platform team",
+    text: `
+Hello,
+
+A platform staff account has been created for you on Funtush admin, with role ${role}.
+
+Login credentials:
+Email: ${email}
+Temporary password: ${tempPassword}
+
+Please sign in at the admin dashboard and change your password immediately.
+
+Thank you!
+      `,
+  });
+};
+
+// Deliberately does NOT include the password: email is not a safe place for a credential, and the
+// owner already chose it at sign-up. "Forgot password" covers a lost one.
 export const sendWelcomeEmail = async (
   email: string,
-  password: string,
   name: string
 ) => {
   await send("welcome", {
@@ -81,11 +107,8 @@ Hello ${name},
 
     Your Agency "${name}" has been successfully registered.
 
-Login credentials:
-Email: ${email}
-Password: ${password}
-
-Please change your password after first login.
+You can sign in with this email address (${email}) and the password you chose.
+If you ever forget it, use "Forgot password" on the login page.
 
 Thank you!
       `,
@@ -328,6 +351,31 @@ Funtush Team
   });
 };
 
+export const sendSupportAccessNotificationEmail = async (
+  email: string,
+  agencyName: string,
+  reason: string,
+  timestamp: Date,
+) => {
+  await send("support access notification", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "A Funtush admin accessed your account for support",
+    text: `
+Hello,
+
+A Funtush platform admin started a support session on "${agencyName}"'s account at ${timestamp.toISOString()}.
+
+Reason given: ${reason}
+
+This session is time-limited and every action taken during it is logged. If you did not expect this, please contact support immediately.
+
+Thank you,
+Funtush Team
+    `.trim(),
+  });
+};
+
 export const sendReviewInvitationEmail = async (
   email: string,
   name: string,
@@ -356,5 +404,59 @@ export const sendReviewInvitationEmail = async (
         Thank you for choosing Funtush.
       </p>
     `,
+  });
+};
+
+export const sendPasswordResetEmail = async (email: string, resetUrl: string) => {
+  await send("password reset", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Reset your Funtush password",
+    text: `
+Hello,
+
+We received a request to reset your Funtush password. Use the link below within 30 minutes:
+
+${resetUrl}
+
+The link works once. If you did not ask for this, ignore this email — your password has not changed.
+
+Funtush Team
+    `.trim(),
+  });
+};
+
+export const sendPasswordChangedEmail = async (email: string, how: string) => {
+  await send("password changed", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Your Funtush password was changed",
+    text: `
+Hello,
+
+Your Funtush account password was just changed (${how}). All existing sessions were signed out.
+
+If this was not you, contact Funtush support immediately.
+
+Funtush Team
+    `.trim(),
+  });
+};
+
+export const sendBreakGlassIssuedEmail = async (email: string, agencyName: string, reason: string, expiresAt: Date) => {
+  await send("break-glass issued", {
+    from: `"Funtush System" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "A Funtush admin started emergency account recovery",
+    text: `
+Hello,
+
+A Funtush platform admin issued an emergency account-recovery code for "${agencyName}" (reason: ${reason}).
+The code expires at ${expiresAt.toISOString()} and can be used once, to set a new password. The admin will give it to you directly.
+
+If you did not ask for account recovery, contact Funtush support immediately.
+
+Funtush Team
+    `.trim(),
   });
 };

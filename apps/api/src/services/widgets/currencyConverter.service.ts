@@ -72,8 +72,21 @@ export const convertCurrencyService = async (
         throw new Error("Currency API key is not configured.");
     }
 
+    // `from`/`to` come straight from the query string and are spliced into a URL
+    // *path* that also carries the server's API key. Unchecked, `from=../codes`
+    // (or `%2F`, `?`, `#`) lets a caller steer this request to other endpoints
+    // of the upstream API using our key. Only real ISO-4217-shaped codes pass.
+    const CURRENCY_CODE = /^[A-Za-z]{3}$/;
+    if (!CURRENCY_CODE.test(from) || !CURRENCY_CODE.test(to)) {
+        throw new Error("from and to must be 3-letter currency codes.");
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1e12) {
+        throw new Error("Amount must be a positive number.");
+    }
+
     const response = await axios.get(
-        `https://v6.exchangerate-api.com/v6/${api_key}/pair/${from.toUpperCase()}/${to.toUpperCase()}/${amount}`,
+        `https://v6.exchangerate-api.com/v6/${encodeURIComponent(api_key)}/pair/${from.toUpperCase()}/${to.toUpperCase()}/${amount}`,
+        { timeout: 8000, maxRedirects: 0 },
     );
 
     if (response.data.result !== "success") {

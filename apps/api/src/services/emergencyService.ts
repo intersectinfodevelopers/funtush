@@ -1,4 +1,5 @@
 import { smsService } from './smsService';
+import { recordSos } from './prometheusMetrics';
 
 interface SOSEvent {
   trekId: string;
@@ -35,6 +36,7 @@ class EmergencyService {
       }
     }
 
+    recordSos('triggered');
     console.log('[SOS] Notifications sent to all participants');
   }
 
@@ -49,6 +51,7 @@ class EmergencyService {
       );
     }
 
+    recordSos('cancelled');
     console.log(`[SOS CANCELLED] ${sosId}`);
   }
 }

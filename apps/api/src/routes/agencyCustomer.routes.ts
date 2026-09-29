@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { agencyGetCustomerProfile, createCustomerNote, getAgencyCustomers, getCustomerAnalytics, getCustomerNote } from "src/controllers/agencyCustomer.controller.js";
+import { agencyGetCustomerProfile, createCustomerNote, deleteCustomer, getAgencyCustomers, updateCustomer, getCustomerAnalytics, getCustomerNote } from "src/controllers/agencyCustomer.controller.js";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 
 const router = Router();
@@ -28,5 +28,9 @@ router.route('/customers/:id/profile')
 
 router.route('/agencies/me/customers/analytics')
     .get(authenticateWithRefreshToken, getCustomerAnalytics);
+
+router.route('/agencies/me/customers/:id')
+    .patch(authenticateWithRefreshToken, updateCustomer)
+    .delete(authenticateWithRefreshToken, deleteCustomer);
 
 export default router;

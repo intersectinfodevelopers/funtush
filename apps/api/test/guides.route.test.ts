@@ -16,11 +16,13 @@ vi.mock("@funtush/database", () => {
       createMany: vi.fn(),
     },
     agency: { findUnique: vi.fn() },
-    booking: { findMany: vi.fn(), count: vi.fn() },
+    booking: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(client)),
   };
   return { db: client, prisma: client, Prisma: {} };
 });
+
+vi.mock("../src/services/guideAvailability.service", () => ({ releaseIdleGuides: vi.fn(async () => 0), assignableGuidesFor: vi.fn(), checkGuideAssignable: vi.fn(), assertGuideAssignable: vi.fn(), markGuideBusy: vi.fn() }));
 
 import {
   listGuides,
@@ -69,11 +71,11 @@ describe("createGuide", () => {
     vi.mocked(db.agency.findUnique).mockResolvedValue({ tier: { maxGuides: 2 } } as never);
     vi.mocked(db.guideProfile.count).mockResolvedValue(2);
 
-    await expect(createGuide(AG, { name: "Ann", phone: "123" })).rejects.toBeInstanceOf(
+    await expect(createGuide(AG, { name: "Ann", phone: "+977 9801" })).rejects.toBeInstanceOf(
       GuideServiceError,
     );
     await expect(
-      createGuide(AG, { name: "Ann", phone: "123" }),
+      createGuide(AG, { name: "Ann", phone: "+977 9801" }),
     ).rejects.toMatchObject({ status: 403 });
     expect(db.guideProfile.create).not.toHaveBeenCalled();
   });
@@ -88,7 +90,7 @@ describe("createGuide", () => {
     const guide = await createGuide(AG, {
       name: "Karma",
       phone: "+977 555",
-      photo: "/x.jpg",
+      photo: "https://cdn.example.com/x.jpg",
       status: "on_trek",
       languages: ["Nepali"],
       certifications: [
@@ -101,7 +103,7 @@ describe("createGuide", () => {
       data: Record<string, unknown>;
     };
     expect(createArg.data.fullName).toBe("Karma");
-    expect(createArg.data.photoUrl).toBe("/x.jpg");
+    expect(createArg.data.photoUrl).toBe("https://cdn.example.com/x.jpg");
     expect(createArg.data.status).toBe("ON_TREK");
     expect(createArg.data.guideRef).toBe(createArg.data.id); // guideRef == id
     const certs = (createArg.data.certifications as { create: unknown[] }).create;
@@ -151,11 +153,22 @@ describe("updateGuide", () => {
 describe("deleteGuide", () => {
   it("soft-deletes (isActive:false), not a hard delete", async () => {
     vi.mocked(db.guideProfile.findFirst).mockResolvedValue({ id: "g1" } as never);
+    vi.mocked(db.guideProfile.findUnique).mockResolvedValue({ guideRef: "g1", fullName: "Suresh" } as never);
+    vi.mocked(db.booking.findFirst).mockResolvedValue(null as never);
     await deleteGuide(AG, "g1");
     expect(db.guideProfile.update).toHaveBeenCalledWith({
       where: { id: "g1" },
       data: { isActive: false },
     });
+  });
+
+  it("refuses (409) while the guide is on a trek that isn't completed", async () => {
+    vi.mocked(db.guideProfile.findFirst).mockResolvedValue({ id: "g1" } as never);
+    vi.mocked(db.guideProfile.findUnique).mockResolvedValue({ guideRef: "g1", fullName: "Suresh" } as never);
+    vi.mocked(db.booking.findFirst).mockResolvedValue({ package: { title: "EBC" }, departureDate: { startDate: new Date("2027-01-01") } } as never);
+    vi.mocked(db.guideProfile.update).mockClear();
+    await expect(deleteGuide(AG, "g1")).rejects.toMatchObject({ status: 409 });
+    expect(db.guideProfile.update).not.toHaveBeenCalled();
   });
 
   it("404s for an unknown guide", async () => {
@@ -175,7 +188,7 @@ describe("listGuides", () => {
 
     const whereArg = vi.mocked(db.guideProfile.findMany).mock.calls[0][0].where as Record<string, unknown>;
     expect(whereArg.status).toBe("AVAILABLE");
-    expect(whereArg.languages).toEqual({ has: "English" });
+    expect(whereArg.languages).toEqual({ has: "en" }); // names are matched by their stored code
     expect(whereArg.isActive).toBe(true);
 
     expect(out.total).toBe(1);

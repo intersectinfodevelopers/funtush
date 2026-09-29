@@ -1,7 +1,9 @@
+import { packageActivityLogger } from "../middleware/packageActivity.middleware.js";
 import express from "express";
+import { listPackageActivity } from "../services/packageActivity.service.js";
 import { authenticateWithRefreshToken } from "../middleware/refreshTokenAuthentication.js";
-import { createPackage, updatePackage, listPackages, publishPackage,
-         duplicatePackage, archivePackage } from "../controllers/package.controller.js";
+import { createPackage, updatePackage, listPackages, getPackage, publishPackage,
+         duplicatePackage, archivePackage, unpublishPackage, restorePackage } from "../controllers/package.controller.js";
 import { addItineraryDay, updateItineraryDay, deleteItineraryDay,
          reorderItinerary } from "../controllers/itinerary.controller.js";
 import { addDepartureDate, updateDepartureDate,
@@ -11,11 +13,15 @@ import { listPackageAddOns, createPackageAddOn, updatePackageAddOn,
 
 const router = express.Router();
 
+// Who did what: every mutating package call is written to the package history.
+router.use(packageActivityLogger);
+
 router.route("/agencies/packages")
   .post(authenticateWithRefreshToken, createPackage)
   .get(authenticateWithRefreshToken, listPackages);
 
 router.route("/agencies/packages/:id")
+  .get(authenticateWithRefreshToken, getPackage)
   .patch(authenticateWithRefreshToken, updatePackage)
   .delete(authenticateWithRefreshToken, archivePackage);
 
@@ -27,6 +33,12 @@ router.route("/agencies/packages/:id/publish")
  * /agencies/packages/{id}/duplicate:
  *   post: { tags: [Packages], summary: Duplicate a package (as a new DRAFT, no departure dates copied), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Duplicated }, 404: { description: Not found } } }
  */
+router.route("/agencies/packages/:id/restore")
+  .post(authenticateWithRefreshToken, restorePackage);
+
+router.route("/agencies/packages/:id/unpublish")
+  .post(authenticateWithRefreshToken, unpublishPackage);
+
 router.route("/agencies/packages/:id/duplicate")
   .post(authenticateWithRefreshToken, duplicatePackage);
 
@@ -97,4 +109,22 @@ router.route("/agencies/packages/:id/addons/:addOnId")
   .patch(authenticateWithRefreshToken, updatePackageAddOn)
   .delete(authenticateWithRefreshToken, deletePackageAddOn);
 
+/** Who did what to a package (newest first). */
+router.get("/agencies/packages/:id/activity", authenticateWithRefreshToken, async (req, res) => {
+  const agencyId = req.agencyId;
+  if (!agencyId) return res.status(401).json({ success: false, message: "Unauthorized" });
+  const limit = Number(req.query.limit);
+  return res.json({ success: true, data: await listPackageActivity(agencyId, { packageId: req.params.id as string, limit: Number.isFinite(limit) ? limit : 30 }) });
+});
+
+/** The agency-wide package feed (`?others=true` hides the caller's own actions — for notifications). */
+router.get("/agencies/me/package-activity", authenticateWithRefreshToken, async (req, res) => {
+  const agencyId = req.agencyId;
+  if (!agencyId) return res.status(401).json({ success: false, message: "Unauthorized" });
+  const limit = Number(req.query.limit);
+  const userId = (req.user as { userId?: string } | undefined)?.userId;
+  return res.json({ success: true, data: await listPackageActivity(agencyId, { limit: Number.isFinite(limit) ? limit : 20, excludeUserId: req.query.others === "true" ? userId : undefined }) });
+});
+
 export default router;
+

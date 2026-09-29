@@ -1,0 +1,2 @@
+ALTER TABLE "blogs" ADD COLUMN "author_name" TEXT;
+ALTER TABLE "blogs" ADD COLUMN "views" INTEGER NOT NULL DEFAULT 0;

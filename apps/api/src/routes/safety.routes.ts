@@ -64,7 +64,23 @@ function fail(res: Response, err: unknown) {
  *   post: { tags: [Safety], summary: Add a note to an incident, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Added } } }
  * /agencies/me/safety/incidents/{id}/export:
  *   get: { tags: [Safety], summary: Structured incident export (law-enforcement format), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Export document } } }
+ * /agencies/me/safety/active-treks:
+ *   get:
+ *     tags: [Safety]
+ *     summary: Bookings currently checked in (status ACTIVE) — guide, day-of-trip, and whether that guide has an open SOS
+ *     security: [{ refreshToken: [] }]
+ *     responses: { 200: { description: Active treks } }
  */
+
+router.get("/agencies/me/safety/active-treks", async (req, res) => {
+  const a = need(req, res);
+  if (!a) return;
+  try {
+    res.json({ success: true, data: await svc.getActiveTreks(a) });
+  } catch (e) {
+    fail(res, e);
+  }
+});
 
 router.get("/agencies/me/safety/incidents/active", async (req, res) => {
   const a = need(req, res);

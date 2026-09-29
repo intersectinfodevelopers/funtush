@@ -1,6 +1,7 @@
 import express from "express";
 import {
   searchMarketplace,
+  getPackage,
   recordMarketplaceClick,
   getAgencies,
   compareMarketplaceAgencies,
@@ -10,6 +11,8 @@ import {
   featured,
   trending,
   seasonal,
+  stats,
+  getRecommendations,
 } from "../controllers/marketplace.controller.js";
 
 const router = express.Router();
@@ -18,6 +21,12 @@ const router = express.Router();
 // GET /marketplace/packages?q=everest&difficulty=moderate&price_max=1500 → full-text + filters
 // NEW: impressions recorded on response
 router.get("/packages", searchMarketplace);
+// GET /marketplace/packages/:slug → one package's public detail page (fires a PAGE_VIEW)
+router.get("/packages/:slug", getPackage);
+
+// GET /marketplace/recommendations → personalised "recommended for you", falls back to
+// curated (featured-style) picks for a visitor with no browsing history yet.
+router.get("/recommendations", getRecommendations);
 
 /**
  * @openapi
@@ -81,5 +90,9 @@ router.get("/destinations/:slug", getDestination);
 router.get("/featured", featured);
 router.get("/trending", trending);
 router.get("/seasonal", seasonal);
+
+// GET /marketplace/stats → real platform-scale counts (agencies, packages, reviews)
+// for the homepage hero — never fixed marketing numbers.
+router.get("/stats", stats);
 
 export default router;

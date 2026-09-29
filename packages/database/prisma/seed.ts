@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env" });
 import bcrypt from "bcryptjs";
 import { prisma, UserRole, RoleType } from "@funtush/database";
+import { normalizeEmail } from "@funtush/shared";
 
 async function main() {
   const tiers = [
@@ -84,6 +85,7 @@ async function main() {
       },
       create: {
         email: user.email,
+        normalizedEmail: normalizeEmail(user.email),
         passwordHash,
         role: user.role,
         roleType: user.roleType
@@ -268,6 +270,7 @@ async function main() {
       user: {
         create: {
           email: "john@test.com",
+          normalizedEmail: normalizeEmail("john@test.com"),
           passwordHash,
           role: UserRole.STAFF,
           roleType: RoleType.TREKKER,

@@ -10,6 +10,7 @@
 // SAFE anywhere: skips if no DB. Throwaway fixtures per run.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect, afterAll } from "vitest";
+import { normalizeEmail } from "@funtush/shared";
 
 type Database = typeof import("@funtush/database");
 type Service = typeof import("../services/marketplaceRanking.service");
@@ -85,8 +86,9 @@ try {
   ids.agencyV = v.agencyId;
   ids.agencyU = u.agencyId;
 
+  const trekUserEmail = `rank-trek-${S}@example.com`;
   const trekUser = await db.user.create({
-    data: { email: `rank-trek-${S}@example.com`, passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
+    data: { email: trekUserEmail, normalizedEmail: normalizeEmail(trekUserEmail), passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
     select: { id: true },
   });
   ids.trekkerUserId = trekUser.id;

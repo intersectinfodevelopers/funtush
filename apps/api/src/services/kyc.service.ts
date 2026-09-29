@@ -4,10 +4,11 @@ import { queueEmail, getEmailQueue, EmailStatus } from "../lib/emailQueue.js";
 /**
  * Returns all pending KYC submissions in submission order.
  */
-export async function getKycQueue() {
+export async function getKycQueue(page?: { skip: number; take: number }) {
   return prisma.kycSubmission.findMany({
     where: { status: "SUBMITTED" },
-    orderBy: { submittedAt: "asc" },
+    orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
+    ...(page ?? {}),
     select: {
       id: true,
       agencyId: true,
@@ -19,6 +20,8 @@ export async function getKycQueue() {
     },
   });
 }
+
+export const countKycQueue = () => prisma.kycSubmission.count({ where: { status: "SUBMITTED" } });
 
 /**
  * Returns a KYC submission with agency and document details.
@@ -139,9 +142,10 @@ The Platform Team`
  * Returns emails from the queue.
  */
 export async function listEmailQueue(
-  statuses: EmailStatus[] = ["pending", "sent", "failed"]
+  statuses: EmailStatus[] = ["pending", "sent", "failed"],
+  page?: { skip: number; limit: number }
 ) {
-  return getEmailQueue({ status: statuses });
+  return getEmailQueue({ status: statuses }, page);
 }
 
 export { queueEmail };

@@ -14,6 +14,7 @@ import {
     getBalanceSheet,
     getCashFlow,
     getTaxSummary,
+    getPnlTrend,
 } from "src/controllers/financialStatements.controller";
 import {
     listInvoices,
@@ -141,9 +142,19 @@ router.route("/agencies/me/finance/payroll/:id/mark-paid")
  *       - { name: period, in: query, schema: { type: string } }
  *       - { name: vatRate, in: query, schema: { type: number } }
  *     responses: { 200: { description: Report }, 400: { description: Invalid period } }
+ * /agencies/me/finance/pnl-trend:
+ *   get:
+ *     tags: [Finance]
+ *     summary: Monthly revenue/expenses/net profit series (sparklines, P&L chart)
+ *     security: [{ refreshToken: [] }]
+ *     parameters: [{ name: months, in: query, schema: { type: integer, minimum: 1, maximum: 24 }, description: "Default 12" }]
+ *     responses: { 200: { description: Trend } }
  */
 router.route("/agencies/me/finance/pnl")
     .get(authenticateWithRefreshToken, getProfitAndLoss);
+
+router.route("/agencies/me/finance/pnl-trend")
+    .get(authenticateWithRefreshToken, getPnlTrend);
 
 router.route("/agencies/me/finance/balance-sheet")
     .get(authenticateWithRefreshToken, getBalanceSheet);

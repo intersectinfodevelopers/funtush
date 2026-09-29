@@ -38,6 +38,8 @@ export async function getAuditLogs(filter: {
   target_id?:   string;
   actor_id?:    string;
   action?:      AuditAction;
+  /** Cursor: only entries strictly older than this (pass the last row's timestamp). */
+  before?:      Date;
   limit?:       number;
 } = {}) {
   const col   = await getAuditCollection();
@@ -46,6 +48,7 @@ export async function getAuditLogs(filter: {
   if (filter.target_id)   query.target_id   = filter.target_id;
   if (filter.actor_id)    query.actor_id    = filter.actor_id;
   if (filter.action)      query.action      = filter.action;
+  if (filter.before)      query.timestamp   = { $lt: filter.before };
 
   return col.find(query).sort({ timestamp: -1 }).limit(filter.limit ?? 100).toArray();
 }

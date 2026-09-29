@@ -30,6 +30,7 @@ vi.mock("../src/packages/database/prisma", () => ({
       groupBy: vi.fn().mockResolvedValue([]),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    subscriptionTier: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -85,10 +86,14 @@ describe("getPlatformOverview()", () => {
     expect(result.activeAgencies).toBe(42);
   });
 
-  it("agenciesByTier is built from prisma.agency.findMany (tier name)", async () => {
-    vi.mocked(prisma.agency.findMany).mockResolvedValue([
-      ...Array(10).fill({ tier: { name: "FREE" } }),
-      ...Array(5).fill({ tier: { name: "PRO" } }),
+  it("agenciesByTier is a GROUP BY over tierId, named via the tier table (not a full-table load)", async () => {
+    vi.mocked(prisma.agency.groupBy).mockResolvedValue([
+      { tierId: "t-free", _count: { _all: 10 } },
+      { tierId: "t-pro", _count: { _all: 5 } },
+    ] as never);
+    vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([
+      { id: "t-free", name: "FREE" },
+      { id: "t-pro", name: "PRO" },
     ] as never);
     const result = await getPlatformOverview() as Record<string, unknown>;
     const tiers = result.agenciesByTier as Record<string, number>;

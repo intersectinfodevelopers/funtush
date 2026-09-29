@@ -7,10 +7,28 @@ import {
   getPackageAnalytics,
   getCustomerAnalytics,
   getGuideAnalytics,
+  getOriginPackagePerformance,
   type Period,
 } from "../../services/agencyAnalytics.service";
 
 const router = Router();
+
+/** The analytics events only carry ids; attach display names, scoped to this agency. */
+async function packageTitles(agencyId: string, ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  const rows = await db.trekPackage.findMany({ where: { agencyId, id: { in: ids } }, select: { id: true, title: true } });
+  return new Map(rows.map((r) => [r.id, r.title]));
+}
+async function guideNames(agencyId: string, refs: string[]) {
+  if (!refs.length) return new Map<string, string>();
+  const rows = await db.guideProfile.findMany({ where: { agencyId, guideRef: { in: refs } }, select: { guideRef: true, fullName: true } });
+  return new Map(rows.map((r) => [r.guideRef, r.fullName]));
+}
+async function trekkerNames(ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  const rows = await db.trekker.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true } });
+  return new Map(rows.filter((r) => r.fullName).map((r) => [r.id, r.fullName as string]));
+}
 
 const FREE_PERIODS: Period[] = ["last_7_days", "last_30_days"];
 const PAID_PERIODS: Period[] = ["last_7_days", "last_30_days", "last_12_months", "custom"];
@@ -105,7 +123,9 @@ router.get("/packages", async (req: Request, res: Response) => {
     if (error) { res.status(403).json({ error }); return; }
     const range = resolveDateRange(period, from, to);
     const data  = await getPackageAnalytics(agencyId, range);
-    res.json(data);
+    const titles = await packageTitles(agencyId, [...new Set([...data.topByBookings, ...data.topByRevenue].map((p) => p.package_id))]);
+    const named = <T extends { package_id: string }>(l: T[]) => l.map((p) => ({ ...p, title: titles.get(p.package_id) ?? null }));
+    res.json({ ...data, topByBookings: named(data.topByBookings), topByRevenue: named(data.topByRevenue) });
   } catch (err: unknown) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
@@ -131,7 +151,8 @@ router.get("/customers", async (req: Request, res: Response) => {
     if (error) { res.status(403).json({ error }); return; }
     const range = resolveDateRange(period, from, to);
     const data  = await getCustomerAnalytics(agencyId, range);
-    res.json(data);
+    const names = await trekkerNames(data.topCustomers.map((c: { trekker_id: string }) => c.trekker_id));
+    res.json({ ...data, topCustomers: data.topCustomers.map((c: { trekker_id: string }) => ({ ...c, name: names.get(c.trekker_id) ?? null })) });
   } catch (err: unknown) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
@@ -157,7 +178,34 @@ router.get("/guides", async (req: Request, res: Response) => {
     if (error) { res.status(403).json({ error }); return; }
     const range = resolveDateRange(period, from, to);
     const data  = await getGuideAnalytics(agencyId, range);
-    res.json(data);
+    const names = await guideNames(agencyId, data.guides.map((g) => g.guide_id));
+    res.json({ ...data, guides: data.guides.map((g) => ({ ...g, name: names.get(g.guide_id) ?? null })) });
+  } catch (err: unknown) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/**
+ * @openapi
+ * /agencies/me/analytics/origin-performance:
+ *   get:
+ *     tags: [Analytics]
+ *     summary: Bookings/revenue grouped by trekker origin country and package (from real bookings, not Mongo events)
+ *     security: [{ refreshToken: [] }]
+ *     responses: { 200: { description: Origin × package performance }, 403: { description: Period requires a paid tier } }
+ */
+router.get("/origin-performance", async (req: Request, res: Response) => {
+  try {
+    const agencyId = req.agencyId;
+    if (!agencyId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const tier = await resolveAgencyTier(agencyId);
+    const { period, from, to, error } = parsePeriodFromQuery(
+      req.query as Record<string, string | undefined>, tier
+    );
+    if (error) { res.status(403).json({ error }); return; }
+    const range = resolveDateRange(period, from, to);
+    const data = await getOriginPackagePerformance(agencyId, range);
+    res.json({ rows: data });
   } catch (err: unknown) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Unknown error" });
   }

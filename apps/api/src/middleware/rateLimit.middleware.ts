@@ -3,7 +3,7 @@ import { checkRateLimit, SOS_PATHS } from "../services/rateLimit.service";
 
 function getClientIp(req: Request): string {
   return (
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.ip ||
     req.socket.remoteAddress ||
     "unknown"
   );

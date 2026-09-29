@@ -7,6 +7,10 @@ import { notifyAgencyAdmins, notifyTrekker } from "./notification.service.js";
 import { confirmSlotsForBooking, releaseSlotsForBooking } from "./departureDate.service.js";
 import { recordConversion } from "./marketplaceAnalytics.service.js";
 import { validateAndApplyCoupon } from "./coupon.service";
+import { trackBooking } from "./prometheusMetrics";
+import { trackEvent } from "./analytics.service";
+import { discountedPricePerPerson } from "../utils/validator";
+import { assertGuideAssignable, markGuideBusy, releaseIdleGuides } from "./guideAvailability.service";
 
 //Types
 export interface InquiryInput {
@@ -28,9 +32,54 @@ const otpKey = (token: string) => `inquiry:otp:${token}`;
 const dataKey = (token: string) => `inquiry:data:${token}`;
 const TTL = 15 * 60;
 
+const INQUIRY_EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/;
+const inq = (m: string): never => {
+  throw Object.assign(new Error(m), { status: 400 });
+};
+
+/**
+ * A public, unauthenticated form: validate everything strictly before it reaches pricing, Redis or an
+ * email. (Negative/fractional group sizes, oversized text and junk add-on lists used to flow straight through.)
+ */
+function validateInquiryInput(input: InquiryInput) {
+  const str = (v: unknown, label: string, min: number, max: number) => {
+    if (typeof v !== "string" || v.trim().length < min || v.trim().length > max) return inq(`${label} must be ${min}-${max} characters.`);
+    if (/[<>]/.test(v)) return inq(`${label} must not contain < or >.`);
+    return v.trim();
+  };
+  if (typeof input?.packageId !== "string" || !input.packageId) inq("packageId is required.");
+  if (typeof input.departureDateId !== "string" || !input.departureDateId) inq("departureDateId is required.");
+  if (!Number.isInteger(input.groupSize) || input.groupSize < 1 || input.groupSize > 50) inq("Group size must be a whole number from 1 to 50.");
+  str(input.trekkerName, "Name", 2, 100);
+  if (typeof input.trekkerEmail !== "string" || input.trekkerEmail.length > 254 || !INQUIRY_EMAIL_RE.test(input.trekkerEmail.trim())) inq("Enter a valid email address.");
+  if (typeof input.trekkerPhone !== "string" || !/^[+()\d][\d\s()+.-]{6,24}$/.test(input.trekkerPhone.trim())) inq("Enter a valid phone number.");
+  if (input.trekkerCountry !== undefined && input.trekkerCountry !== null && input.trekkerCountry !== "") str(input.trekkerCountry, "Country", 2, 60);
+  if (input.specialRequests !== undefined && input.specialRequests !== null && input.specialRequests !== "") str(input.specialRequests, "Special requests", 1, 1000);
+  if (input.couponCode !== undefined && input.couponCode !== null && input.couponCode !== "") str(input.couponCode, "Coupon code", 1, 40);
+  if (input.addOns !== undefined) {
+    if (!Array.isArray(input.addOns) || input.addOns.length > 20) inq("Add-ons must be a list of at most 20.");
+    for (const a of input.addOns) {
+      if (!a || typeof a.addOnId !== "string" || !Number.isInteger(a.quantity) || a.quantity < 1 || a.quantity > 50) inq("Each add-on needs an id and a quantity from 1 to 50.");
+    }
+  }
+}
+
+/** At most `max` events per key per window; used so this public form can't be turned into an email cannon. */
+async function inquiryRateLimit(key: string, max: number, windowSeconds: number) {
+  const n = await redis.incr(key);
+  if (n === 1) await redis.expire(key, windowSeconds);
+  if (n > max) throw Object.assign(new Error("Too many requests. Please try again later."), { status: 429 });
+}
+
+const MAX_INQUIRY_OTP_ATTEMPTS = 5;
+
 //  validate, store temp, send OTP 
 export async function submitInquiry(input: InquiryInput) {
+  validateInquiryInput(input);
   const { packageId, departureDateId, groupSize, trekkerEmail } = input;
+  // One address can be sent a code 5 times an hour, and one package's form 200 times an hour.
+  await inquiryRateLimit(`inquiry:rl:email:${trekkerEmail.trim().toLowerCase()}`, 5, 3600);
+  await inquiryRateLimit(`inquiry:rl:pkg:${packageId}`, 200, 3600);
 
   // Validate package exists and belongs to an active agency
   const pkg = await prisma.trekPackage.findUnique({
@@ -53,6 +102,11 @@ export async function submitInquiry(input: InquiryInput) {
 
   if (!departure || departure.packageId !== packageId) {
     throw new Error("Invalid departure date");
+  }
+
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  if (departure.startDate < todayStart) {
+    throw new Error("This departure date has already passed");
   }
 
   if (departure.status === "FULL") {
@@ -82,7 +136,7 @@ export async function submitInquiry(input: InquiryInput) {
     })
     : [];
 
-  const basePrice = Number(pkg.pricePerPerson) * groupSize;
+  const basePrice = discountedPricePerPerson(Number(pkg.pricePerPerson), pkg.volumeDiscounts, groupSize) * groupSize;
   const addOnTotal = addOnsWithPrice.reduce((sum: number, addOn: { id: string; price: unknown; perPerson: boolean }) => {
     const line = input.addOns!.find((a) => a.addOnId === addOn.id)!;
     const qty = line.quantity;
@@ -159,6 +213,15 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
     throw new Error("OTP expired or invalid session");
   }
 
+  // A 6-digit code must not be brute-forceable: after a few wrong tries the whole inquiry is discarded.
+  const attemptsKey = `inquiry:attempts:${sessionToken}`;
+  const attempts = await redis.incr(attemptsKey);
+  if (attempts === 1) await redis.expire(attemptsKey, TTL);
+  if (attempts > MAX_INQUIRY_OTP_ATTEMPTS) {
+    await redis.del(otpKey(sessionToken), dataKey(sessionToken), attemptsKey);
+    throw new Error("Too many incorrect attempts (expired) — please start your inquiry again.");
+  }
+
   if (storedOtp !== otp) {
     throw new Error("Incorrect OTP");
   }
@@ -214,7 +277,7 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
       departureDate: true,
     },
   });
-  // Record marketplace conversion 
+  // Record marketplace conversion
   try {
     await recordConversion(data.agencyId);
   } catch (err) {
@@ -223,6 +286,14 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
       err
     );
   }
+
+  void trackEvent({
+    agency_id: data.agencyId,
+    event_type: "INQUIRY_SUBMITTED",
+    trekker_id: null,
+    package_id: data.packageId,
+    metadata: { booking_id: booking.id },
+  });
 
   // Save add-ons snapshot
   if (data.addOns?.length) {
@@ -291,6 +362,7 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
     },
   });
 
+  trackBooking("INQUIRY");
   return {
     bookingId: booking.id,
     status: "INQUIRY",
@@ -299,40 +371,75 @@ export async function verifyInquiryOtp(sessionToken: string, otp: string) {
 }
 
 const BOOKING_STATUSES = [
-  "INQUIRY", "PENDING", "CONFIRMED", "PAYMENT_PENDING", "REJECTED",
+  "INQUIRY", "CONFIRMED", "PAYMENT_PENDING", "REJECTED",
   "ALTERNATIVE_PROPOSED", "PAID", "ACTIVE", "COMPLETED", "CANCELLED",
 ] as const;
 
 // GET /agencies/me/bookings
+export interface BookingFilters {
+  /** Case-insensitive match on the trekker's name or email. */
+  search?: string;
+  /** Departure date range (inclusive), YYYY-MM-DD. */
+  from?: string;
+  to?: string;
+}
+
 export async function getAgencyBookings(
   agencyId: string,
+  /** One status, or several comma-separated ("INQUIRY,ALTERNATIVE_PROPOSED"). */
   status?: string,
   page = 1,
   limit = 20,
+  filters: BookingFilters = {},
 ) {
   // An unrecognised ?status= would otherwise reach Prisma as an invalid enum and
   // surface as a 500. Reject it as a client error instead.
-  if (status && !BOOKING_STATUSES.includes(status.toUpperCase() as (typeof BOOKING_STATUSES)[number])) {
-    const e = new Error(
-      `Invalid status filter. Expected one of: ${BOOKING_STATUSES.join(", ")}`,
-    ) as Error & { status?: number };
-    e.status = 400;
-    throw e;
+  const statuses = status
+    ? status.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)
+    : [];
+  if (statuses.some((s) => !BOOKING_STATUSES.includes(s as (typeof BOOKING_STATUSES)[number]))) {
+    throw bookingErr(400, `Invalid status filter. Expected one of: ${BOOKING_STATUSES.join(", ")}`);
   }
+
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+  if ((filters.from && !dateOnly.test(filters.from)) || (filters.to && !dateOnly.test(filters.to))) {
+    throw bookingErr(400, "from/to must be YYYY-MM-DD");
+  }
+  const search = filters.search?.trim().slice(0, 100);
 
   const where: Prisma.BookingWhereInput = {
     agencyId,
-    ...(status ? { status: status.toUpperCase() as Prisma.EnumBookingStatusFilter["equals"] } : {}),
+    ...(statuses.length ? { status: { in: statuses as Prisma.EnumBookingStatusFilter["in"] } } : {}),
+    ...(search
+      ? {
+          OR: [
+            { trekkerName: { contains: search, mode: "insensitive" } },
+            { trekkerEmail: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    ...(filters.from || filters.to
+      ? {
+          departureDate: {
+            startDate: {
+              ...(filters.from ? { gte: new Date(`${filters.from}T00:00:00.000Z`) } : {}),
+              ...(filters.to ? { lte: new Date(`${filters.to}T23:59:59.999Z`) } : {}),
+            },
+          },
+        }
+      : {}),
   };
 
   const [bookings, total] = await Promise.all([
     prisma.booking.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      // id tie-breaker: bookings created in the same instant would otherwise
+      // sort arbitrarily and could repeat/vanish across pages.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        package: { select: { title: true, slug: true } },
+        package: { select: { title: true, slug: true, currency: true } },
         departureDate: { select: { startDate: true } },
         addOns: { include: { addOn: true } },
       },
@@ -395,6 +502,7 @@ export async function acceptBooking(bookingId: string, agencyId: string) {
     });
   }
 
+  trackBooking("PAYMENT_PENDING");
   return { bookingId, status: "PAYMENT_PENDING", paymentUrl, expiresAt };
 }
 
@@ -439,6 +547,7 @@ export async function rejectBooking(
     });
   }
 
+  trackBooking("REJECTED");
   return { bookingId, status: "REJECTED" };
 }
 
@@ -509,6 +618,14 @@ export async function confirmBooking(bookingId: string, agencyId: string) {
     });
   }
 
+  trackBooking("CONFIRMED");
+  void trackEvent({
+    agency_id: agencyId,
+    event_type: "BOOKING_CONFIRMED",
+    trekker_id: booking.trekkerId,
+    package_id: booking.packageId,
+    metadata: { booking_id: bookingId },
+  });
   return { bookingId, status: "CONFIRMED" };
 }
 
@@ -559,6 +676,14 @@ export async function cancelBooking(bookingId: string, agencyId: string, reason:
     });
   }
 
+  trackBooking("CANCELLED");
+  void trackEvent({
+    agency_id: agencyId,
+    event_type: "BOOKING_CANCELLED",
+    trekker_id: booking.trekkerId,
+    package_id: booking.packageId,
+    metadata: { booking_id: bookingId, reason },
+  });
   return { bookingId, status: "CANCELLED" };
 }
 
@@ -567,7 +692,7 @@ export async function getBookingById(bookingId: string, agencyId: string) {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     include: {
-      package: { select: { title: true, slug: true } },
+      package: { select: { title: true, slug: true, currency: true } },
       departureDate: { select: { startDate: true } },
       addOns: { include: { addOn: true } },
       paymentLink: true,
@@ -595,10 +720,15 @@ export async function assignGuide(bookingId: string, agencyId: string, guideRef:
   });
   if (!guide || !guide.isActive) throw new Error("Guide not found or inactive");
 
+  // One trek at a time: a guide who is on a different departure can't be taken until they're free.
+  await assertGuideAssignable(agencyId, guideRef, booking.departureDateId, bookingId);
+
   await prisma.booking.update({
     where: { id: bookingId },
     data: { assignedGuideId: guideRef },
   });
+  await markGuideBusy(agencyId, guideRef);
+  if (booking.assignedGuideId && booking.assignedGuideId !== guideRef) await releaseIdleGuides(agencyId); // the guide they replaced may now be free
 
   return { bookingId, assignedGuideId: guideRef };
 }
@@ -628,6 +758,7 @@ export async function checkInBooking(bookingId: string, agencyId: string) {
     });
   }
 
+  trackBooking("ACTIVE");
   return { bookingId, status: "ACTIVE" };
 }
 
@@ -655,6 +786,7 @@ export async function checkOutBooking(bookingId: string, agencyId: string) {
     });
   }
 
+  trackBooking("COMPLETED");
   return { bookingId, status: "COMPLETED" };
 }
 // ── Phase 2: agency-side manual booking creation ───────────────────────────────
@@ -716,9 +848,10 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
   // Package must belong to the calling agency.
   const pkg = await prisma.trekPackage.findFirst({
     where: { id: packageId, agencyId },
-    select: { id: true, title: true, slug: true, pricePerPerson: true },
+    select: { id: true, title: true, slug: true, pricePerPerson: true, volumeDiscounts: true, status: true },
   });
   if (!pkg) throw bookingErr(404, "Package not found");
+  if (pkg.status !== "PUBLISHED") throw bookingErr(400, "Bookings can only be taken for a published package. Publish (or restore) it first.");
 
   // Resolve the departure — by id, or by ISO date against this package.
   let departure: Awaited<ReturnType<typeof prisma.trekDepartureDate.findUnique>> = null;
@@ -738,6 +871,8 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
     throw bookingErr(400, "departureDateId or departureDate is required");
   }
 
+  if (departure.startDate < new Date(new Date().setHours(0, 0, 0, 0))) throw bookingErr(400, "That departure date has already passed.");
+
   // Validate + price the add-ons (must belong to this package).
   let addOnRows: { id: string; price: unknown; perPerson: boolean }[] = [];
   const cleanAddOns = (input.addOns ?? []).filter((a) => a?.addOnId && Number(a.quantity) > 0);
@@ -756,6 +891,7 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
     });
     if (!guide) throw bookingErr(400, "Guide not found for this agency");
   }
+  if (guideRef) await assertGuideAssignable(agencyId, guideRef, departure.id);
 
   // Price: explicit override wins, else base + add-ons.
   const addOnTotal = addOnRows.reduce((sum, row) => {
@@ -763,17 +899,34 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
     const qty = Number(line.quantity);
     return sum + Number(row.price) * (row.perPerson ? size * qty : qty);
   }, 0);
-  const computed = Number(pkg.pricePerPerson) * size + addOnTotal;
+  const computed = discountedPricePerPerson(Number(pkg.pricePerPerson), pkg.volumeDiscounts, size) * size + addOnTotal;
   const price =
     input.totalPrice !== undefined && input.totalPrice !== null && Number(input.totalPrice) >= 0
       ? Number(input.totalPrice)
       : computed;
 
+  // `trekkerId` links the booking to a platform user, which then surfaces that
+  // user's name/email/phone in this agency's customers list. It came straight
+  // from the request body, so an agency could attach ANY trekker id it had seen
+  // and read their contact details. Only accept it when it is the same person the
+  // agency is booking for: the trekker's account email must match trekkerEmail.
+  let linkedTrekkerId: string | null = null;
+  if (input.trekkerId) {
+    const linked = await prisma.trekker.findUnique({
+      where: { id: input.trekkerId },
+      select: { id: true, user: { select: { email: true } } },
+    });
+    if (!linked || linked.user.email.toLowerCase() !== trekkerEmail.trim().toLowerCase()) {
+      throw bookingErr(400, "trekkerId does not match trekkerEmail");
+    }
+    linkedTrekkerId = linked.id;
+  }
+
   const baseData = {
     agencyId,
     packageId,
     departureDateId: departure.id,
-    trekkerId: input.trekkerId ?? null,
+    trekkerId: linkedTrekkerId,
     groupSize: size,
     totalPrice: price,
     trekkerName: trekkerName.trim(),
@@ -785,7 +938,7 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
   };
 
   const bookingInclude = {
-    package: { select: { title: true, slug: true } },
+    package: { select: { title: true, slug: true, currency: true } },
     departureDate: { select: { startDate: true } },
     addOns: { include: { addOn: true } },
   } as const;
@@ -818,6 +971,15 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
     });
   }
 
+  trackBooking(wantStatus);
+  void trackEvent({
+    agency_id: agencyId,
+    event_type: wantStatus === "CONFIRMED" ? "BOOKING_CONFIRMED" : "INQUIRY_SUBMITTED",
+    trekker_id: linkedTrekkerId,
+    package_id: packageId,
+    metadata: { booking_id: bookingId },
+  });
+  if (guideRef) await markGuideBusy(agencyId, guideRef);
   const booking = (await prisma.booking.findUnique({
     where: { id: bookingId },
     include: bookingInclude,
@@ -849,4 +1011,65 @@ export async function createManualBooking(agencyId: string, input: ManualBooking
     })),
     createdAt: booking.createdAt,
   };
+}
+
+
+// ── manual stage change (the clickable steps on the booking page) ───────────
+
+const STAGES = ["INQUIRY", "PAYMENT_PENDING", "PAID", "CONFIRMED", "ACTIVE", "COMPLETED"] as const;
+export type BookingStage = (typeof STAGES)[number];
+const STAGE_LABEL: Record<BookingStage, string> = { INQUIRY: "Inquiry", PAYMENT_PENDING: "Payment", PAID: "Paid", CONFIRMED: "Confirmed", ACTIVE: "On trek", COMPLETED: "Completed" };
+
+/**
+ * Move a booking to any step of its journey (Inquiry → Payment → Paid → Confirmed → On trek → Completed), forwards or
+ * back — for offline payments, corrections, walk-ins. Seats and the payment link follow the step:
+ *  - every step after Inquiry holds the seats (checked against capacity when leaving Inquiry; released when going back to it);
+ *  - "Payment" has a live 48 h payment link (a fresh one when coming back to it); later steps mark the link as paid;
+ *  - "On trek" needs a guide.
+ * Cancelled / rejected / date-proposed bookings have their own flows and can't be moved this way.
+ */
+export async function setBookingStage(bookingId: string, agencyId: string, target: unknown) {
+  if (typeof target !== "string" || !(STAGES as readonly string[]).includes(target)) throw bookingErr(400, `stage must be one of: ${STAGES.join(", ")}`);
+  const to = target as BookingStage;
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { package: true, paymentLink: true } });
+  if (!booking) throw bookingErr(404, "Booking not found");
+  if (booking.agencyId !== agencyId) throw bookingErr(403, "Unauthorized");
+  const from = booking.status as string;
+  if (!(STAGES as readonly string[]).includes(from)) throw bookingErr(409, `This booking is ${from.toLowerCase().replace(/_/g, " ")}, so its step can't be changed here.`);
+  if (from === to) return { bookingId, status: to, changed: false };
+  if (to === "ACTIVE" && !booking.assignedGuideId) throw bookingErr(409, "Assign a guide before moving the booking to “On trek”.");
+
+  // From Inquiry to Payment is the normal "accept": seats + payment link + the traveller's email.
+  if (from === "INQUIRY" && to === "PAYMENT_PENDING") {
+    const r = await acceptBooking(bookingId, agencyId);
+    return { ...r, changed: true };
+  }
+
+  const holdsSeats = (st: string) => st !== "INQUIRY";
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    if (!holdsSeats(from) && holdsSeats(to)) await confirmSlotsForBooking(tx, booking.departureDateId, booking.groupSize);
+    if (holdsSeats(from) && !holdsSeats(to)) await releaseSlotsForBooking(tx, booking.departureDateId, booking.groupSize);
+
+    if (to === "INQUIRY") {
+      await tx.paymentLink.deleteMany({ where: { bookingId } }); // so it can be accepted again later
+    } else if (to === "PAYMENT_PENDING") {
+      const link = { urlToken: randomBytes(32).toString("hex"), amount: booking.totalPrice, expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), used: false };
+      await tx.paymentLink.upsert({ where: { bookingId }, create: { bookingId, ...link }, update: link });
+    } else if (booking.paymentLink && !booking.paymentLink.used) {
+      await tx.paymentLink.update({ where: { bookingId }, data: { used: true } }); // paid (offline or otherwise)
+    }
+    await tx.booking.update({ where: { id: bookingId }, data: { status: to } });
+  });
+
+  if (booking.trekkerId) {
+    await notifyTrekker(booking.trekkerId, {
+      title: "Booking updated",
+      body: `Your booking for ${booking.package.title} is now: ${STAGE_LABEL[to]}.`,
+      data: { bookingId, type: "BOOKING_STAGE", link: `/bookings/${bookingId}` },
+    }).catch(() => undefined);
+  }
+  if (to === "ACTIVE" && booking.assignedGuideId) await markGuideBusy(agencyId, booking.assignedGuideId);
+  if (from === "ACTIVE" || to === "COMPLETED") await releaseIdleGuides(agencyId);
+  trackBooking(to);
+  return { bookingId, status: to, changed: true };
 }

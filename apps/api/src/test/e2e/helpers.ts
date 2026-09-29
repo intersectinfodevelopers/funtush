@@ -19,6 +19,7 @@ import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
 import { db, connectMongo } from "@funtush/database";
 import { generateAccessToken } from "@funtush/auth";
+import { normalizeEmail } from "@funtush/shared";
 
 /**
  * True when the full docker-compose.test.yml stack is reachable. E2E tests drive
@@ -89,9 +90,11 @@ export async function createAgencyContext(opts: E2EOptions = {}): Promise<E2ECon
     select: { id: true },
   });
 
+  const adminEmail = `e2e-admin-${suffix}@example.com`;
   const user = await db.user.create({
     data: {
-      email: `e2e-admin-${suffix}@example.com`,
+      email: adminEmail,
+      normalizedEmail: normalizeEmail(adminEmail),
       passwordHash: "x", // never used — tests present tokens directly
       role: "AGENCY_ADMIN",
       roleType: "TENANT",
@@ -122,7 +125,12 @@ export async function createAgencyContext(opts: E2EOptions = {}): Promise<E2ECon
     // FK cascades from Agency handle bookings/guides/etc.
     await db.agency.delete({ where: { id: agency.id } }).catch(() => {});
     await db.user.delete({ where: { id: user.id } }).catch(() => {});
-    await db.subscriptionTier.delete({ where: { id: tier.id } }).catch(() => {});
+    // Only delete a tier this context invented. A canonical tier (FREE/SMALL/…)
+    // is shared by every test file running in parallel — registration, for one,
+    // connects new agencies to "FREE" — so deleting it here races with them.
+    if (tierName.startsWith("E2E_TIER_")) {
+      await db.subscriptionTier.delete({ where: { id: tier.id } }).catch(() => {});
+    }
   };
 
   return {

@@ -6,12 +6,11 @@ import type { AddressInfo } from "node:net";
  * HTTP-level tests for the file-upload routes (API-wide docs/test pass,
  * Batch 6). Real `requireAuth`, mocked storage.
  *
- * Note: `DELETE /upload` accepts any `url` string from any authenticated
- * caller with no ownership check at all — there is no record anywhere of
- * which upload belongs to which agency/user, so any signed-in caller can
- * delete any file by URL. Flagged as a finding, not fixed here — closing it
- * would mean designing an ownership model for uploads, a feature change
- * beyond this pass's scope, not a routing/test gap.
+ * `DELETE /upload` is ownership-scoped: uploads are stored under
+ * `uploads/<userId>/…` and the route passes the caller's id, so it can only
+ * delete the caller's own files. (It used to delete any URL for any signed-in
+ * caller.) The key/prefix rules themselves are covered in
+ * lib/uploader.security.test.ts; here we pin the route wiring.
  */
 
 const { authState } = vi.hoisted(() => ({
@@ -65,7 +64,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   authState.valid = false;
   uploadFile.mockResolvedValue("https://cdn.example.com/file.jpg");
-  deleteFile.mockResolvedValue(undefined);
+  deleteFile.mockResolvedValue(true);
 });
 
 describe("auth", () => {
@@ -98,13 +97,41 @@ describe("with a valid session", () => {
     expect(res.status).toBe(400);
   });
 
-  it("DELETE /upload deletes by url", async () => {
+  it("DELETE /upload deletes by url, scoped to the caller as owner", async () => {
     const res = await fetch(`${baseUrl}/upload`, {
       method: "DELETE",
       headers: { "content-type": "application/json", Authorization: "Bearer x" },
-      body: JSON.stringify({ url: "https://cdn.example.com/file.jpg" }),
+      body: JSON.stringify({ url: "https://cdn.example.com/uploads/user-1/file.jpg" }),
     });
     expect(res.status).toBe(200);
-    expect(deleteFile).toHaveBeenCalledWith("https://cdn.example.com/file.jpg");
+    expect(deleteFile).toHaveBeenCalledWith("https://cdn.example.com/uploads/user-1/file.jpg", { ownerId: "user-1" });
+  });
+
+  it("DELETE /upload 404s (not 200) when the file is not the caller's", async () => {
+    deleteFile.mockResolvedValue(false);
+    const res = await fetch(`${baseUrl}/upload`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", Authorization: "Bearer x" },
+      body: JSON.stringify({ url: "https://cdn.example.com/uploads/victim/file.jpg" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("DELETE /upload rejects a non-string url without touching storage", async () => {
+    const res = await fetch(`${baseUrl}/upload`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", Authorization: "Bearer x" },
+      body: JSON.stringify({ url: { $ne: "x" } }),
+    });
+    expect(res.status).toBe(400);
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+
+  it("POST /upload stores under the caller's id", async () => {
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" }), "a.png");
+    const res = await fetch(`${baseUrl}/upload`, { method: "POST", headers: { Authorization: "Bearer x" }, body: form });
+    expect(res.status).toBe(200);
+    expect(uploadFile.mock.calls[0][1]).toBe("user-1");
   });
 });

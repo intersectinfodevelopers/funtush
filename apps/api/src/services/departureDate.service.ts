@@ -69,6 +69,12 @@ export const addDepartureDateService = async (
 ) => {
   const { startDate } = validateDepartureDateInput(data);
   await assertPackageOwned(agencyId, packageId);
+  // A package runs on ONE departure date (and is archived once it has passed) — change that date rather than adding another.
+  if ((await db.trekDepartureDate.count({ where: { packageId } })) >= 1) {
+    const err = new Error("This package already has its departure date. Change that date instead of adding another.") as Error & { status?: number };
+    err.status = 409;
+    throw err;
+  }
 
   return db.trekDepartureDate.create({
     data: {

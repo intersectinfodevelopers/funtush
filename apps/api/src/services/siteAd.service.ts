@@ -16,9 +16,13 @@ export class SiteAdError extends Error {
 
 /** Known placement slots on the white-label site. */
 export const AD_POSITIONS = [
-  { id: "homepage-top", label: "Homepage Top" },
-  { id: "sidebar-1", label: "Sidebar Slot 1" },
-  { id: "footer-1", label: "Footer Slot 1" },
+  { id: "popup-ads", label: "Popup Ads" },
+  { id: "top-ads", label: "Top Ads" },
+  { id: "inside-blog", label: "Inside Blog" },
+  { id: "inside-video", label: "Inside Video" },
+  { id: "inside-gallery", label: "Inside Gallery" },
+  { id: "inside-destination", label: "Inside Destination" },
+  { id: "inside-packages", label: "Inside Packages" },
 ] as const;
 
 const SELECT = {
@@ -68,8 +72,46 @@ function dbStatus(s: string | undefined): "ACTIVE" | "PAUSED" | undefined {
 function toDate(v: unknown): Date | null | undefined {
   if (v === undefined) return undefined;
   if (v === null || v === "") return null;
-  const d = new Date(String(v));
-  return Number.isNaN(d.getTime()) ? null : d;
+  const d = typeof v === "string" ? new Date(v) : new Date(NaN);
+  if (Number.isNaN(d.getTime())) throw new SiteAdError(400, "Invalid date.");
+  return d;
+}
+
+/**
+ * Ad image/link are rendered as <img src>/<a href> on the public site: http(s) or a
+ * site-relative path ("/x", never "//host" or "/\\host") only.
+ */
+function httpUrl(v: unknown, label: string): string {
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (/^\/(?![/\\])[^\s]*$/.test(t)) return t;
+    try {
+      const u = new URL(v.trim());
+      if (u.protocol === "http:" || u.protocol === "https:") return u.toString();
+    } catch {
+      /* fall through */
+    }
+  }
+  throw new SiteAdError(400, `${label} must be a valid http(s) URL.`);
+}
+
+function validPosition(v: unknown): string {
+  const p = typeof v === "string" ? v.trim() : "";
+  if (!p) throw new SiteAdError(400, "A placement position is required.");
+  if (!AD_POSITIONS.some((x) => x.id === p)) throw new SiteAdError(400, "Unknown ad position.");
+  return p;
+}
+
+function validOrder(v: unknown): number | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 100000) {
+    throw new SiteAdError(400, "Order must be a whole number, 0 or more.");
+  }
+  return v;
+}
+
+function checkRange(start: Date | null | undefined, end: Date | null | undefined) {
+  if (start && end && start > end) throw new SiteAdError(400, "The end date must be on or after the start date.");
 }
 
 export interface SiteAdInput {
@@ -85,15 +127,18 @@ export interface SiteAdInput {
 
 export async function listSiteAds(
   agencyId: string,
-  q: { status?: string; position?: string; page?: number; limit?: number } = {},
+  q: { status?: string; position?: string; search?: string; page?: number; limit?: number } = {},
 ) {
   const page = Math.max(1, q.page ?? 1);
   const limit = Math.min(100, Math.max(1, q.limit ?? 50));
   const where: Prisma.SiteAdWhereInput = { agencyId };
   if (q.status && q.status.toLowerCase() !== "all") where.status = dbStatus(q.status);
+  if (q.search?.trim()) where.title = { contains: q.search.trim(), mode: "insensitive" };
   if (q.position && q.position.toLowerCase() !== "all") where.position = q.position;
 
-  const [rows, total] = await Promise.all([
+  // Stats are over ALL of the agency's ads (ignoring the search/status/position filters), not just this page.
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const [rows, total, statsTotal, statsActive, totals, totalBeforeMonth] = await Promise.all([
     db.siteAd.findMany({
       where,
       select: SELECT,
@@ -102,8 +147,25 @@ export async function listSiteAds(
       take: limit,
     }),
     db.siteAd.count({ where }),
+    db.siteAd.count({ where: { agencyId } }),
+    db.siteAd.count({ where: { agencyId, status: "ACTIVE" } }),
+    db.siteAd.aggregate({ where: { agencyId }, _sum: { clicks: true, impressions: true } }),
+    db.siteAd.count({ where: { agencyId, createdAt: { lt: startOfMonth } } }),
   ]);
-  return { ads: rows.map(toApi), total, page, limit };
+  return {
+    ads: rows.map(toApi),
+    total,
+    page,
+    limit,
+    stats: {
+      total: statsTotal,
+      active: statsActive,
+      paused: statsTotal - statsActive,
+      totalClicks: totals._sum.clicks ?? 0,
+      totalImpressions: totals._sum.impressions ?? 0,
+      totalBeforeMonth,
+    },
+  };
 }
 
 /** The known slots plus how many active ads currently fill each. */
@@ -123,24 +185,27 @@ export async function listPositions(agencyId: string) {
 }
 
 export async function createSiteAd(agencyId: string, body: SiteAdInput) {
-  const title = (body.title ?? "").trim();
-  const image = (body.image ?? "").trim();
-  const position = (body.position ?? "").trim();
+  const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title) throw new SiteAdError(400, "Ad title is required.");
-  if (!image) throw new SiteAdError(400, "An ad image is required.");
-  if (!position) throw new SiteAdError(400, "A placement position is required.");
+  if (title.length > 120) throw new SiteAdError(400, "Ad title is too long (max 120 characters).");
+  if (body.image === undefined || body.image === "") throw new SiteAdError(400, "An ad image is required.");
+  const image = httpUrl(body.image, "Ad image");
+  const position = validPosition(body.position);
+  const startDate = toDate(body.startDate) ?? null;
+  const endDate = toDate(body.endDate) ?? null;
+  checkRange(startDate, endDate);
 
   const row = await db.siteAd.create({
     data: {
       agencyId,
       title,
       imageUrl: image,
-      linkUrl: body.linkUrl?.trim() || null,
+      linkUrl: body.linkUrl ? httpUrl(body.linkUrl, "Link") : null,
       position,
       status: dbStatus(body.status) ?? "ACTIVE",
-      startDate: toDate(body.startDate) ?? null,
-      endDate: toDate(body.endDate) ?? null,
-      order: body.order ?? 0,
+      startDate,
+      endDate,
+      order: validOrder(body.order) ?? 0,
     },
     select: SELECT,
   });
@@ -154,32 +219,30 @@ export async function getSiteAd(agencyId: string, id: string) {
 }
 
 export async function updateSiteAd(agencyId: string, id: string, body: SiteAdInput) {
-  const existing = await db.siteAd.findFirst({ where: { id, agencyId }, select: { id: true } });
+  const existing = await db.siteAd.findFirst({ where: { id, agencyId }, select: { id: true, startDate: true, endDate: true } });
   if (!existing) throw new SiteAdError(404, "Ad not found.");
 
   const data: Prisma.SiteAdUpdateInput = {};
   if (body.title !== undefined) {
-    const t = body.title.trim();
+    const t = typeof body.title === "string" ? body.title.trim() : "";
     if (!t) throw new SiteAdError(400, "Title cannot be empty.");
+    if (t.length > 120) throw new SiteAdError(400, "Ad title is too long (max 120 characters).");
     data.title = t;
   }
   if (body.image !== undefined) {
-    const i = body.image.trim();
-    if (!i) throw new SiteAdError(400, "Image cannot be empty.");
-    data.imageUrl = i;
+    data.imageUrl = httpUrl(body.image, "Ad image");
   }
-  if (body.linkUrl !== undefined) data.linkUrl = body.linkUrl?.trim() || null;
+  if (body.linkUrl !== undefined) data.linkUrl = body.linkUrl ? httpUrl(body.linkUrl, "Link") : null;
   if (body.position !== undefined) {
-    const p = body.position.trim();
-    if (!p) throw new SiteAdError(400, "Position cannot be empty.");
-    data.position = p;
+    data.position = validPosition(body.position);
   }
   if (body.status !== undefined) data.status = dbStatus(body.status);
   const sd = toDate(body.startDate);
   if (sd !== undefined) data.startDate = sd;
   const ed = toDate(body.endDate);
   if (ed !== undefined) data.endDate = ed;
-  if (body.order !== undefined) data.order = body.order;
+  checkRange(sd === undefined ? existing.startDate : sd, ed === undefined ? existing.endDate : ed);
+  if (body.order !== undefined) data.order = validOrder(body.order);
 
   const row = await db.siteAd.update({ where: { id }, data, select: SELECT });
   return toApi(row);

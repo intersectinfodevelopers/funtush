@@ -1,4 +1,5 @@
 import { db } from "@funtush/database";
+import { ensureChartOfAccounts } from "./chartOfAccounts.service";
 import type { AccountType } from "@funtush/database";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,10 +300,13 @@ export const getCashFlowService = async (agencyId: string, period?: string) => {
     const range = parsePeriod(period);
 
     // Find the cash root account and everything filed under it.
-    const cashRoot = await db.account.findFirst({
+    let cashRoot = await db.account.findFirst({
         where: { agencyId, code: CASH_ROOT_ACCOUNT_CODE },
         select: { id: true },
     });
+    if (!cashRoot && (await ensureChartOfAccounts(agencyId))) {
+        cashRoot = await db.account.findFirst({ where: { agencyId, code: CASH_ROOT_ACCOUNT_CODE }, select: { id: true } });
+    }
 
     if (!cashRoot) {
         throw new Error(
@@ -489,4 +493,56 @@ export const getTaxSummaryService = async (
             "This is a computed summary for filing support, not a filed return.",
         ],
     };
+};
+
+// ── GET /agencies/me/finance/pnl-trend?months= ───────────────────────────────
+
+export interface PnlTrendPoint {
+    period: string; // "YYYY-MM"
+    revenue: number;
+    expenses: number;
+    netProfit: number;
+}
+
+// Monthly revenue/expense/profit series for sparklines and the P&L chart —
+// same journal lines as getProfitAndLossService, bucketed by month instead of
+// summed over one period. One query for the whole range (not one per month).
+export const getPnlTrendService = async (agencyId: string, months?: number): Promise<PnlTrendPoint[]> => {
+    const n = Math.min(24, Math.max(1, Math.floor(Number(months) || 12)));
+    const now = new Date();
+    const rangeStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (n - 1), 1));
+
+    const lines = await db.journalLine.findMany({
+        where: {
+            journalEntry: { agencyId, entryDate: { gte: rangeStart } },
+            account: { type: { in: ["REVENUE", "EXPENSE"] } },
+        },
+        select: {
+            debit: true,
+            credit: true,
+            account: { select: { type: true } },
+            journalEntry: { select: { entryDate: true } },
+        },
+    });
+
+    const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    const buckets = new Map<string, { revenue: number; expenses: number }>();
+    for (let i = 0; i < n; i++) {
+        const d = new Date(Date.UTC(rangeStart.getUTCFullYear(), rangeStart.getUTCMonth() + i, 1));
+        buckets.set(monthKey(d), { revenue: 0, expenses: 0 });
+    }
+
+    for (const line of lines) {
+        const bucket = buckets.get(monthKey(line.journalEntry.entryDate));
+        if (!bucket) continue;
+        if (line.account.type === "REVENUE") bucket.revenue += Number(line.credit) - Number(line.debit);
+        else bucket.expenses += Number(line.debit) - Number(line.credit);
+    }
+
+    return [...buckets.entries()].map(([period, b]) => {
+        const revenue = round2(b.revenue);
+        const expenses = round2(b.expenses);
+        return { period, revenue, expenses, netProfit: round2(revenue - expenses) };
+    });
 };

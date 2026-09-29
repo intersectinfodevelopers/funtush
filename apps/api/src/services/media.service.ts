@@ -17,6 +17,38 @@ function lower(s: string): string {
   return s.toLowerCase();
 }
 
+/** Absolute http(s) URL, or null. */
+function cleanAbsUrl(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  try {
+    const u = new URL(v.trim());
+    return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Media URLs are rendered as <img src>: http(s), or a site-relative path ("/x" — never "//host" or a
+ * backslash form, and no scheme such as javascript:/data:).
+ */
+function cleanUrl(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (/^\/(?![/\\])[^\s]*$/.test(t)) return t;
+  return cleanAbsUrl(t);
+}
+function cleanUrls(v: unknown): string[] {
+  return Array.isArray(v) ? v.map(cleanUrl).filter((x): x is string => x !== null) : [];
+}
+function cleanOrder(v: unknown): number | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 100000) {
+    throw new MediaServiceError(400, "Order must be a whole number, 0 or more.");
+  }
+  return v;
+}
+
 // ═══ Gallery ════════════════════════════════════════════════════════════════
 
 const GALLERY_SELECT = {
@@ -88,7 +120,10 @@ export async function listGallery(
       { description: { contains: q.search.trim(), mode: "insensitive" } },
     ];
   }
-  const [rows, total] = await Promise.all([
+  // Stats are over ALL of the agency's gallery posts (ignoring the search/status filters), not just this page.
+  // totalBeforeMonth lets the UI show a real "% from last month" instead of a made-up figure.
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const [rows, total, statsTotal, statsPublished, totalBeforeMonth] = await Promise.all([
     db.galleryPost.findMany({
       where,
       select: GALLERY_SELECT,
@@ -97,14 +132,17 @@ export async function listGallery(
       take: limit,
     }),
     db.galleryPost.count({ where }),
+    db.galleryPost.count({ where: { agencyId } }),
+    db.galleryPost.count({ where: { agencyId, status: "PUBLISHED" } }),
+    db.galleryPost.count({ where: { agencyId, createdAt: { lt: startOfMonth } } }),
   ]);
-  return { items: rows.map(toApiGallery), total, page, limit };
+  return { items: rows.map(toApiGallery), total, page, limit, stats: { total: statsTotal, published: statsPublished, draft: statsTotal - statsPublished, totalBeforeMonth } };
 }
 
 export async function createGallery(agencyId: string, body: GalleryInput) {
   const title = (body.title ?? "").trim();
   if (!title) throw new MediaServiceError(400, "Gallery post title is required.");
-  const images = (body.images ?? []).filter((s) => typeof s === "string" && s.trim() !== "").slice(0, 5);
+  const images = cleanUrls(body.images ?? []).slice(0, 5);
   if (images.length === 0) throw new MediaServiceError(400, "At least one image is required.");
 
   const row = await db.galleryPost.create({
@@ -114,9 +152,9 @@ export async function createGallery(agencyId: string, body: GalleryInput) {
       description: body.description?.trim() || null,
       category: body.category?.trim() || null,
       images,
-      featuredImage: pickFeatured(images, body.featuredImage),
+      featuredImage: pickFeatured(images, cleanUrl(body.featuredImage)),
       status: galleryStatus(body.status) ?? "PUBLISHED",
-      order: body.order ?? 0,
+      order: cleanOrder(body.order) ?? 0,
     },
     select: GALLERY_SELECT,
   });
@@ -144,19 +182,19 @@ export async function updateGallery(agencyId: string, id: string, body: GalleryI
   }
   if (body.description !== undefined) data.description = body.description?.trim() || null;
   if (body.category !== undefined) data.category = body.category?.trim() || null;
-  if (body.order !== undefined) data.order = body.order;
+  if (body.order !== undefined) data.order = cleanOrder(body.order);
   if (body.status !== undefined) data.status = galleryStatus(body.status);
 
   const nextImages =
     body.images !== undefined
-      ? body.images.filter((s) => typeof s === "string" && s.trim() !== "").slice(0, 5)
+      ? cleanUrls(body.images).slice(0, 5)
       : existing.images;
   if (body.images !== undefined) {
     if (nextImages.length === 0) throw new MediaServiceError(400, "At least one image is required.");
     data.images = nextImages;
   }
   if (body.images !== undefined || body.featuredImage !== undefined) {
-    data.featuredImage = pickFeatured(nextImages, body.featuredImage ?? existing.featuredImage);
+    data.featuredImage = pickFeatured(nextImages, cleanUrl(body.featuredImage) ?? existing.featuredImage);
   }
 
   const row = await db.galleryPost.update({ where: { id }, data, select: GALLERY_SELECT });
@@ -217,7 +255,22 @@ function videoStatus(s: string | undefined): "ACTIVE" | "INACTIVE" | undefined {
   return s.toLowerCase() === "inactive" ? "INACTIVE" : "ACTIVE";
 }
 
-const YT_RE = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)[\w-]{6,}/i;
+const YT_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"]);
+const YT_ID = /^[\w-]{6,}$/;
+/** Real https YouTube watch/embed/shorts/youtu.be link, else null. Anchored: no scheme tricks. */
+function cleanYoutube(v: unknown): string | null {
+  const u = cleanAbsUrl(v);
+  if (!u) return null;
+  const url = new URL(u);
+  if (!YT_HOSTS.has(url.hostname.toLowerCase())) return null;
+  const id =
+    url.hostname === "youtu.be"
+      ? url.pathname.slice(1)
+      : url.pathname === "/watch"
+        ? (url.searchParams.get("v") ?? "")
+        : (/^\/(?:embed|shorts)\/([^/]+)/.exec(url.pathname)?.[1] ?? "");
+  return YT_ID.test(id) ? u : null;
+}
 
 export async function listVideos(
   agencyId: string,
@@ -233,7 +286,8 @@ export async function listVideos(
       { description: { contains: q.search.trim(), mode: "insensitive" } },
     ];
   }
-  const [rows, total] = await Promise.all([
+  // Stats are over ALL of the agency's videos (ignoring the search/status filters), not just this page.
+  const [rows, total, statsTotal, statsActive] = await Promise.all([
     db.video.findMany({
       where,
       select: VIDEO_SELECT,
@@ -242,26 +296,29 @@ export async function listVideos(
       take: limit,
     }),
     db.video.count({ where }),
+    db.video.count({ where: { agencyId } }),
+    db.video.count({ where: { agencyId, status: "ACTIVE" } }),
   ]);
-  return { items: rows.map(toApiVideo), total, page, limit };
+  return { items: rows.map(toApiVideo), total, page, limit, stats: { total: statsTotal, active: statsActive, inactive: statsTotal - statsActive } };
 }
 
 export async function createVideo(agencyId: string, body: VideoInput) {
   const title = (body.title ?? "").trim();
-  const url = (body.youtubeUrl ?? "").trim();
+  const url = typeof body.youtubeUrl === "string" ? body.youtubeUrl.trim() : "";
   if (!title) throw new MediaServiceError(400, "Video title is required.");
   if (!url) throw new MediaServiceError(400, "A YouTube URL is required.");
-  if (!YT_RE.test(url)) throw new MediaServiceError(400, "That doesn't look like a YouTube URL.");
+  const yt = cleanYoutube(url);
+  if (!yt) throw new MediaServiceError(400, "That doesn't look like a YouTube URL.");
 
   const row = await db.video.create({
     data: {
       agencyId,
       title,
       description: body.description?.trim() || null,
-      youtubeUrl: url,
-      thumbnailUrl: body.thumbnail?.trim() || null,
+      youtubeUrl: yt,
+      thumbnailUrl: cleanUrl(body.thumbnail),
       status: videoStatus(body.status) ?? "ACTIVE",
-      order: body.order ?? 0,
+      order: cleanOrder(body.order) ?? 0,
     },
     select: VIDEO_SELECT,
   });
@@ -286,12 +343,12 @@ export async function updateVideo(agencyId: string, id: string, body: VideoInput
   }
   if (body.description !== undefined) data.description = body.description?.trim() || null;
   if (body.youtubeUrl !== undefined) {
-    const u = body.youtubeUrl.trim();
-    if (!u || !YT_RE.test(u)) throw new MediaServiceError(400, "That doesn't look like a YouTube URL.");
+    const u = cleanYoutube(body.youtubeUrl);
+    if (!u) throw new MediaServiceError(400, "That doesn't look like a YouTube URL.");
     data.youtubeUrl = u;
   }
-  if (body.thumbnail !== undefined) data.thumbnailUrl = body.thumbnail?.trim() || null;
-  if (body.order !== undefined) data.order = body.order;
+  if (body.thumbnail !== undefined) data.thumbnailUrl = cleanUrl(body.thumbnail);
+  if (body.order !== undefined) data.order = cleanOrder(body.order);
   if (body.status !== undefined) data.status = videoStatus(body.status);
 
   const row = await db.video.update({ where: { id }, data, select: VIDEO_SELECT });

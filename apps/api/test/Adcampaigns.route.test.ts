@@ -17,6 +17,7 @@ vi.mock("../src/packages/database/prisma", () => ({
       findMany:   vi.fn(),
       findUnique: vi.fn(),
       update:     vi.fn(),
+      count:      vi.fn().mockResolvedValue(1),
     },
   },
 }));

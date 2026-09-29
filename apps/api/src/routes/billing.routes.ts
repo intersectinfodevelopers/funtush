@@ -63,6 +63,38 @@ const router = Router();
  *     summary: Verify and record a trekker's Fonepay payment (no auth — verified server-side against the real Fonepay API before being credited, same trust model as the payment webhooks)
  *     responses: { 200: { description: Verified }, 400: { description: Missing fields or verification failed } }
  */
+/**
+ * @openapi
+ * /billing/discount/validate:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Preview a subscription-tier discount code's price before paying
+ *     security: [{ refreshTokenAuth: [] }]
+ *     responses: { 200: { description: Quote }, 400: { description: Invalid or inapplicable code } }
+ */
+router.post(
+  '/discount/validate',
+  authenticateWithRefreshToken,
+  checkAgencyStatus,
+  async (req: AgencyRequest, res) => {
+    try {
+      const { code, subscriptionTierId, billingCycle } = req.body ?? {};
+      if (!code || !subscriptionTierId) {
+        return res.status(400).json({ error: 'code and subscriptionTierId are required' });
+      }
+      const cycle = billingCycle === 'ANNUAL' ? 'ANNUAL' : 'MONTHLY';
+      const { quoteDiscountCode } = await import('../services/tierDiscount.service');
+      const quote = await quoteDiscountCode(code, subscriptionTierId, cycle);
+      res.json({ success: true, data: quote });
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      if (status) return res.status(status).json({ error: (err as Error).message });
+      console.error('Discount validate error:', err);
+      res.status(500).json({ error: 'Failed to validate discount code' });
+    }
+  }
+);
+
 router.post(
   '/subscribe',
   authenticateWithRefreshToken,
@@ -121,15 +153,15 @@ router.post(
       switch (provider.toLowerCase()) {
         case 'khalti': {
           const { verifyAndCompleteKhaltiPayment } = await import(
-            '../services/khaltiSubscriptionService'
+            '../services/subscriptionPayments.service'
           );
-          result = await verifyAndCompleteKhaltiPayment(token, transactionId, agencyId);
+          result = await verifyAndCompleteKhaltiPayment(token ?? req.body.pidx, transactionId, agencyId);
           break;
         }
 
         case 'esewa': {
           const { verifyAndCompleteEsewaPayment } = await import(
-            '../services/esewaSubscriptionService'
+            '../services/subscriptionPayments.service'
           );
           result = await verifyAndCompleteEsewaPayment(refId, transactionId, agencyId);
           break;
@@ -164,6 +196,8 @@ router.post(
         transaction: result,
       });
     } catch (err) {
+      const status = (err as { status?: number })?.status;
+      if (status && status < 500) return res.status(status).json({ error: (err as Error).message });
       console.error('Payment verification error:', err);
       res.status(500).json({ error: 'Payment verification failed' });
     }
@@ -177,7 +211,7 @@ router.post(
   checkAgencyStatus,
   async (req: AgencyRequest, res) => {
     try {
-      const { subscriptionTierId } = req.body;
+      const { subscriptionTierId, discountCode } = req.body;
       const agencyId = req.agencyId;
 
       if (!agencyId || !subscriptionTierId) {
@@ -185,12 +219,14 @@ router.post(
       }
 
       const { initiateKhaltiPayment } = await import(
-        '../services/khaltiSubscriptionService'
+        '../services/subscriptionPayments.service'
       );
-      const result = await initiateKhaltiPayment(agencyId, subscriptionTierId);
+      const result = await initiateKhaltiPayment(agencyId, subscriptionTierId, discountCode);
 
       res.json(result);
     } catch (err) {
+      const status = (err as { status?: number })?.status;
+      if (status) return res.status(status).json({ error: (err as Error).message });
       console.error('Khalti initiate error:', err);
       res.status(500).json({ error: 'Failed to initiate Khalti payment' });
     }
@@ -204,7 +240,7 @@ router.post(
   checkAgencyStatus,
   async (req: AgencyRequest, res) => {
     try {
-      const { subscriptionTierId } = req.body;
+      const { subscriptionTierId, discountCode } = req.body;
       const agencyId = req.agencyId;
 
       if (!agencyId || !subscriptionTierId) {
@@ -212,12 +248,14 @@ router.post(
       }
 
       const { initiateEsewaPayment } = await import(
-        '../services/esewaSubscriptionService'
+        '../services/subscriptionPayments.service'
       );
-      const result = await initiateEsewaPayment(agencyId, subscriptionTierId);
+      const result = await initiateEsewaPayment(agencyId, subscriptionTierId, discountCode);
 
       res.json(result);
     } catch (err) {
+      const status = (err as { status?: number })?.status;
+      if (status) return res.status(status).json({ error: (err as Error).message });
       console.error('eSewa initiate error:', err);
       res.status(500).json({ error: 'Failed to initiate eSewa payment' });
     }

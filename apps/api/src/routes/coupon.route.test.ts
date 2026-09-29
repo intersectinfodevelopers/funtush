@@ -24,6 +24,7 @@ vi.mock("src/middleware/refreshTokenAuthentication", () => ({
 }));
 
 const createCouponService = vi.fn();
+const deleteCouponService = vi.fn();
 const updateCouponService = vi.fn();
 const getAgencyCouponsService = vi.fn();
 const validateAndApplyCoupon = vi.fn();
@@ -33,6 +34,14 @@ vi.mock("src/services/coupon.service", () => ({
   updateCouponService: (...a: unknown[]) => updateCouponService(...a),
   getAgencyCouponsService: (...a: unknown[]) => getAgencyCouponsService(...a),
   validateAndApplyCoupon: (...a: unknown[]) => validateAndApplyCoupon(...a),
+  deleteCouponService: (...a: unknown[]) => deleteCouponService(...a),
+  CouponError: class CouponError extends Error {
+    status: number;
+    constructor(m: string, status = 400) {
+      super(m);
+      this.status = status;
+    }
+  },
 }));
 
 vi.mock("@funtush/database", () => ({ db: {} }));
@@ -129,6 +138,12 @@ describe("authenticated calls", () => {
     });
     expect(res.status).toBe(200);
     expect(updateCouponService).toHaveBeenCalledWith("agency-1", "cp1", { percentOff: 15 });
+  });
+
+  it("DELETE removes a coupon (204)", async () => {
+    const res = await fetch(`${baseUrl}/agencies/me/coupons/cp1`, { method: "DELETE", headers: authed() });
+    expect(res.status).toBe(204);
+    expect(deleteCouponService).toHaveBeenCalledWith("agency-1", "cp1");
   });
 });
 

@@ -21,7 +21,18 @@
     "../../packages/auth/src/utils/otpRateLimit.ts",
     "src/test"
   ],
+  // Quarantined fraud-detection / fingerprint pipeline (see the "deferred
+  // features" backlog): none of these files is imported by app.ts or anything
+  // else that runs, and they reference Prisma models that don't exist yet
+  // (ipRegistration, fingerprint, trialUsage, ...). Excluded so typecheck
+  // reflects code that actually ships; remove an entry when its feature is
+  // built for real.
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "src/routes/FraudDetectionRoutes.ts",
+    "src/routes/fingerprintRoutes.ts",
+    "src/services/FraudDetectionDatabaseService.ts",
+    "src/services/fingerprintDatabaseService.ts",
+    "src/services/fingerprintService.ts"
   ]
 }

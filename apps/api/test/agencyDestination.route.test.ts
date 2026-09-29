@@ -76,7 +76,14 @@ describe("updateDestination", () => {
   });
 
   it("toggles published + featured via the main patch", async () => {
-    vi.mocked(db.agencyDestination.findFirst).mockResolvedValue({ id: "d1" } as never);
+    // Already meets the publish-readiness gate (name, short description, featured image) — this
+    // test is about the published/featured toggle, not about that gate (covered elsewhere).
+    vi.mocked(db.agencyDestination.findFirst).mockResolvedValue({
+      id: "d1",
+      title: "Everest Base Camp",
+      shortDescription: "A classic trek to EBC.",
+      featuredImage: "https://cdn.example.com/ebc.jpg",
+    } as never);
     vi.mocked(db.agencyDestination.update).mockImplementation(
       async (x: never) =>
         ({

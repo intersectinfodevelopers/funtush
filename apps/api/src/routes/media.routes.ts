@@ -16,7 +16,7 @@ router.use(["/agencies/me/gallery", "/agencies/me/videos"], authenticateWithRefr
  *     parameters:
  *       - { name: status, in: query, schema: { type: string, enum: [all, published, draft] } }
  *       - { name: search, in: query, schema: { type: string } }
- *     responses: { 200: { description: Gallery posts }, 401: { description: Unauthorized } }
+ *     responses: { 200: { description: Gallery posts with items, total, pagination, and agency-wide stats.total, stats.published, and stats.draft }, 401: { description: Unauthorized } }
  *   post:
  *     tags: [Media]
  *     summary: Create a gallery post (1-5 images)

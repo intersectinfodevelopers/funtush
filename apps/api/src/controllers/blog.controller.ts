@@ -1,90 +1,36 @@
 import { uploadFile } from "@funtush/storage";
 import type { Request, Response } from "express";
-import { createBlogService, createCategoryService, getBlogsService, getCategoriesService, updateBlogService, updateCategoryService } from "src/services/blog.service";
+import { parsePagination, buildMeta } from "../utils/pagination";
+import { createBlogService, deleteBlogService, getBlogsService, listBlogPhotoLibrary, updateBlogService } from "src/services/blog.service";
+import { resolveActor } from "src/services/packageActivity.service";
 
-export const createcategory = async (
-    req: Request,
-    res: Response
-) => {
+const MAX_PHOTOS = 1;
+const cdnPrefix = () => (process.env.CDN_BASE_URL ? `${process.env.CDN_BASE_URL}/` : null);
+
+/** Parses a JSON array of our own CDN URLs (used for `keepPhotos` — existing photos to retain on
+ * edit — and `photoUrls` — photos picked from the agency's Gallery instead of newly uploaded). */
+function parseCdnUrlArray(raw: unknown, field: string): string[] {
+    if (raw === undefined) return [];
+    let parsed: unknown;
     try {
-        const agencyUserId = req.tenantId as string;
-
-        const category = await createCategoryService(
-            agencyUserId,
-            req.body
-        );
-
-        return res.status(201).json({
-            success: true,
-            data: category,
-        });
-
-    } catch (err) {
-        return res.status(400).json({
-            success: false,
-            message:
-                err instanceof Error
-                    ? err.message
-                    : "Something went wrong",
-        });
+        parsed = JSON.parse(String(raw));
+    } catch {
+        throw new Error(`${field} must be a JSON array of URLs`);
     }
-};
+    const cdn = cdnPrefix();
+    if (!Array.isArray(parsed)) throw new Error(`${field} must be a JSON array of URLs`);
+    return parsed.filter((u): u is string => typeof u === "string" && cdn !== null && u.startsWith(cdn));
+}
 
-export const updatecategory = async (
-    req: Request,
-    res: Response
-) => {
+/** `tags` arrives as a JSON-stringified array over multipart form data. */
+function parseTags(raw: unknown): unknown {
+    if (raw === undefined || Array.isArray(raw)) return raw;
     try {
-        const agencyUserId = req.tenantId as string;
-        const categoryId = req.params.id as string;
-
-        const category = await updateCategoryService(
-            agencyUserId,
-            categoryId,
-            req.body
-        );
-
-        return res.status(200).json({
-            success: true,
-            data: category,
-        });
-    } catch (err) {
-        return res.status(400).json({
-            success: false,
-            message:
-                err instanceof Error
-                    ? err.message
-                    : "Something went wrong",
-        });
+        return JSON.parse(String(raw));
+    } catch {
+        throw new Error("tags must be a JSON array of strings");
     }
-};
-
-export const getAgencycategories = async (
-    req: Request,
-    res: Response
-) => {
-    try {
-        const agencyUserId = req.tenantId as string;
-
-        const categories = await getCategoriesService(
-            agencyUserId
-        );
-
-        return res.status(200).json({
-            success: true,
-            count: categories.length,
-            data: categories,
-        });
-    } catch (err) {
-        return res.status(400).json({
-            success: false,
-            message:
-                err instanceof Error
-                    ? err.message
-                    : "Something went wrong",
-        });
-    }
-};
+}
 
 export const createBlog = async (
     req: Request,
@@ -93,17 +39,25 @@ export const createBlog = async (
     try {
         const agencyUserId = req.tenantId as string;
 
-        const photos = (req.files as Express.Multer.File[]) || [];
+        const files = (req.files as Express.Multer.File[]) || [];
+        const uploaded = await Promise.all(files.map((photo) => uploadFile(photo)));
+        const newUploads = files.map((f, i) => ({ url: uploaded[i], title: f.originalname }));
+        const photoUrls = parseCdnUrlArray(req.body?.photoUrls, "photoUrls");
+        const photos = [...uploaded, ...photoUrls];
+        if (photos.length > MAX_PHOTOS) {
+            return res.status(400).json({ success: false, message: "A post can have only one photo." });
+        }
 
-        const urls = await Promise.all(
-            photos.map((photo) => uploadFile(photo))
-        );
+        const actor = await resolveActor(req);
 
         const blog = await createBlogService(
             agencyUserId,
             {
                 ...req.body,
-                photos: urls,
+                tags: parseTags(req.body?.tags),
+                photos,
+                newUploads,
+                authorName: actor?.name ?? null,
             }
         );
 
@@ -131,24 +85,77 @@ export const updateBlog = async (
         const agencyUserId = req.tenantId as string;
         const blogId = req.params.id as string;
 
-        const photos = (req.files as Express.Multer.File[]) || [];
+        const files = (req.files as Express.Multer.File[]) || [];
+        const uploaded = await Promise.all(files.map((photo) => uploadFile(photo)));
+        const newUploads = files.map((f, i) => ({ url: uploaded[i], title: f.originalname }));
 
-        const urls = await Promise.all(
-            photos.map((photo) => uploadFile(photo))
-        );
+        // Photos change ONLY when the caller says so: new uploaded files, an explicit `keepPhotos`
+        // (JSON array of existing URLs to retain), and/or `photoUrls` (photos picked from the agency's
+        // Gallery). This used to always send `photos: urls`, so a text-only edit set photos to [] and
+        // deleted the post's images.
+        const keepGiven = req.body?.keepPhotos !== undefined;
+        const keep = keepGiven ? parseCdnUrlArray(req.body.keepPhotos, "keepPhotos") : undefined;
+        const photoUrls = parseCdnUrlArray(req.body?.photoUrls, "photoUrls");
+        const nextPhotos = keepGiven || uploaded.length > 0 || photoUrls.length > 0
+            ? [...(keep ?? []), ...uploaded, ...photoUrls]
+            : undefined;
+        if (nextPhotos && nextPhotos.length > MAX_PHOTOS) {
+            return res.status(400).json({ success: false, message: "A post can have only one photo." });
+        }
 
         const blog = await updateBlogService(
             agencyUserId,
             blogId,
             {
                 ...req.body,
-                photos: urls,
+                tags: parseTags(req.body?.tags),
+                photos: nextPhotos,
+                newUploads,
             });
 
         return res.status(200).json({
             success: true,
             data: blog,
         });
+    } catch (err) {
+        return res.status(400).json({
+            success: false,
+            message:
+                err instanceof Error
+                    ? err.message
+                    : "Something went wrong",
+        });
+    }
+};
+
+export const deleteBlog = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const agencyUserId = req.tenantId as string;
+        await deleteBlogService(agencyUserId, String(req.params.id));
+        return res.status(204).send();
+    } catch (err) {
+        const status = err instanceof Error && err.message === "Blog not found" ? 404 : 400;
+        return res.status(status).json({
+            success: false,
+            message:
+                err instanceof Error
+                    ? err.message
+                    : "Something went wrong",
+        });
+    }
+};
+
+export const getBlogPhotoLibrary = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const agencyUserId = req.tenantId as string;
+        const data = await listBlogPhotoLibrary(agencyUserId, req.query as Record<string, unknown>);
+        return res.status(200).json({ success: true, ...data });
     } catch (err) {
         return res.status(400).json({
             success: false,
@@ -167,14 +174,14 @@ export const getAgencyBlogs = async (
     try {
         const agencyUserId = req.tenantId as string;
 
-        const blogs = await getBlogsService(
-            agencyUserId
-        );
+        const pageReq = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
+        const { data, total } = await getBlogsService(agencyUserId, pageReq);
 
         return res.status(200).json({
             success: true,
-            count: blogs.length,
-            data: blogs,
+            count: data.length,
+            data,
+            meta: buildMeta(total, pageReq.page, pageReq.limit),
         });
     } catch (err) {
         return res.status(400).json({

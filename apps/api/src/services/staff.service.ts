@@ -1,5 +1,6 @@
 import { prisma, AuditLog, Prisma } from "@funtush/database";
 import { hashPassword } from "@funtush/auth";
+import { normalizeEmail } from "@funtush/shared";
 import { sendStaffInviteEmail } from "../utils/email";
 
 function generateTempPassword(): string {
@@ -13,10 +14,12 @@ export const addStaffService = async (
   profile?: { name?: string | null; phone?: string | null }
 ) => {
   const cleanEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(cleanEmail);
 
   // 1. Check if a user with this email already exists (identity lives on `User`,
-  //    `AgencyUser` is only the agency↔user link table).
-  const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });
+  //    `AgencyUser` is only the agency↔user link table). normalizedEmail
+  //    catches dot/plus-alias duplicates a plain `email` match would miss.
+  const existing = await prisma.user.findUnique({ where: { normalizedEmail } });
   if (existing) {
     const error = new Error("Email already exists") as Error & { status?: number };
     error.status = 409;
@@ -44,6 +47,7 @@ export const addStaffService = async (
     const user = await tx.user.create({
       data: {
         email: cleanEmail,
+        normalizedEmail,
         passwordHash,
         role: "STAFF",
         roleType: "TENANT",
@@ -95,17 +99,17 @@ export const addStaffService = async (
   return { staff, tempPassword };
 };
 
+// Lists every staff member, active and deactivated — a deactivated member
+// still needs to be visible (and reassignable back to active) rather than
+// silently vanishing from the roster.
 export const listStaffService = async (agencyId: string) => {
   return await prisma.agencyStaff.findMany({
-    where: {
-      agencyId,
-      isActive: true,
-    },
+    where: { agencyId },
     include: {
       user: { select: { id: true, role: true, user: { select: { id: true, email: true, createdAt: true } } } },
       role: { select: { id: true, name: true } },
     },
-    orderBy: { invitedAt: "desc" },
+    orderBy: [{ isActive: "desc" }, { invitedAt: "desc" }],
   });
 };
 
@@ -243,7 +247,58 @@ export const updateStaffProfileService = async (
   }
 };
 
+// First delete deactivates (reversible — see reactivateStaffService). Deleting an
+// ALREADY-deactivated member deletes it for real: an admin clicking delete on
+// someone already sitting in the inactive list means "get rid of this," not
+// "deactivate it again" — leaving it stuck forever as an un-purgeable archive row
+// was the actual bug being fixed here. Payroll/branch-manager references use
+// onDelete: SetNull, so history is preserved; the audit log (Mongo) has no FK.
 export const deactivateStaffService = async (
+  agencyId: string,
+  staffId: string
+): Promise<{ deleted: true } | { deleted: false; staff: Awaited<ReturnType<typeof prisma.agencyStaff.update>> }> => {
+  const staff = await prisma.agencyStaff.findFirst({
+    where: { id: staffId, agencyId },
+  });
+  if (!staff) {
+    const error = new Error("Staff not found") as Error & { status?: number };
+    error.status = 404;
+    throw error;
+  }
+
+  if (!staff.isActive) {
+    await prisma.agencyStaff.delete({ where: { id: staffId } });
+    await AuditLog.create({
+      agencyId,
+      staffId,
+      userId: staff.userId,
+      action: "STAFF_DELETED",
+      metadata: {},
+    });
+    return { deleted: true };
+  }
+
+  const updated = await prisma.agencyStaff.update({
+    where: { id: staffId },
+    data: { isActive: false },
+  });
+
+  // Write audit log
+  await AuditLog.create({
+    agencyId,
+    staffId,
+    userId: staff.userId,
+    action: "STAFF_DEACTIVATED",
+    metadata: {},
+  });
+
+  return { deleted: false, staff: updated };
+};
+
+// Undoes deactivateStaffService — a deactivated member is not deleted, so
+// there must be a way back in without re-inviting (which would fail on the
+// email-already-exists check anyway).
+export const reactivateStaffService = async (
   agencyId: string,
   staffId: string
 ) => {
@@ -258,15 +313,14 @@ export const deactivateStaffService = async (
 
   const updated = await prisma.agencyStaff.update({
     where: { id: staffId },
-    data: { isActive: false },
+    data: { isActive: true },
   });
 
-  // Write audit log
   await AuditLog.create({
     agencyId,
     staffId,
     userId: staff.userId,
-    action: "STAFF_DEACTIVATED",
+    action: "STAFF_REACTIVATED",
     metadata: {},
   });
 

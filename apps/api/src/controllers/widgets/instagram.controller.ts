@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
 import axios from "axios";
+import crypto from "node:crypto";
+import { redis } from "../../lib/redis";
 import { instagramWidgetService, saveInstagramConnectionService } from "src/services/widgets/instagram.service";
 
 export const InstagramWidgetController = async (
@@ -29,6 +31,15 @@ export const InstagramWidgetController = async (
     }
 };
 
+// OAuth `state` must be unguessable and bound, server-side, to the agency that
+// STARTED the flow. It used to be the raw agencyId, and the callback trusted it
+// as "the agency to attach this Instagram account to" — so anyone who knew an
+// agency's id could complete OAuth with their own Instagram account, then call
+// the callback with `state=<victim agencyId>` and plant their account (feed,
+// tokens) on the victim's site.
+const INSTAGRAM_STATE_TTL_SECONDS = 10 * 60;
+const instagramStateKey = (state: string) => `instagram-oauth-state:${state}`;
+
 // Redirect to Instagram login
 export const connectInstagramController = async (
     req: Request,
@@ -46,13 +57,16 @@ export const connectInstagramController = async (
         'instagram_business_manage_comments',
     ].join(',');
 
+    const state = crypto.randomBytes(24).toString("hex");
+    await redis.set(instagramStateKey(state), agencyId, "EX", INSTAGRAM_STATE_TTL_SECONDS);
+
     const url =
         `https://www.instagram.com/oauth/authorize` +
         `?client_id=${process.env.INSTAGRAM_APP_ID}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&scope=${encodeURIComponent(scopes)}` +
         `&response_type=code` +
-        `&state=${agencyId}`;
+        `&state=${state}`;
 
     return res.redirect(url);
 };
@@ -64,14 +78,24 @@ export const instagramCallbackController = async (
 ) => {
     try {
 
-        const code = req.query.code as string;
-        const agencyId = req.query.state as string;
+        const code = req.query.code;
+        const state = req.query.state;
 
-        if (!code) {
+        if (typeof code !== "string" || !code) {
             return res.status(400).json({
                 success: false,
                 message: "Authorization code missing."
             });
+        }
+        if (typeof state !== "string" || !/^[a-f0-9]{48}$/.test(state)) {
+            return res.status(400).json({ success: false, message: "Invalid or expired OAuth state." });
+        }
+
+        // One-time: GETDEL so a state can never be replayed, and the agency comes
+        // from OUR record of who started the flow, never from the request.
+        const agencyId = await redis.getdel(instagramStateKey(state));
+        if (!agencyId) {
+            return res.status(400).json({ success: false, message: "Invalid or expired OAuth state." });
         }
 
         //---------------------------------------
@@ -133,14 +157,8 @@ export const instagramCallbackController = async (
         });
 
     } catch (err) {
-        return res.status(500).json({
-            success: false,
-            message:
-                err instanceof Error
-                    ? err.message
-                    : "Instagram OAuth failed."
-        });
-
+        console.error("[Instagram OAuth] callback failed:", err);
+        return res.status(500).json({ success: false, message: "Instagram OAuth failed." });
     }
 };
 

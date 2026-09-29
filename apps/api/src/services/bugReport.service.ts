@@ -11,29 +11,62 @@ export async function submitBug(
     screenshotUrl?: string;
   }
 ) {
-  if (!data.title?.trim()) throw new Error("title is required");
-  if (!data.description?.trim()) throw new Error("description is required");
+  const text = (v: unknown, label: string, max: number, required: boolean): string | undefined => {
+    if (v === undefined || v === null || v === "") {
+      if (required) throw new Error(`${label} is required`);
+      return undefined;
+    }
+    if (typeof v !== "string") throw new Error(`${label} must be text`);
+    const t = v.trim();
+    if (!t) {
+      if (required) throw new Error(`${label} is required`);
+      return undefined;
+    }
+    if (t.length > max) throw new Error(`${label} must be at most ${max} characters (limit)`);
+    return t;
+  };
+  const title = text(data?.title, "title", 150, true)!;
+  const description = text(data?.description, "description", 5000, true)!;
+  const stepsToReproduce = text(data?.stepsToReproduce, "stepsToReproduce", 5000, false);
+  let screenshotUrl: string | undefined;
+  if (data?.screenshotUrl !== undefined && data.screenshotUrl !== null && data.screenshotUrl !== "") {
+    // Shown as a link/image to platform admins: http(s) only.
+    try {
+      const u = new URL(String(data.screenshotUrl));
+      if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error();
+      screenshotUrl = u.toString();
+    } catch {
+      throw new Error("screenshotUrl must be a valid http(s) URL (required format)");
+    }
+  }
 
   return prisma.bugReport.create({
     data: {
       agencyId,
-      title: data.title.trim(),
-      description: data.description.trim(),
-      stepsToReproduce: data.stepsToReproduce?.trim(),
-      screenshotUrl: data.screenshotUrl,
+      title,
+      description,
+      stepsToReproduce,
+      screenshotUrl,
       status: "REPORTED",
     },
   });
 }
 
+/**
+ * `agencyId: null` means "every agency" — the platform-admin Bug Triage view
+ * (this same function is reused under both `/agencies/me/bugs`, scoped, and
+ * `/admin/bugs`, unscoped; see bug.routes.ts). Explicit, not `undefined`
+ * silently dropped from the Prisma `where` — a platform admin has no
+ * agencyId of their own, and that shouldn't be an implicit accident.
+ */
 export async function getAgencyBugs(
-  agencyId: string,
+  agencyId: string | null,
   status?: string,
   page = 1,
   limit = 20
 ) {
   const where = {
-    agencyId,
+    ...(agencyId ? { agencyId } : {}),
     ...(status && isValidBugStatus(status) ? { status } : {}),
   };
 
@@ -46,12 +79,25 @@ export async function getAgencyBugs(
       include: {
         agency: { select: { id: true, name: true } },
         assignedTo: { select: { id: true, email: true } },
+        hints: {
+          orderBy: { createdAt: "asc" },
+          include: { createdBy: { select: { id: true, email: true } } },
+        },
       },
     }),
     prisma.bugReport.count({ where }),
   ]);
 
   return { items, total, page, limit };
+}
+
+/** Platform staff who can be assigned a bug — powers the Bug Triage assign dropdown. */
+export async function listPlatformStaff() {
+  return prisma.user.findMany({
+    where: { roleType: "PLATFORM" },
+    select: { id: true, email: true, role: true },
+    orderBy: { email: "asc" },
+  });
 }
 
 function isValidBugStatus(value: string): value is BugStatus {

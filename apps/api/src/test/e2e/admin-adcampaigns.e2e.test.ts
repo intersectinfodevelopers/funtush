@@ -87,13 +87,13 @@ d("Admin ad-campaign review (e2e)", () => {
   });
 
   it("GET /pending lists PENDING_APPROVAL campaigns from LARGE-tier agencies only", async () => {
-    const res = await request(app).get("/admin/ad-campaigns/pending").set(adminHeaders);
+    const res = await request(app).get("/admin/ad-campaigns/pending").set(adminHeaders).set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data.some((c: { id: string }) => c.id === pendingCampaignId)).toBe(true);
   });
 
   it("GET /active lists only ACTIVE campaigns", async () => {
-    const res = await request(app).get("/admin/ad-campaigns/active").set(adminHeaders);
+    const res = await request(app).get("/admin/ad-campaigns/active").set(adminHeaders).set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data.every((c: { status: string }) => c.status === "ACTIVE")).toBe(true);
   });
