@@ -1,10 +1,16 @@
 import { Router } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
 import { listEmailQueue } from "../../services/kyc.service.js";
+import { countEmailQueue, emailQueueSummary } from "../../lib/emailQueue.js";
+import { parsePagination, buildMeta } from "../../utils/pagination.js";
 import type { EmailStatus } from "../../lib/emailQueue.js";
 
-
-
 const router = Router();
+
+// Was gated only by the IP allow-list (`requireAdmin` on the parent router) —
+// require a real platform-admin session too, matching every other admin route.
+router.use(requireAuth, requirePlatformPermission("email_queue"));
 
 /**
  * GET /admin/email-queue
@@ -32,24 +38,16 @@ router.get("/", async (req, res) => {
       statuses = requested;
     }
 
-    const emails = await listEmailQueue(statuses);
+    const page = parsePagination(req.query, { defaultLimit: 25, maxLimit: 100 });
+    const [emails, total, summary] = await Promise.all([
+      listEmailQueue(statuses, { skip: page.skip, limit: page.limit }),
+      countEmailQueue({ status: statuses }),
+      emailQueueSummary(),
+    ]);
 
-    // Group by status for convenient consumption by the dashboard
-    const grouped = {
-      pending: emails.filter((e) => e.status === "pending"),
-      sent: emails.filter((e) => e.status === "sent"),
-      failed: emails.filter((e) => e.status === "failed"),
-    };
-
-    res.json({
-      data: emails,
-      summary: {
-        pending: grouped.pending.length,
-        sent: grouped.sent.length,
-        failed: grouped.failed.length,
-        total: emails.length,
-      },
-    });
+    // `summary` is global (all statuses) so the dashboard cards stay correct while
+    // a status tab is selected; `total`/`meta` describe the filtered list.
+    res.json({ data: emails, summary, total, meta: buildMeta(total, page.page, page.limit) });
   } catch (err) {
     console.error("[GET /admin/email-queue]", err);
     res.status(500).json({ error: "Failed to fetch email queue" });

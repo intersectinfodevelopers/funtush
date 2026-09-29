@@ -51,17 +51,15 @@ vi.mock("../services/stripeSubscriptionService", () => ({
 
 const initiateKhaltiPayment = vi.fn();
 const verifyAndCompleteKhaltiPayment = vi.fn();
-vi.mock("../services/khaltiSubscriptionService", () => ({
-  initiateKhaltiPayment: (...a: unknown[]) => initiateKhaltiPayment(...a),
-  verifyAndCompleteKhaltiPayment: (...a: unknown[]) => verifyAndCompleteKhaltiPayment(...a),
-}));
-
 const initiateEsewaPayment = vi.fn();
 const verifyAndCompleteEsewaPayment = vi.fn();
-vi.mock("../services/esewaSubscriptionService", () => ({
+vi.mock("../services/subscriptionPayments.service", () => ({
+  initiateKhaltiPayment: (...a: unknown[]) => initiateKhaltiPayment(...a),
+  verifyAndCompleteKhaltiPayment: (...a: unknown[]) => verifyAndCompleteKhaltiPayment(...a),
   initiateEsewaPayment: (...a: unknown[]) => initiateEsewaPayment(...a),
   verifyAndCompleteEsewaPayment: (...a: unknown[]) => verifyAndCompleteEsewaPayment(...a),
 }));
+
 
 const initiateConnectIPSPayment = vi.fn();
 const checkAndUpdateConnectIPSPayment = vi.fn();
@@ -189,14 +187,14 @@ describe("payment initiation routes", () => {
     initiateKhaltiPayment.mockResolvedValue({ paymentUrl: "https://khalti.example" });
     const res = await post("/subscribe/khalti/initiate", { subscriptionTierId: "tier-1" });
     expect(res.status).toBe(200);
-    expect(initiateKhaltiPayment).toHaveBeenCalledWith("agency-1", "tier-1");
+    expect(initiateKhaltiPayment).toHaveBeenCalledWith("agency-1", "tier-1", undefined);
   });
 
   it("POST /subscribe/esewa/initiate", async () => {
     initiateEsewaPayment.mockResolvedValue({ paymentUrl: "https://esewa.example" });
     const res = await post("/subscribe/esewa/initiate", { subscriptionTierId: "tier-1" });
     expect(res.status).toBe(200);
-    expect(initiateEsewaPayment).toHaveBeenCalledWith("agency-1", "tier-1");
+    expect(initiateEsewaPayment).toHaveBeenCalledWith("agency-1", "tier-1", undefined);
   });
 
   it("POST /subscribe/connectips/initiate requires bankCode/accountNumber", async () => {

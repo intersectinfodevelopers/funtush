@@ -63,7 +63,7 @@ d("Admin agency management (e2e)", () => {
   });
 
   it("GET /admin/agencies lists agencies with pagination metadata", async () => {
-    const res = await request(app).get("/admin/agencies").set(adminHeaders);
+    const res = await request(app).get("/admin/agencies").set(adminHeaders).set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
     expect(res.body.meta).toHaveProperty("total");
@@ -76,17 +76,22 @@ d("Admin agency management (e2e)", () => {
     const bySearch = await request(app)
       .get("/admin/agencies")
       .query({ search: agency?.name })
-      .set(adminHeaders);
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(bySearch.status).toBe(200);
     expect(bySearch.body.data.some((a: { id: string }) => a.id === ctx.agencyId)).toBe(true);
 
-    const byStatus = await request(app).get("/admin/agencies").query({ status: "ACTIVE" }).set(adminHeaders);
+    const byStatus = await request(app)
+      .get("/admin/agencies")
+      .query({ status: "ACTIVE" })
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(byStatus.status).toBe(200);
     expect(byStatus.body.data.every((a: { status: string }) => a.status === "ACTIVE")).toBe(true);
   });
 
   it("GET /admin/agencies/:id returns the full profile with booking/staff summaries", async () => {
-    const res = await request(app).get(`/admin/agencies/${ctx.agencyId}`).set(adminHeaders);
+    const res = await request(app).get(`/admin/agencies/${ctx.agencyId}`).set(adminHeaders).set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(ctx.agencyId);
     expect(res.body).toHaveProperty("staffCount");
@@ -95,7 +100,7 @@ d("Admin agency management (e2e)", () => {
   });
 
   it("GET /admin/agencies/:id 404s for an unknown id", async () => {
-    const res = await request(app).get("/admin/agencies/does-not-exist").set(adminHeaders);
+    const res = await request(app).get("/admin/agencies/does-not-exist").set(adminHeaders).set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(404);
   });
 
@@ -110,6 +115,7 @@ d("Admin agency management (e2e)", () => {
     const res = await request(app)
       .patch(`/admin/agencies/${ctx.agencyId}/tier`)
       .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
       .send({ tier: targetTier.name });
 
     expect(res.status).toBe(200);
@@ -120,6 +126,7 @@ d("Admin agency management (e2e)", () => {
     const res = await request(app)
       .patch(`/admin/agencies/${ctx.agencyId}/tier`)
       .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
       .send({ tier: "NOT_A_REAL_TIER" });
     expect(res.status).toBe(500);
   });
@@ -128,6 +135,7 @@ d("Admin agency management (e2e)", () => {
     const res = await request(app)
       .patch(`/admin/agencies/${ctx.agencyId}/status`)
       .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
       .send({ status: "SUSPENDED" });
     expect(res.status).toBe(400);
   });
@@ -136,6 +144,7 @@ d("Admin agency management (e2e)", () => {
     const suspend = await request(app)
       .patch(`/admin/agencies/${ctx.agencyId}/status`)
       .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
       .send({ status: "SUSPENDED", reason: "E2E test suspension" });
     expect(suspend.status).toBe(200);
     expect(suspend.body.status).toBe("SUSPENDED");
@@ -143,6 +152,7 @@ d("Admin agency management (e2e)", () => {
     const reactivate = await request(app)
       .patch(`/admin/agencies/${ctx.agencyId}/status`)
       .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
       .send({ status: "ACTIVE", reason: "E2E test reactivation" });
     expect(reactivate.status).toBe(200);
     expect(reactivate.body.status).toBe("ACTIVE");
@@ -187,16 +197,73 @@ d("Admin agency management (e2e)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("POST /:id/impersonate issues a short-lived token", async () => {
+  it("POST /:id/impersonate is unreachable without a platform-admin bearer token, even with admin-context headers", async () => {
     const res = await request(app).post(`/admin/agencies/${ctx.agencyId}/impersonate`).set(adminHeaders);
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /:id/impersonate rejects a tenant-scoped access token with 403", async () => {
+    const res = await request(app)
+      .post(`/admin/agencies/${ctx.agencyId}/impersonate`)
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${ctx.accessToken}`)
+      .send({ reason: "Support session" });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /:id/impersonate 400s without a reason", async () => {
+    const res = await request(app)
+      .post(`/admin/agencies/${ctx.agencyId}/impersonate`)
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /:id/impersonate issues a real, working 1-hour agency session", async () => {
+    const res = await request(app)
+      .post(`/admin/agencies/${ctx.agencyId}/impersonate`)
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
+      .send({ reason: "Investigating a trekker payment complaint" });
+
     expect(res.status).toBe(201);
-    expect(res.body.token).toBeTruthy();
+    expect(res.body.accessToken).toBeTruthy();
+    expect(res.body.refreshToken).toBeTruthy();
     expect(res.body.agencyId).toBe(ctx.agencyId);
-    expect(res.body.ttlSeconds).toBe(15 * 60);
+    expect(res.body.impersonatedUserId).toBeTruthy();
+    expect(res.body.ttlSeconds).toBe(60 * 60);
+
+    // The real proof: the issued refreshToken must actually work against a
+    // genuine agency-dashboard route, scoped to the correct agency — not
+    // just that the endpoint returns fields that look right.
+    const dashboardRes = await request(app)
+      .get("/agencies/me/analytics")
+      .set({ "x-refresh-token": res.body.refreshToken });
+    expect(dashboardRes.status).toBe(200);
+  });
+
+  it("POST /:id/impersonate 403s a banned agency", async () => {
+    const bannedCtx = await createAgencyContext();
+    try {
+      await db.agency.update({ where: { id: bannedCtx.agencyId }, data: { status: "BANNED" } });
+
+      const res = await request(app)
+        .post(`/admin/agencies/${bannedCtx.agencyId}/impersonate`)
+        .set(adminHeaders)
+        .set("Authorization", `Bearer ${platformAdminToken()}`)
+        .send({ reason: "Support session" });
+      expect(res.status).toBe(403);
+    } finally {
+      await bannedCtx.cleanup();
+    }
   });
 
   it("POST /:id/impersonate 404s for an unknown agency", async () => {
-    const res = await request(app).post("/admin/agencies/does-not-exist/impersonate").set(adminHeaders);
+    const res = await request(app)
+      .post("/admin/agencies/does-not-exist/impersonate")
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`)
+      .send({ reason: "Support session" });
     expect(res.status).toBe(404);
   });
 });

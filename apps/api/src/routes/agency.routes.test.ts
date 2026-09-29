@@ -49,6 +49,8 @@ vi.mock("../services/agency.service", () => ({
   updateAgencyProfileService: (...a: unknown[]) => updateAgencyProfileService(...a),
   AgencyKYCService: (...a: unknown[]) => AgencyKYCService(...a),
   KYCStatusService: (...a: unknown[]) => KYCStatusService(...a),
+  // The controller runs this guard before uploading; the real one only refuses approved/in-review agencies.
+  assertKycSubmittable: async () => undefined,
   acceptBookingService: vi.fn(),
   agencySubscription: vi.fn(),
   getAgencyDashboardService: vi.fn(),

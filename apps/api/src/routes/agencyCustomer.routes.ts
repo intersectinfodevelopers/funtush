@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { agencyGetCustomerProfile, createCustomerNote, getAgencyCustomers, getCustomerAnalytics, getCustomerNote } from "src/controllers/agencyCustomer.controller.js";
+import { agencyGetCustomerProfile, createCustomerNote, deleteCustomer, getAgencyCustomers, updateCustomer, getCustomerAnalytics, getCustomerNote } from "src/controllers/agencyCustomer.controller.js";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 
 const router = Router();
@@ -15,6 +15,9 @@ const router = Router();
  * /customers/{id}/notes:
  *   get: { tags: [Customers], summary: List notes on a customer, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Notes } } }
  *   post: { tags: [Customers], summary: Add a note to a customer, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Created } } }
+ * /agencies/me/customers/{id}:
+ *   patch: { tags: [Customers], summary: Update a customer's details, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated }, 404: { description: Not found } } }
+ *   delete: { tags: [Customers], summary: Remove a customer from the agency's list, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Removed }, 404: { description: Not found } } }
  */
 router.route('/agencies/me/customers')
     .get(authenticateWithRefreshToken, getAgencyCustomers);
@@ -28,5 +31,9 @@ router.route('/customers/:id/profile')
 
 router.route('/agencies/me/customers/analytics')
     .get(authenticateWithRefreshToken, getCustomerAnalytics);
+
+router.route('/agencies/me/customers/:id')
+    .patch(authenticateWithRefreshToken, updateCustomer)
+    .delete(authenticateWithRefreshToken, deleteCustomer);
 
 export default router;

@@ -27,6 +27,7 @@ vi.mock("src/middleware/refreshTokenAuthentication", () => ({
 }));
 
 const createBranchService = vi.fn();
+const deleteBranchService = vi.fn();
 const updateBranchService = vi.fn();
 const getBranchesService = vi.fn();
 const assignStaffToBranchService = vi.fn();
@@ -44,6 +45,14 @@ vi.mock("src/services/branches.service", () => ({
   assignPackageToBranchService: (...a: unknown[]) => assignPackageToBranchService(...a),
   getBranchReportService: (...a: unknown[]) => getBranchReportService(...a),
   getConsolidatedFinanceService: (...a: unknown[]) => getConsolidatedFinanceService(...a),
+  deleteBranchService: (...a: unknown[]) => deleteBranchService(...a),
+  BranchError: class BranchError extends Error {
+    status: number;
+    constructor(m: string, status = 400) {
+      super(m);
+      this.status = status;
+    }
+  },
 }));
 
 vi.mock("@funtush/database", () => ({ db: {} }));

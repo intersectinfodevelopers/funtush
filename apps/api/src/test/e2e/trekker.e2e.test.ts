@@ -27,6 +27,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import { db } from "@funtush/database";
 import { generateAccessToken } from "@funtush/auth";
+import { normalizeEmail } from "@funtush/shared";
 import { app } from "../../app";
 import { dbAvailable } from "./helpers";
 
@@ -96,8 +97,9 @@ d("Trekker registration + preferences (e2e)", () => {
 
     async function setUp() {
       const s = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const userEmail = `trekker-prefs-${s}@example.com`;
       const user = await db.user.create({
-        data: { email: `trekker-prefs-${s}@example.com`, passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
+        data: { email: userEmail, normalizedEmail: normalizeEmail(userEmail), passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
         select: { id: true },
       });
       userId = user.id;
@@ -161,8 +163,9 @@ d("Trekker registration + preferences (e2e)", () => {
       await setUp();
       // A second, unrelated trekker.
       const s = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const victimEmail = `trekker-victim-${s}@example.com`;
       const victim = await db.user.create({
-        data: { email: `trekker-victim-${s}@example.com`, passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
+        data: { email: victimEmail, normalizedEmail: normalizeEmail(victimEmail), passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
         select: { id: true },
       });
       createdUserIds.push(victim.id);

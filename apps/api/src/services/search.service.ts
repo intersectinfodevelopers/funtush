@@ -19,6 +19,8 @@ export interface PackageDocument {
   id: string;
   agencyId: string;
   agencyName: string;
+  /** The agency's site slug — lets a trekker jump from a search result to that agency's own site. */
+  agencySlug: string;
   title: string;
   description: string;
   destination: string[];
@@ -28,6 +30,7 @@ export interface PackageDocument {
   duration: number;
   altitude: number;
   status: string;
+  photos: string[];
   slug: string;
   tier: string;
   visibilityScore: number;
@@ -116,9 +119,11 @@ type PackageWithRelations = {
   pricePerPerson: unknown;
   difficulty: string;
   status: string;
+  photos?: string[];
   createdAt: Date;
   agency: {
     name: string;
+    slug?: string;
     priorityOverride: number;
     tier?: { name: string } | null;
     visibilityScore?: { finalScore: number } | null;
@@ -148,6 +153,7 @@ export function toPackageDocument(
     id: pkg.id,
     agencyId: pkg.agencyId,
     agencyName: pkg.agency.name,
+    agencySlug: pkg.agency.slug ?? "",
     title: pkg.title,
     description: pkg.description ?? "",
     destination: pkg.destinations.map((d) => d.name),
@@ -157,6 +163,7 @@ export function toPackageDocument(
     duration: pkg.durationDays,
     altitude,
     status: pkg.status,
+    photos: pkg.photos ?? [],
     slug: pkg.slug,
     tier,
     visibilityScore,
@@ -201,6 +208,7 @@ const PACKAGE_INCLUDE = {
   agency: {
     select: {
       name: true,
+      slug: true,
       priorityOverride: true,
       tier: { select: { name: true } },
       visibilityScore: { select: { finalScore: true } },

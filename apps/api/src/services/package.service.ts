@@ -1,5 +1,6 @@
 import { db } from "@funtush/database";
-import { validatePackageInput } from "../utils/validator";
+import { fieldError } from "../utils/httpError";
+import { validatePackageInput, parsePackagePhotos, parsePackageDetails } from "../utils/validator";
 import { indexPackage, indexAgency, removePackage } from "./search.service.js";
 
 // TrekPackage.slug is @unique and required — derive it from the title and
@@ -27,6 +28,7 @@ interface CreatePackageInput {
   pricePerPerson: number;
   difficulty: "EASY" | "MODERATE" | "CHALLENGING" | "DIFFICULT";
   maxGroupSize: number;
+  photos?: string[];
   destinationIds?: string[]; // optional: link existing destinations (M2M)
 }
 
@@ -45,6 +47,8 @@ export const createPackageService = async (agencyId: string, data: CreatePackage
       pricePerPerson: data.pricePerPerson,
       difficulty: data.difficulty,
       maxGroupSize: data.maxGroupSize,
+      ...(data.photos !== undefined ? { photos: parsePackagePhotos(data.photos) } : {}),
+      ...parsePackageDetails(data as unknown as Record<string, unknown>),
       // status omitted → defaults to DRAFT
     },
   });
@@ -60,6 +64,7 @@ interface UpdatePackageInput {
   pricePerPerson?: number;
   difficulty?: "EASY" | "MODERATE" | "CHALLENGING" | "DIFFICULT";
   maxGroupSize?: number;
+  photos?: string[];
 }
 
 export const updatePackageService = async (
@@ -75,6 +80,14 @@ export const updatePackageService = async (
   if (data.pricePerPerson !== undefined) updateData.pricePerPerson = data.pricePerPerson;
   if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
   if (data.maxGroupSize !== undefined) updateData.maxGroupSize = data.maxGroupSize;
+  if (data.photos !== undefined) {
+    updateData.photos = parsePackagePhotos(data.photos);
+    if ((updateData.photos as string[]).length === 0) {
+      const cur = await db.trekPackage.findFirst({ where: { id: packageId, agencyId }, select: { status: true } });
+      if (cur?.status === "PUBLISHED") throw fieldError("photos", "A published package needs at least one photo.");
+    }
+  }
+  Object.assign(updateData, parsePackageDetails(data as unknown as Record<string, unknown>));
   // status is deliberately NOT editable here — it's driven by publish/archive endpoints
 
   if (Object.keys(updateData).length === 0) {
@@ -95,10 +108,42 @@ export const updatePackageService = async (
   return await db.trekPackage.findUnique({ where: { id: packageId } });
 };
 
+export type PackageSort = "newest" | "oldest" | "price_asc" | "price_desc" | "duration" | "duration_desc" | "title_asc" | "title_desc";
+
+const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+
+/**
+ * A package has one departure date; once that day is behind us the package is finished, so it moves to Archived
+ * (off the site and marketplace, bookings kept). Runs hourly and, for the agency being looked at, on every list.
+ */
+export const archiveCompletedPackages = async (agencyId?: string): Promise<number> => {
+  const where = {
+    ...(agencyId ? { agencyId } : {}),
+    status: { in: ["DRAFT", "PUBLISHED"] as ("DRAFT" | "PUBLISHED")[] },
+    departureDates: { some: {} },
+    NOT: { departureDates: { some: { startDate: { gte: todayStart() } } } },
+  };
+  const due = await db.trekPackage.findMany({ where, select: { id: true, agencyId: true, title: true } });
+  if (due.length === 0) return 0;
+  await db.trekPackage.updateMany({ where: { id: { in: due.map((p) => p.id) } }, data: { status: "ARCHIVED" } });
+  await db.packageActivity.createMany({
+    data: due.map((p) => ({
+      agencyId: p.agencyId, packageId: p.id, packageTitle: p.title, action: "ARCHIVED", actorUserId: "system", actorName: "Funtush (automatic)",
+      actorRole: "SYSTEM", summary: "Archived automatically — the departure date has passed",
+    })),
+  });
+  for (const p of due) void removePackage(p.id);
+  return due.length;
+};
+
+const monthStart = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); };
+
 export const listPackagesService = async (
   agencyId: string,
-  filters: { status?: string; destination?: string }
+  filters: { status?: string; destination?: string; search?: string; sort?: PackageSort },
+  page: { skip: number; take: number },
 ) => {
+  await archiveCompletedPackages(agencyId).catch((e) => console.error("[archive completed]", (e as Error).message));
   const where: Record<string, unknown> = { agencyId };   // ← always tenant-scoped
 
   if (filters.status) {
@@ -111,10 +156,68 @@ export const listPackagesService = async (
     // (or filter by destination id if you prefer: { some: { id: filters.destination } })
   }
 
-  return db.trekPackage.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    // include: { destinations: true } if you want them in the response
+  const search = filters.search?.trim().slice(0, 100);
+  if (search) {
+    // Title first, but people also search by place / kind of trek.
+    where.OR = ["title", "destination", "region", "category"].map((f) => ({ [f]: { contains: search, mode: "insensitive" } }));
+  }
+
+  // id tie-breaker: none of these keys is unique, and an unstable order makes
+  // rows repeat/vanish across pages.
+  const orderBy =
+    filters.sort === "price_asc" ? [{ pricePerPerson: "asc" as const }, { id: "desc" as const }]
+    : filters.sort === "price_desc" ? [{ pricePerPerson: "desc" as const }, { id: "desc" as const }]
+    : filters.sort === "duration" ? [{ durationDays: "asc" as const }, { id: "desc" as const }]
+    : filters.sort === "duration_desc" ? [{ durationDays: "desc" as const }, { id: "desc" as const }]
+    : filters.sort === "title_asc" ? [{ title: "asc" as const }, { id: "desc" as const }]
+    : filters.sort === "title_desc" ? [{ title: "desc" as const }, { id: "desc" as const }]
+    : filters.sort === "oldest" ? [{ createdAt: "asc" as const }, { id: "asc" as const }]
+    : [{ createdAt: "desc" as const }, { id: "desc" as const }];
+
+  const [rows, total, groups, totalBeforeMonth] = await Promise.all([
+    db.trekPackage.findMany({
+      where,
+      orderBy,
+      skip: page.skip,
+      take: page.take,
+      include: {
+        // The soonest upcoming departure, for the "Start date" column.
+        departureDates: {
+          where: { startDate: { gte: todayStart() } },
+          orderBy: { startDate: "asc" },
+          take: 1,
+          select: { id: true, startDate: true, maxSlots: true, bookedSlots: true },
+        },
+      },
+    }),
+    db.trekPackage.count({ where }),
+    // Tab counts for the whole agency, ignoring the current filter.
+    db.trekPackage.groupBy({ by: ["status"], where: { agencyId }, _count: { _all: true } }),
+    // How many packages the agency had when this month began — the baseline for "growth from last month".
+    db.trekPackage.count({ where: { agencyId, createdAt: { lt: monthStart() } } }),
+  ]);
+
+  const data = rows.map(({ departureDates, ...pkg }) => ({ ...pkg, nextDeparture: departureDates[0] ?? null }));
+  const counts: Record<string, number> = { DRAFT: 0, PUBLISHED: 0, ARCHIVED: 0 };
+  for (const g of groups) counts[g.status] = g._count._all;
+  return { data, total, counts, totalBeforeMonth };
+};
+
+/**
+ * One package with everything the dashboard's editor / booking form needs
+ * (itinerary, departures with seat counts, add-ons, destinations). The list
+ * endpoint deliberately omits these. Scoped to the caller's agency: another
+ * agency's id returns null, indistinguishable from a missing one.
+ */
+export const getPackageDetailService = async (agencyId: string, packageId: string) => {
+  return db.trekPackage.findFirst({
+    where: { id: packageId, agencyId },
+    include: {
+      itineraries: { orderBy: { dayNumber: "asc" } },
+      departureDates: { orderBy: { startDate: "asc" } },
+      addOns: { orderBy: { createdAt: "asc" } },
+      destinations: { select: { id: true, name: true, region: true } },
+    },
   });
 };
 
@@ -133,7 +236,7 @@ export const publishPackageService = async (agencyId: string, packageId: string)
 
   // STEP 2 (optional guard) — can't publish an archived package
   if (pkg.status === "ARCHIVED") {
-    throw new Error("Cannot publish an archived package");
+    throw fieldError("publish", "An archived package can't be published.");
   }
 
   // STEP 3 — completeness checks: collect ALL problems, not just the first
@@ -141,11 +244,12 @@ export const publishPackageService = async (agencyId: string, packageId: string)
   if (!pkg.title?.trim()) missing.push("title");
   if (!pkg.description?.trim()) missing.push("description");
   if (Number(pkg.pricePerPerson) <= 0) missing.push("a valid price");
+  if ((pkg.photos ?? []).length === 0) missing.push("at least one photo");
   if (pkg.itineraries.length === 0) missing.push("at least one itinerary day");
   if (pkg.departureDates.length === 0) missing.push("at least one departure date");
 
   if (missing.length > 0) {
-    throw new Error(`Cannot publish. Missing: ${missing.join(", ")}`);  // → controller returns 400
+    throw fieldError("publish", `This package can't be published yet. Please add: ${missing.join(", ")}.`);  // → controller returns 400
   }
 
   // STEP 4 — all checks passed → flip to PUBLISHED.
@@ -188,6 +292,20 @@ export const duplicatePackageService = async (agencyId: string, packageId: strin
       pricePerPerson: source.pricePerPerson,
       difficulty: source.difficulty,
       maxGroupSize: source.maxGroupSize,
+      photos: source.photos,
+      destination: source.destination,
+      category: source.category,
+      minDurationDays: source.minDurationDays,
+      maxDurationDays: source.maxDurationDays,
+      altitudeMinM: source.altitudeMinM,
+      altitudeMaxM: source.altitudeMaxM,
+      region: source.region,
+      bestTimeToVisit: source.bestTimeToVisit,
+      activities: source.activities,
+      routes: source.routes,
+      shortSummary: source.shortSummary,
+      currency: source.currency,
+      volumeDiscounts: source.volumeDiscounts as never,
       status: "DRAFT",                       // always a draft, even if the source was PUBLISHED
 
       itineraries: {
@@ -239,4 +357,80 @@ export const archivePackageService = async (agencyId: string, packageId: string)
   void removePackage(packageId);
 
   return { success: true, message: "Package archived" };
+};
+/**
+ * Permanent delete — only for an already ARCHIVED package with no bookings (bookings keep a hard reference to their
+ * package, so a package that has ever been booked can only stay archived).
+ */
+export const deleteArchivedPackageService = async (agencyId: string, packageId: string) => {
+  const pkg = await db.trekPackage.findFirst({ where: { id: packageId, agencyId }, select: { id: true, status: true } });
+  if (!pkg) {
+    const err = new Error("Package not found") as Error & { status?: number };
+    err.status = 404;
+    throw err;
+  }
+  if (pkg.status !== "ARCHIVED") {
+    const err = new Error("Archive the package before deleting it permanently") as Error & { status?: number };
+    err.status = 409;
+    throw err;
+  }
+  if ((await db.booking.count({ where: { packageId } })) > 0) {
+    const err = new Error("This package has bookings, so it can't be permanently deleted. It stays archived.") as Error & { status?: number };
+    err.status = 409;
+    throw err;
+  }
+  try {
+    await db.trekPackage.deleteMany({ where: { id: packageId, agencyId } });
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2003") {
+      const err = new Error("This package is still referenced elsewhere, so it can't be permanently deleted.") as Error & { status?: number };
+      err.status = 409;
+      throw err;
+    }
+    throw e;
+  }
+  void removePackage(packageId);
+  return { success: true, message: "Package deleted permanently" };
+};
+
+/** PUBLISHED → DRAFT: takes the package off the site and marketplace without archiving it. */
+export const unpublishPackageService = async (agencyId: string, packageId: string) => {
+  const pkg = await db.trekPackage.findFirst({ where: { id: packageId, agencyId }, select: { status: true } });
+  if (!pkg) {
+    const err = new Error("Package not found") as Error & { status?: number };
+    err.status = 404;
+    throw err;
+  }
+  if (pkg.status !== "PUBLISHED") {
+    const err = new Error("Only a published package can be unpublished") as Error & { status?: number };
+    err.status = 409;
+    throw err;
+  }
+  await db.trekPackage.update({ where: { id: packageId }, data: { status: "DRAFT" } });
+  void removePackage(packageId);
+  return { success: true, message: "Package unpublished" };
+};
+
+/**
+ * ARCHIVED → DRAFT. The package comes back as a draft (not live) so it can be reviewed and published again.
+ * A package whose single departure date has already passed can't be restored as-is — it would just be archived
+ * again — so its date has to be moved first.
+ */
+export const restorePackageService = async (agencyId: string, packageId: string) => {
+  const pkg = await db.trekPackage.findFirst({ where: { id: packageId, agencyId }, select: { status: true, departureDates: { select: { startDate: true } } } });
+  if (!pkg) {
+    const err = new Error("Package not found") as Error & { status?: number };
+    err.status = 404;
+    throw err;
+  }
+  if (pkg.status !== "ARCHIVED") {
+    const err = new Error("Only an archived package can be restored") as Error & { status?: number };
+    err.status = 409;
+    throw err;
+  }
+  if (pkg.departureDates.length > 0 && !pkg.departureDates.some((d) => d.startDate >= todayStart())) {
+    throw fieldError("restore", "This package's departure date has passed. Edit it and set a new departure date first, then restore it.");
+  }
+  await db.trekPackage.update({ where: { id: packageId }, data: { status: "DRAFT" } });
+  return { success: true, message: "Package restored as a draft" };
 };

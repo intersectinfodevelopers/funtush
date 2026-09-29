@@ -12,8 +12,12 @@ export const RATE_LIMITS: Record<string, RateLimitConfig> = {
   "DEFAULT":                      { maxRequests: 200, windowSecs: 60       }, // 200 per minute
 };
 
-// SOS routes are never rate limited
-export const SOS_PATHS = ["/sos", "/api/sos", "/emergency"];
+// SOS/safety routes are never rate limited — a life-safety feed must not 429
+// during exactly the moment it matters most (several staff polling the live
+// feed, repeated acknowledge/note/resolve calls during a real incident).
+// `/agencies/me/safety` is the actual, current agency dashboard route (Safety
+// Monitoring page); `/sos`/`/api/sos` are the legacy trigger endpoints.
+export const SOS_PATHS = ["/sos", "/api/sos", "/emergency", "/agencies/me/safety"];
 
 export interface RateLimitResult {
   allowed:    boolean;

@@ -294,6 +294,99 @@ export async function getAgencyProfile(slug: string) {
   };
 }
 
+/* ── 2b. Single package public detail ────────────────────────────────────── */
+
+export async function getPackageBySlug(slug: string) {
+  const pkg = await db.trekPackage.findFirst({
+    where: { slug, status: "PUBLISHED", agency: LISTABLE_AGENCY },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      description: true,
+      shortSummary: true,
+      durationDays: true,
+      pricePerPerson: true,
+      currency: true,
+      difficulty: true,
+      maxGroupSize: true,
+      photos: true,
+      destination: true,
+      region: true,
+      bestTimeToVisit: true,
+      activities: true,
+      volumeDiscounts: true,
+      agency: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          priorityOverride: true,
+          tier: { select: { name: true } },
+          profile: { select: { logo: true, logoShowOnWebsite: true, address: true, addressShowOnWebsite: true } },
+        },
+      },
+      destinations: { select: { name: true, region: true, altitudeM: true, bestSeason: true } },
+      itineraries: {
+        orderBy: { dayNumber: "asc" },
+        select: { dayNumber: true, description: true, location: true, altitudeM: true, photos: true },
+      },
+      departureDates: {
+        where: { startDate: { gte: new Date() }, status: { not: "FULL" } },
+        orderBy: { startDate: "asc" },
+        take: 12,
+        select: { id: true, startDate: true, maxSlots: true, bookedSlots: true, status: true },
+      },
+      addOns: { select: { id: true, name: true, price: true, perPerson: true } },
+    },
+  });
+  if (!pkg) return null;
+
+  const ratingAgg = await db.review.aggregate({
+    where: { agencyId: pkg.agency.id, verified: true, flags: { none: { status: "REMOVED" } } },
+    _avg: { rating: true },
+    _count: { rating: true },
+  });
+
+  return {
+    id: pkg.id,
+    title: pkg.title,
+    slug: pkg.slug,
+    description: pkg.description,
+    shortSummary: pkg.shortSummary,
+    durationDays: pkg.durationDays,
+    pricePerPerson: Number(pkg.pricePerPerson),
+    currency: pkg.currency,
+    difficulty: pkg.difficulty,
+    maxGroupSize: pkg.maxGroupSize,
+    photos: pkg.photos,
+    destination: pkg.destination,
+    region: pkg.region,
+    bestTimeToVisit: pkg.bestTimeToVisit,
+    activities: pkg.activities,
+    volumeDiscounts: pkg.volumeDiscounts,
+    destinations: pkg.destinations,
+    itinerary: pkg.itineraries,
+    departureDates: pkg.departureDates.map((d) => ({
+      id: d.id,
+      startDate: d.startDate,
+      slotsAvailable: d.maxSlots - d.bookedSlots,
+      status: d.status,
+    })),
+    addOns: pkg.addOns.map((a) => ({ id: a.id, name: a.name, price: Number(a.price), perPerson: a.perPerson })),
+    agency: {
+      id: pkg.agency.id,
+      name: pkg.agency.name,
+      slug: pkg.agency.slug,
+      tier: pkg.agency.tier.name,
+      logo: pkg.agency.profile?.logoShowOnWebsite ? pkg.agency.profile.logo : null,
+      address: pkg.agency.profile?.addressShowOnWebsite ? pkg.agency.profile.address : null,
+      sponsored: pkg.agency.priorityOverride > 0,
+      rating: { average: roundRating(ratingAgg._avg.rating), count: ratingAgg._count.rating },
+    },
+  };
+}
+
 /* ── 3. Destination directory ────────────────────────────────────────────── */
 
 export interface DestinationListItem {

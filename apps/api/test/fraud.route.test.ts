@@ -10,8 +10,9 @@ const { mockPrisma, queueEmailMock } = vi.hoisted(() => ({
       findMany:   vi.fn(),
       findUnique: vi.fn(),
       update:     vi.fn(),
+      count:      vi.fn().mockResolvedValue(1),
     },
-    agency:         { update: vi.fn(), findMany: vi.fn() },
+    agency:         { update: vi.fn(), findMany: vi.fn(), count: vi.fn().mockResolvedValue(1) },
     blocklistEntry: { createMany: vi.fn() },
     $transaction:   vi.fn(),
   },
@@ -19,6 +20,12 @@ const { mockPrisma, queueEmailMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/packages/database/prisma", () => ({ prisma: mockPrisma }));
+vi.mock("@funtush/auth", () => ({
+  requireAuth: (_req: any, _res: any, next: any) => next(),
+}));
+vi.mock("../src/middleware/requirePlatformPermission.middleware", () => ({
+  requirePlatformPermission: () => (_req: any, _res: any, next: any) => next(),
+}));
 vi.mock("../src/lib/emailQueue", () => ({
   queueEmail: (...args: unknown[]) => queueEmailMock(...args),
 }));
@@ -52,6 +59,7 @@ describe("Fraud queue admin routes", () => {
       { ...PENDING_FLAG, id: "r1", signal: "RED" },
       { ...PENDING_FLAG, id: "o1", signal: "ORANGE" },
     ] as never);
+    vi.mocked(mockPrisma.fraudFlag.count).mockResolvedValue(3);
 
     const res = await request(app).get("/admin/fraud/queue");
 

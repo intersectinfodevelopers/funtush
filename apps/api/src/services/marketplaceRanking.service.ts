@@ -158,6 +158,8 @@ function toStringArray(value: unknown): string[] {
 export async function rankAgencies(opts: {
   trekkerId?: string | null;
   filters?: { region?: string; tier?: string; minRating?: number; search?: string; limit?: number };
+  /** Size of the pool scored precisely. Defaults to 500 (3000 with region/minRating filters); exposed for tests. */
+  candidateLimit?: number;
 }): Promise<RankAgenciesResult> {
   const { trekkerId, filters = {} } = opts;
   const since = new Date(Date.now() - THIRTY_DAYS_MS);
@@ -170,50 +172,6 @@ export async function rankAgencies(opts: {
       { profile: { description: { contains: filters.search, mode: "insensitive" } } },
     ];
   }
-
-  const agencies = await db.agency.findMany({
-    where,
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      priorityOverride: true,
-      tier: { select: { name: true } },
-      kyc: { select: { status: true } },
-      profile: { select: { logo: true, description: true, regions: true } },
-      destinations: { select: { name: true, _count: { select: { packages: true } } } },
-      _count: { select: { packages: { where: { status: "PUBLISHED" } } } },
-    },
-  });
-
-  const agencyIds = agencies.map((a) => a.id);
-  if (agencyIds.length === 0) {
-    return { trekkedWith: [], recommended: [], meta: { total: 0, personalised: Boolean(trekkerId) } };
-  }
-
-  // Batched signals — one query each, not one per agency.
-  const [ratingGroups, bookingGroups, impressionGroups] = await Promise.all([
-    db.review.groupBy({
-      by: ["agencyId"],
-      where: { agencyId: { in: agencyIds }, verified: true },
-      _avg: { rating: true },
-      _count: { rating: true },
-    }),
-    db.booking.groupBy({
-      by: ["agencyId"],
-      where: { agencyId: { in: agencyIds }, createdAt: { gte: since } },
-      _count: { _all: true },
-    }),
-    db.marketplaceImpression.groupBy({
-      by: ["agencyId"],
-      where: { agencyId: { in: agencyIds }, date: { gte: since } },
-      _sum: { impressionCount: true, clickCount: true },
-    }),
-  ]);
-
-  const ratingBy = new Map(ratingGroups.map((r) => [r.agencyId, r]));
-  const bookingBy = new Map(bookingGroups.map((b) => [b.agencyId, b._count._all]));
-  const impressionBy = new Map(impressionGroups.map((i) => [i.agencyId, i._sum]));
 
   // Personalisation inputs.
   let historyBy = new Map<string, { total: number; completed: number; last: { packageTitle: string; date: string | null; status: string } | null }>();
@@ -252,6 +210,74 @@ export async function rankAgencies(opts: {
       }
     }
   }
+
+  // Score a bounded candidate set, not every agency on the platform. Loading
+  // all rankable agencies (each with joins and counts) and sorting them in JS is
+  // O(agencies) work and memory per request — fine at hundreds, a crash risk at
+  // tens of thousands. The nightly `agency_visibility_scores.final_score`
+  // (indexed) already orders agencies by tier/quality/override, so the top K by
+  // that is the pool worth scoring precisely; agencies this trekker has booked
+  // with are always added so personalisation never loses them.
+  const CANDIDATES = opts.candidateLimit ?? (filters.region || filters.minRating !== undefined ? 3000 : 500);
+  const agencySelect = {
+    id: true,
+    name: true,
+    slug: true,
+    priorityOverride: true,
+    tier: { select: { name: true } },
+    kyc: { select: { status: true } },
+    profile: { select: { logo: true, description: true, regions: true } },
+    destinations: { select: { name: true, _count: { select: { packages: true } } } },
+    _count: { select: { packages: { where: { status: "PUBLISHED" as const } } } },
+  };
+
+  const [topAgencies, myAgencies] = await Promise.all([
+    db.agency.findMany({
+      where,
+      // Postgres sorts NULLs first on DESC, and Prisma can't say NULLS LAST through
+      // a relation: agencies created since the last nightly score run (no row yet)
+      // therefore enter the pool ahead of scored ones. That only decides who gets
+      // *scored* — the final order still comes from the score below — and lasts
+      // until the next run, so it's a harmless (even mildly useful) quirk.
+      orderBy: [{ visibilityScore: { finalScore: "desc" } }, { id: "asc" }],
+      take: CANDIDATES,
+      select: agencySelect,
+    }),
+    historyBy.size > 0
+      ? db.agency.findMany({ where: { ...where, id: { in: [...historyBy.keys()] } }, select: agencySelect })
+      : Promise.resolve([]),
+  ]);
+  const seenIds = new Set(topAgencies.map((a) => a.id));
+  const agencies = [...topAgencies, ...myAgencies.filter((a) => !seenIds.has(a.id))];
+
+  const agencyIds = agencies.map((a) => a.id);
+  if (agencyIds.length === 0) {
+    return { trekkedWith: [], recommended: [], meta: { total: 0, personalised: Boolean(trekkerId) } };
+  }
+
+  // Batched signals — one query each, not one per agency.
+  const [ratingGroups, bookingGroups, impressionGroups] = await Promise.all([
+    db.review.groupBy({
+      by: ["agencyId"],
+      where: { agencyId: { in: agencyIds }, verified: true },
+      _avg: { rating: true },
+      _count: { rating: true },
+    }),
+    db.booking.groupBy({
+      by: ["agencyId"],
+      where: { agencyId: { in: agencyIds }, createdAt: { gte: since } },
+      _count: { _all: true },
+    }),
+    db.marketplaceImpression.groupBy({
+      by: ["agencyId"],
+      where: { agencyId: { in: agencyIds }, date: { gte: since } },
+      _sum: { impressionCount: true, clickCount: true },
+    }),
+  ]);
+
+  const ratingBy = new Map(ratingGroups.map((r) => [r.agencyId, r]));
+  const bookingBy = new Map(bookingGroups.map((b) => [b.agencyId, b._count._all]));
+  const impressionBy = new Map(impressionGroups.map((i) => [i.agencyId, i._sum]));
 
   const items: RankedAgencyItem[] = agencies.map((a) => {
     const rAgg = ratingBy.get(a.id);

@@ -47,7 +47,7 @@ d("Site ads (real DB)", () => {
     const ad = await svc.createSiteAd(agencyId, {
       title: "Summer Trek Promo",
       image: "/assets/everest.png",
-      position: "homepage-top",
+      position: "top-ads",
       startDate: "2026-07-01",
       endDate: "2026-08-31",
       order: 1,
@@ -56,18 +56,18 @@ d("Site ads (real DB)", () => {
     expect(ad.startDate).toBe("2026-07-01");
 
     let positions = await svc.listPositions(agencyId);
-    expect(positions.find((p) => p.id === "homepage-top")).toMatchObject({ activeAds: 1, available: false });
-    expect(positions.find((p) => p.id === "sidebar-1")).toMatchObject({ available: true });
+    expect(positions.find((p) => p.id === "top-ads")).toMatchObject({ activeAds: 1, available: false });
+    expect(positions.find((p) => p.id === "popup-ads")).toMatchObject({ available: true });
 
     const paused = await svc.updateSiteAd(agencyId, ad.id, { status: "paused" });
     expect(paused.status).toBe("paused");
 
     positions = await svc.listPositions(agencyId);
-    expect(positions.find((p) => p.id === "homepage-top")).toMatchObject({ activeAds: 0, available: true });
+    expect(positions.find((p) => p.id === "top-ads")).toMatchObject({ activeAds: 0, available: true });
 
     expect((await svc.listSiteAds(agencyId, { status: "paused" })).total).toBe(1);
     expect((await svc.listSiteAds(agencyId, { status: "active" })).total).toBe(0);
-    expect((await svc.listSiteAds(agencyId, { position: "homepage-top" })).total).toBe(1);
+    expect((await svc.listSiteAds(agencyId, { position: "top-ads" })).total).toBe(1);
 
     await svc.deleteSiteAd(agencyId, ad.id);
     await expect(svc.getSiteAd(agencyId, ad.id)).rejects.toMatchObject({ status: 404 });

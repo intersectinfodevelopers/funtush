@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { assignGuideToBranch, assignPackageBranches, assignStaffToBranch, createBranch, getAgencyBranches, getBranchReportController, getConsolidatedFinanceController, updateBranch } from "src/controllers/branches.controller";
+import { assignGuideToBranch, assignPackageBranches, assignStaffToBranch, createBranch, getAgencyBranches, getBranchReportController, getConsolidatedFinanceController, updateBranch, deleteBranch } from "src/controllers/branches.controller";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 
 const router = Router();
@@ -11,6 +11,7 @@ const router = Router();
  *   post: { tags: [Branches], summary: Create a branch, security: [{ refreshToken: [] }], responses: { 201: { description: Created } } }
  * /agencies/me/branches/{id}:
  *   patch: { tags: [Branches], summary: Update a branch, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Updated } } }
+ *   delete: { tags: [Branches], summary: Delete a branch (refused while it has bookings), security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 204: { description: Deleted }, 400: { description: Has bookings }, 404: { description: Not found } } }
  * /agencies/me/branches/{id}/report:
  *   get: { tags: [Branches], summary: Per-branch operations + finance report, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Report } } }
  * /agencies/me/staff/{id}/branch:
@@ -27,7 +28,8 @@ router.route('/agencies/me/branches')
     .post(authenticateWithRefreshToken, createBranch);
 
 router.route('/agencies/me/branches/:id')
-    .patch(authenticateWithRefreshToken, updateBranch);
+    .patch(authenticateWithRefreshToken, updateBranch)
+    .delete(authenticateWithRefreshToken, deleteBranch);
 
 router.route('/agencies/me/staff/:id/branch')
     .patch(authenticateWithRefreshToken, assignStaffToBranch);

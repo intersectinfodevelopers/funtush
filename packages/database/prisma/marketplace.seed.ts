@@ -3,6 +3,7 @@ dotenv.config({ path: ".env" });
 
 import bcrypt from "bcryptjs";
 import { prisma, UserRole, RoleType } from "@funtush/database";
+import { normalizeEmail } from "@funtush/shared";
 
 async function main() {
   console.log("🌱 Starting seed...");
@@ -63,6 +64,7 @@ async function main() {
     update: {},
     create: {
       email: "admin@funtush.com",
+      normalizedEmail: normalizeEmail("admin@funtush.com"),
       passwordHash,
       role: UserRole.SUPER_ADMIN,
       roleType: RoleType.PLATFORM
@@ -74,6 +76,7 @@ async function main() {
     update: {},
     create: {
       email: "agency@funtush.com",
+      normalizedEmail: normalizeEmail("agency@funtush.com"),
       passwordHash,
       role: UserRole.AGENCY_ADMIN,
       roleType: RoleType.TENANT
@@ -85,6 +88,7 @@ async function main() {
     update: {},
     create: {
       email: "trekker@funtush.com",
+      normalizedEmail: normalizeEmail("trekker@funtush.com"),
       passwordHash,
       role: UserRole.STAFF,
       roleType: RoleType.TREKKER

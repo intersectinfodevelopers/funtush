@@ -1,6 +1,10 @@
 import { Router } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
+import { parsePagination, buildMeta } from "../../utils/pagination.js";
 import {
   getKycQueue,
+  countKycQueue,
   getKycSubmission,
   approveKycSubmission,
   rejectKycSubmission,
@@ -8,10 +12,15 @@ import {
 
 const router = Router();
 
+// Was gated only by the IP allow-list (`requireAdmin` on the parent router) —
+// require a real platform-admin session too, matching every other admin route.
+router.use(requireAuth, requirePlatformPermission("kyc"));
+
 router.get("/", async (req, res) => {
   try {
-    const queue = await getKycQueue();
-    res.json({ data: queue, total: queue.length });
+    const page = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const [queue, total] = await Promise.all([getKycQueue({ skip: page.skip, take: page.take }), countKycQueue()]);
+    res.json({ data: queue, total, meta: buildMeta(total, page.page, page.limit) });
   } catch (err) {
     console.error("[GET /admin/kyc-queue]", err);
     res.status(500).json({ error: "Failed to fetch KYC queue" });

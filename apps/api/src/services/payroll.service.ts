@@ -341,8 +341,18 @@ export const getPayrollHistoryService = async (agencyId: string, query: PayrollQ
     const sumFor = (value: PayrollStatus) =>
         Number(totals.find((t) => t.status === value)?._sum.amount ?? 0);
 
+    // Payroll rows only carry ids; attach a display name resolved within this agency.
+    const staffIds = [...new Set(records.map((r) => r.staffId).filter((x): x is string => !!x))];
+    const guideRefs = [...new Set(records.map((r) => r.guideId).filter((x): x is string => !!x))];
+    const [staffRows, guideRows] = await Promise.all([
+        staffIds.length ? db.agencyStaff.findMany({ where: { agencyId, id: { in: staffIds } }, select: { id: true, name: true, user: { select: { user: { select: { email: true } } } } } }) : [],
+        guideRefs.length ? db.guideProfile.findMany({ where: { agencyId, guideRef: { in: guideRefs } }, select: { guideRef: true, fullName: true } }) : [],
+    ]);
+    const staffName = new Map(staffRows.map((r) => [r.id, r.name ?? r.user?.user?.email ?? null]));
+    const guideName = new Map(guideRows.map((r) => [r.guideRef, r.fullName]));
+
     return {
-        payroll: records,
+        payroll: records.map((r) => ({ ...r, payeeName: (r.staffId ? staffName.get(r.staffId) : r.guideId ? guideName.get(r.guideId) : null) ?? null })),
         summary: {
             draftTotal: sumFor("DRAFT"),
             paidTotal: sumFor("PAID"),

@@ -6,12 +6,13 @@ import {
     getBalanceSheetService,
     getCashFlowService,
     getTaxSummaryService,
+    getPnlTrendService,
 } from "./financialStatements.service";
 import { db } from "@funtush/database";
 
 vi.mock("@funtush/database", () => {
     const mockDb = {
-        account: { findFirst: vi.fn(), findMany: vi.fn() },
+        account: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn().mockResolvedValue(1) },
         journalLine: { groupBy: vi.fn(), aggregate: vi.fn(), findMany: vi.fn() },
     };
 
@@ -388,5 +389,44 @@ describe("getTaxSummaryService", () => {
         const report = await getTaxSummaryService(AGENCY_ID, "2026-07");
 
         expect(report.assumptions.length).toBeGreaterThan(0);
+    });
+});
+
+describe("getPnlTrendService()", () => {
+    const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const now = new Date();
+    const thisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 15));
+    const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+
+    it("buckets revenue and expense lines by month, netting each account's normal side", async () => {
+        vi.mocked(db.journalLine.findMany).mockResolvedValue([
+            { debit: 0, credit: 5000, account: { type: "REVENUE" }, journalEntry: { entryDate: thisMonth } },
+            { debit: 1200, credit: 0, account: { type: "EXPENSE" }, journalEntry: { entryDate: thisMonth } },
+            { debit: 0, credit: 3000, account: { type: "REVENUE" }, journalEntry: { entryDate: lastMonth } },
+        ] as never);
+
+        const trend = await getPnlTrendService(AGENCY_ID, 3);
+
+        const current = trend.find((p) => p.period === monthKey(thisMonth));
+        const previous = trend.find((p) => p.period === monthKey(lastMonth));
+        expect(current).toEqual({ period: monthKey(thisMonth), revenue: 5000, expenses: 1200, netProfit: 3800 });
+        expect(previous).toEqual({ period: monthKey(lastMonth), revenue: 3000, expenses: 0, netProfit: 3000 });
+    });
+
+    it("returns exactly `months` points, oldest first, even with no activity", async () => {
+        vi.mocked(db.journalLine.findMany).mockResolvedValue([] as never);
+
+        const trend = await getPnlTrendService(AGENCY_ID, 6);
+
+        expect(trend).toHaveLength(6);
+        expect(trend[trend.length - 1].period).toBe(monthKey(thisMonth));
+        expect(trend.every((p) => p.revenue === 0 && p.expenses === 0 && p.netProfit === 0)).toBe(true);
+    });
+
+    it("clamps months to the [1, 24] range", async () => {
+        vi.mocked(db.journalLine.findMany).mockResolvedValue([] as never);
+
+        expect(await getPnlTrendService(AGENCY_ID, 1)).toHaveLength(1);
+        expect(await getPnlTrendService(AGENCY_ID, 999)).toHaveLength(24);
     });
 });

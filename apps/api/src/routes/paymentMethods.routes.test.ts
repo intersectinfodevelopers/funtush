@@ -99,7 +99,7 @@ describe("POST /", () => {
     await fetch(`${baseUrl}/`, {
       method: "POST",
       headers: { "content-type": "application/json", ...authed() },
-      body: JSON.stringify({ provider: "STRIPE", apiKey: "sk_test_x" }),
+      body: JSON.stringify({ provider: "STRIPE", publishableKey: "pk_test_x", secretKey: "sk_test_x" }),
     });
     expect(statusGuardSpy).toHaveBeenCalledTimes(1);
   });
@@ -113,11 +113,23 @@ describe("POST /", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects unknown providers, unknown fields and missing fields", async () => {
+    for (const b of [
+      { provider: "PAYPAL", secretKey: "x" },
+      { provider: "STRIPE", publishableKey: "pk", secretKey: "sk", extra: "nope" },
+      { provider: "STRIPE", secretKey: "sk" },
+      { provider: "STRIPE", publishableKey: "pk", secretKey: 42 },
+    ]) {
+      const res = await fetch(`${baseUrl}/`, { method: "POST", headers: { "content-type": "application/json", ...authed() }, body: JSON.stringify(b) });
+      expect(res.status, JSON.stringify(b)).toBe(400);
+    }
+  });
+
   it("saves credentials and never returns them in the response", async () => {
     const res = await fetch(`${baseUrl}/`, {
       method: "POST",
       headers: { "content-type": "application/json", ...authed() },
-      body: JSON.stringify({ provider: "STRIPE", apiKey: "sk_test_secret_value" }),
+      body: JSON.stringify({ provider: "STRIPE", publishableKey: "pk_test_x", secretKey: "sk_test_secret_value" }),
     });
     expect(res.status).toBe(200);
 

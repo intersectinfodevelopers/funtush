@@ -12,13 +12,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from "vitest";
 import request from "supertest";
+import { generateAccessToken } from "@funtush/auth";
 import { app } from "../../app";
 import { dbAvailable } from "./helpers";
 
 const RUN = await dbAvailable();
 const d = RUN ? describe : describe.skip;
 
-const adminHeaders = { Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" };
+const adminHeaders = {
+  Host: "admin.funtush.com",
+  "X-Forwarded-For": "127.0.0.1",
+  Authorization: `Bearer ${generateAccessToken({ userId: "e2e-platform-admin", roleType: "PLATFORM", role: "SUPER_ADMIN" } as Parameters<typeof generateAccessToken>[0])}`,
+};
 
 d("Admin platform analytics (e2e)", () => {
   it("GET /admin/analytics is not reachable without the admin context", async () => {

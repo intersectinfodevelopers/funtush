@@ -39,6 +39,7 @@ export interface CuratedPackage {
   durationDays: number;
   pricePerPerson: number;
   difficulty: string;
+  photos: string[];
   destinations: string[];
   agency: {
     id: string;
@@ -55,7 +56,7 @@ export interface CuratedPackage {
  * Declared once and reused by every query below so the SELECT stays in lockstep
  * with the `toCuratedPackage` mapper.
  */
-const CURATED_PACKAGE_SELECT = {
+export const CURATED_PACKAGE_SELECT = {
   id: true,
   title: true,
   slug: true,
@@ -63,6 +64,7 @@ const CURATED_PACKAGE_SELECT = {
   durationDays: true,
   pricePerPerson: true,
   difficulty: true,
+  photos: true,
   destinations: { select: { name: true } },
   agency: {
     select: {
@@ -76,7 +78,7 @@ const CURATED_PACKAGE_SELECT = {
 } as const;
 
 /** The row shape produced by `CURATED_PACKAGE_SELECT`. */
-type CuratedPackageRow = {
+export type CuratedPackageRow = {
   id: string;
   title: string;
   slug: string;
@@ -84,6 +86,7 @@ type CuratedPackageRow = {
   durationDays: number;
   pricePerPerson: unknown; // Prisma Decimal
   difficulty: string;
+  photos: string[];
   destinations: { name: string }[];
   agency: {
     id: string;
@@ -95,7 +98,7 @@ type CuratedPackageRow = {
 };
 
 /** Turn a raw Prisma row into the flat CuratedPackage the API returns. */
-function toCuratedPackage(row: CuratedPackageRow): CuratedPackage {
+export function toCuratedPackage(row: CuratedPackageRow): CuratedPackage {
   return {
     id: row.id,
     title: row.title,
@@ -104,6 +107,7 @@ function toCuratedPackage(row: CuratedPackageRow): CuratedPackage {
     durationDays: row.durationDays,
     pricePerPerson: Number(row.pricePerPerson),
     difficulty: row.difficulty,
+    photos: row.photos,
     destinations: row.destinations.map((d) => d.name),
     agency: {
       id: row.agency.id,
@@ -116,7 +120,7 @@ function toCuratedPackage(row: CuratedPackageRow): CuratedPackage {
 }
 
 /** "An agency that may be listed AND is published" — the base filter for any package query. */
-const PUBLISHED_LISTABLE_PACKAGE = {
+export const PUBLISHED_LISTABLE_PACKAGE = {
   status: "PUBLISHED" as const,
   agency: LISTABLE_AGENCY,
 };
@@ -149,12 +153,18 @@ export async function getFeatured(): Promise<FeaturedResult> {
   return { sponsored, topRated, mostBookedThisMonth };
 }
 
-/** Published packages from LARGE-tier agencies that a Super Admin has boosted (priority_override > 0). */
+/**
+ * Published packages from agencies on a tier the Super Admin has granted ad
+ * rights to (`SubscriptionTier.adsEnabled` — see /dashboard/tiers in
+ * funtush-admin) AND that the Super Admin has actually boosted
+ * (`priority_override > 0`). Was hardcoded to `tier.name === "LARGE"`; now it's
+ * whichever paid tier(s) admin actually configured for ads, not a fixed name.
+ */
 async function getSponsoredPackages(): Promise<CuratedPackage[]> {
   const rows = await db.trekPackage.findMany({
     where: {
       status: "PUBLISHED",
-      agency: { ...LISTABLE_AGENCY, tier: { name: "LARGE" }, priorityOverride: { gt: 0 } },
+      agency: { ...LISTABLE_AGENCY, tier: { adsEnabled: true }, priorityOverride: { gt: 0 } },
     },
     // Boost order: the strongest override first, then newest.
     orderBy: [{ agency: { priorityOverride: "desc" } }, { createdAt: "desc" }],
@@ -342,4 +352,69 @@ export async function getSeasonal(): Promise<(CuratedPackage & { matchedSeasons:
       ...toCuratedPackage(row as CuratedPackageRow),
       matchedSeasons: [...new Set(matched)],
     }));
+}
+
+const RECENT_REVIEWS_LIMIT = 6;
+
+export interface MarketplaceStats {
+  /** Platform-wide scale — every registered agency/published package, not just
+   * the ones currently eligible for marketplace listing (see LISTABLE_AGENCY).
+   * That's a deliberately different, stricter number; conflating the two would
+   * make this honest count read as smaller than the platform actually is. */
+  totalAgencies: number;
+  totalPackages: number;
+  totalTrekkers: number;
+  totalReviews: number;
+  averageRating: number | null;
+  recentReviews: Array<{
+    id: string;
+    rating: number;
+    title: string | null;
+    text: string;
+    trekkerName: string;
+    agencyName: string;
+    agencySlug: string;
+    createdAt: Date;
+  }>;
+}
+
+/** Real counts for the homepage hero/reviews sections — no fixed marketing numbers. */
+export async function getMarketplaceStats(): Promise<MarketplaceStats> {
+  const [totalAgencies, totalPackages, totalTrekkers, reviewAgg, reviewRows] = await Promise.all([
+    db.agency.count(),
+    db.trekPackage.count({ where: { status: "PUBLISHED" } }),
+    db.trekker.count(),
+    db.review.aggregate({ _count: { _all: true }, _avg: { rating: true } }),
+    db.review.findMany({
+      orderBy: { createdAt: "desc" },
+      take: RECENT_REVIEWS_LIMIT,
+      select: {
+        id: true,
+        rating: true,
+        title: true,
+        text: true,
+        createdAt: true,
+        trekker: { select: { fullName: true } },
+        agency: { select: { name: true, slug: true } },
+      },
+    }),
+  ]);
+
+  return {
+    totalAgencies,
+    totalPackages,
+    totalTrekkers,
+    totalReviews: reviewAgg._count._all,
+    averageRating: reviewAgg._avg.rating ? roundRating(reviewAgg._avg.rating) : null,
+    recentReviews: reviewRows.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      title: r.title,
+      text: r.text,
+      trekkerName: r.trekker.fullName || "Verified trekker",
+      agencyName: r.agency.name,
+      agencySlug: r.agency.slug,
+      createdAt: r.createdAt,
+    })),
+  };
 }

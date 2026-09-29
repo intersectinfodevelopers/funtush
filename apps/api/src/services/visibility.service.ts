@@ -118,19 +118,39 @@ export async function calculateAndPersistVisibilityScore(
 //  * Runs nightly via cron(see jobs / visibilityScore.job.ts) — not per - request,
 //  * to keep marketplace search fast.
 export async function recalculateAllVisibilityScores(): Promise<void> {
-    const agencies = await prisma.agency.findMany({ select: { id: true } });
-
     let successCount = 0;
     let failCount = 0;
 
-    for (const agency of agencies) {
-        try {
-            await calculateAndPersistVisibilityScore(agency.id);
-            successCount++;
-        } catch (err) {
-            failCount++;
-            console.error(`[VisibilityService] Failed to score agency ${agency.id}:`, err);
-            //  one bad agency shouldn't block the whole batch
+    // Walk agencies in id-ordered pages (keyset, so a page is an index seek, not
+    // an ever-growing OFFSET) and score each page a few at a time. One agency
+    // after another is hours of wall-clock at tens of thousands of agencies;
+    // unbounded parallelism would exhaust the DB pool.
+    const PAGE = 500;
+    const CONCURRENCY = 10;
+    let cursor: string | undefined;
+
+    for (;;) {
+        const page = await prisma.agency.findMany({
+            select: { id: true },
+            orderBy: { id: "asc" },
+            take: PAGE,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        });
+        if (page.length === 0) break;
+        cursor = page[page.length - 1].id;
+
+        for (let i = 0; i < page.length; i += CONCURRENCY) {
+            const results = await Promise.allSettled(
+                page.slice(i, i + CONCURRENCY).map((a) => calculateAndPersistVisibilityScore(a.id)),
+            );
+            results.forEach((r, j) => {
+                if (r.status === "fulfilled") successCount++;
+                else {
+                    failCount++;
+                    // one bad agency shouldn't block the whole batch
+                    console.error(`[VisibilityService] Failed to score agency ${page[i + j].id}:`, r.reason);
+                }
+            });
         }
     }
 

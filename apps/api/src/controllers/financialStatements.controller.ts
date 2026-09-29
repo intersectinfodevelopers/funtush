@@ -4,6 +4,7 @@ import {
     getBalanceSheetService,
     getCashFlowService,
     getTaxSummaryService,
+    getPnlTrendService,
 } from "src/services/financialStatements.service";
 
 // All four statements are read-only reports over the same journal lines, so
@@ -56,6 +57,24 @@ export const getCashFlow = async (req: Request, res: Response) => {
         );
 
         return res.status(200).json({ success: true, data: report });
+    } catch (err) {
+        return res.status(400).json({
+            success: false,
+            message: err instanceof Error ? err.message : "Something went wrong",
+        });
+    }
+};
+
+export const getPnlTrend = async (req: Request, res: Response) => {
+    try {
+        const agencyId = req.agencyId as string;
+
+        const trend = await getPnlTrendService(
+            agencyId,
+            req.query.months === undefined ? undefined : Number(req.query.months)
+        );
+
+        return res.status(200).json({ success: true, data: trend });
     } catch (err) {
         return res.status(400).json({
             success: false,

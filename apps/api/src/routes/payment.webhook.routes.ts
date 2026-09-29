@@ -5,7 +5,8 @@ import {
   verifyEsewaSignature,
   verifyConnectIPSSignature,
 } from "../lib/verifySignature";
-import { processConfirmedPayment } from "../services/payment.service";
+import { processConfirmedPayment, claimGatewayTransaction } from "../services/payment.service";
+import { recordPaymentGateway } from "../services/prometheusMetrics";
 
 const router = Router();
 
@@ -56,6 +57,7 @@ router.post(
 
     const isValid = verifyStripeSignature(req.body as Buffer, signature, secret);
     if (!isValid) {
+      recordPaymentGateway("stripe", "invalid");
       res.status(400).json({ error: "Invalid Stripe signature" });
       return;
     }
@@ -88,10 +90,13 @@ router.post(
     const amountPaid = paymentIntent.amount_received / 100;
 
     try {
-      await processConfirmedPayment(bookingId, agencyId, amountPaid);
+      const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, amountPaid, "USD");
+    recordPaymentGateway("stripe", "success", startedAt);
       res.status(200).json({ received: true });
     } catch (err) {
-      console.error("[Stripe webhook] processConfirmedPayment failed:", err);
+      recordPaymentGateway("stripe", "error");
+    console.error("[Stripe webhook] processConfirmedPayment failed:", err);
       res.status(500).json({ error: "Payment processing failed" });
     }
   }
@@ -113,15 +118,26 @@ router.post("/:agencyId/khalti", parseJsonBody, async (req: Request, res: Respon
 
   const verified = await verifyKhaltiPayment(pidx);
   if (!verified) {
+    recordPaymentGateway("khalti", "invalid");
     res.status(400).json({ error: "Khalti payment verification failed" });
     return;
   }
 
   try {
-    await processConfirmedPayment(bookingId, agencyId, verified.amount);
+    // one real Khalti payment may confirm only one booking (see claimGatewayTransaction)
+    await claimGatewayTransaction("khalti", pidx, bookingId);
+    const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, verified.amount, "NPR");
+    recordPaymentGateway("khalti", "success", startedAt);
     res.status(200).json({ success: true });
   } catch (err) {
+    recordPaymentGateway("khalti", "error");
     console.error("[Khalti webhook] processConfirmedPayment failed:", err);
+    const status = (err as { status?: number })?.status;
+    if (status === 409) {
+      res.status(409).json({ error: (err as Error).message });
+      return;
+    }
     res.status(500).json({ error: "Payment processing failed" });
   }
 });
@@ -174,6 +190,7 @@ router.post("/:agencyId/esewa", parseJsonBody, async (req: Request, res: Respons
 
   const isValid = verifyEsewaSignature(message, payload.signature, secret);
   if (!isValid) {
+    recordPaymentGateway("esewa", "invalid");
     res.status(400).json({ error: "Invalid eSewa signature" });
     return;
   }
@@ -183,9 +200,12 @@ router.post("/:agencyId/esewa", parseJsonBody, async (req: Request, res: Respons
   const amountPaid = parseFloat(payload.total_amount.replace(/,/g, ""));
 
   try {
-    await processConfirmedPayment(bookingId, agencyId, amountPaid);
+    const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, amountPaid, "NPR");
+    recordPaymentGateway("esewa", "success", startedAt);
     res.status(200).json({ success: true });
   } catch (err) {
+    recordPaymentGateway("esewa", "error");
     console.error("[eSewa webhook] processConfirmedPayment failed:", err);
     res.status(500).json({ error: "Payment processing failed" });
   }
@@ -225,6 +245,7 @@ router.post("/:agencyId/connectips", parseJsonBody, async (req: Request, res: Re
 
   const isValid = verifyConnectIPSSignature(message, TOKEN, secret);
   if (!isValid) {
+    recordPaymentGateway("connectips", "invalid");
     res.status(400).json({ error: "Invalid ConnectIPS signature" });
     return;
   }
@@ -233,9 +254,12 @@ router.post("/:agencyId/connectips", parseJsonBody, async (req: Request, res: Re
   const bookingId = REFERENCEID;
 
   try {
-    await processConfirmedPayment(bookingId, agencyId, amountPaid);
+    const startedAt = Date.now();
+    await processConfirmedPayment(bookingId, agencyId, amountPaid, "NPR");
+    recordPaymentGateway("connectips", "success", startedAt);
     res.status(200).json({ success: true });
   } catch (err) {
+    recordPaymentGateway("connectips", "error");
     console.error("[ConnectIPS webhook] processConfirmedPayment failed:", err);
     res.status(500).json({ error: "Payment processing failed" });
   }

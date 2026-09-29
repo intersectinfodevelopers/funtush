@@ -29,7 +29,7 @@ export const approveAgencyKYC = async (
     } catch (error) {
         res.status(500).json({
             status: "error",
-            message: error
+            message: error instanceof Error ? error.message : "Something went wrong"
         });
     }
 };
@@ -70,7 +70,7 @@ export const rejectAgencyKYC = async (
     } catch (error) {
         return res.status(500).json({
             status: "error",
-            message: error
+            message: error instanceof Error ? error.message : "Something went wrong"
         });
     }
 };

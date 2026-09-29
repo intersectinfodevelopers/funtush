@@ -4,6 +4,7 @@
 // (token redemption → review row), not just a schema check.
 import crypto from "crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { normalizeEmail } from "@funtush/shared";
 
 type Database = typeof import("@funtush/database");
 type Svc = typeof import("../services/review.service");
@@ -52,8 +53,9 @@ d("Review title (real DB)", () => {
     });
     agencyId = agency.id;
 
+    const email = `review-trek-${s}@example.com`;
     const user = await db.user.create({
-      data: { email: `review-trek-${s}@example.com`, passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
+      data: { email, normalizedEmail: normalizeEmail(email), passwordHash: "x", role: "STAFF", roleType: "TREKKER" },
       select: { id: true },
     });
     userId = user.id;
@@ -172,5 +174,53 @@ d("Review title (real DB)", () => {
 
     const { reviews } = await svc.getAgencyReview(agencySlug);
     expect(reviews.find((r) => r.id === created.id)?.title).toBe("Unreal views");
+  });
+
+  describe("deleteAgencyReviewService (the agency's own delete, not the admin content-violation path)", () => {
+    const ownerUserIds: string[] = [];
+
+    async function makeAgencyUser(forAgencyId: string): Promise<string> {
+      const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const email = `review-owner-${s}@example.com`;
+      const user = await db.user.create({
+        data: { email, normalizedEmail: normalizeEmail(email), passwordHash: "x", role: "AGENCY_ADMIN", roleType: "TENANT" },
+        select: { id: true },
+      });
+      ownerUserIds.push(user.id);
+      const au = await db.agencyUser.create({ data: { agencyId: forAgencyId, userId: user.id, role: "AGENCY_ADMIN" }, select: { id: true } });
+      return au.id;
+    }
+
+    afterAll(async () => {
+      if (ownerUserIds.length) await db.user.deleteMany({ where: { id: { in: ownerUserIds } } }).catch(() => {});
+    });
+
+    it("deletes a review the agency owns, for real (not a soft-delete)", async () => {
+      const token = await issueInvitationForFreshBooking();
+      const created = await svc.createReviewService(token, 2, "It was okay.", []);
+      const agencyUserId = await makeAgencyUser(agencyId);
+
+      const result = await svc.deleteAgencyReviewService(agencyUserId, created.id);
+      expect(result.message).toMatch(/deleted/i);
+
+      await expect(db.review.findUniqueOrThrow({ where: { id: created.id } })).rejects.toThrow();
+    });
+
+    it("404s a review that belongs to a different agency (can't delete a competitor's review)", async () => {
+      const token = await issueInvitationForFreshBooking();
+      const created = await svc.createReviewService(token, 1, "Not this one.", []);
+
+      const otherAgency = await db.agency.create({
+        data: { name: `Other ${Date.now()}`, email: `other-${Date.now()}@example.com`, slug: `other-${Date.now()}`, tierId },
+        select: { id: true },
+      });
+      const otherAgencyUserId = await makeAgencyUser(otherAgency.id);
+
+      await expect(svc.deleteAgencyReviewService(otherAgencyUserId, created.id)).rejects.toThrow(/not found/i);
+
+      // Still there — the cross-agency delete must not have gone through.
+      await db.review.findUniqueOrThrow({ where: { id: created.id } });
+      await db.agency.delete({ where: { id: otherAgency.id } }).catch(() => {});
+    });
   });
 });

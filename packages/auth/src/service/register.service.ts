@@ -1,9 +1,13 @@
 import { prisma, type Trekker, type User } from "@funtush/database";
+import { normalizeEmail } from "@funtush/shared";
 import bcrypt from "bcrypt";
 
 export async function registerTrekker(email: string, password: string): Promise<{ user: User; trekker: Trekker }> {
   const db = prisma;
-  const existing = await db.user.findUnique({ where: { email } });
+  const normalizedEmail = normalizeEmail(email);
+  // normalizedEmail catches dot/plus-alias duplicates (e.g. john.doe@gmail.com
+  // vs john+x@gmail.com) a plain `email` match would miss.
+  const existing = await db.user.findUnique({ where: { normalizedEmail } });
 
   if (existing) {
     throw new Error("Email already exists");
@@ -15,6 +19,7 @@ export async function registerTrekker(email: string, password: string): Promise<
   const user = await db.user.create({
     data: {
       email,
+      normalizedEmail,
       passwordHash: hash,
       role: "STAFF",
       roleType: "TREKKER",

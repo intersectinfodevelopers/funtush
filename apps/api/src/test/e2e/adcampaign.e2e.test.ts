@@ -21,8 +21,17 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { db } from "@funtush/database";
+import { generateAccessToken } from "@funtush/auth";
 import { app } from "../../app";
 import { dbAvailable, createAgencyContext, type E2EContext } from "./helpers";
+
+function platformAdminToken(): string {
+  return generateAccessToken({
+    userId: "e2e-platform-admin",
+    roleType: "PLATFORM",
+    role: "SUPER_ADMIN",
+  } as Parameters<typeof generateAccessToken>[0]);
+}
 
 const RUN = await dbAvailable();
 const d = RUN ? describe : describe.skip;
@@ -150,7 +159,8 @@ d("Agency ad campaigns (e2e)", () => {
   it("the now-submitted campaign is visible in the admin pending queue", async () => {
     const res = await request(app)
       .get("/admin/ad-campaigns/pending")
-      .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" });
+      .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" })
+      .set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(200);
     // Only LARGE-tier agencies show up — this fixture's agency is on
     // createAgencyContext's default tier, so just confirm the endpoint

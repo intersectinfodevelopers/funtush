@@ -15,7 +15,7 @@ function paramId(req: Request): string {
 }
 function fail(res: Response, err: unknown) {
   if (err instanceof svc.AgencyDestinationError) {
-    return res.status(err.status).json({ success: false, message: err.message });
+    return res.status(err.status).json({ success: false, message: err.message, ...(err.field ? { errors: { [err.field]: err.message } } : {}) });
   }
   return res
     .status(400)

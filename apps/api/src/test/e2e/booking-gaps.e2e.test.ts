@@ -60,7 +60,7 @@ d("Booking OTP inquiry flow (e2e)", () => {
     const res = await request(app).post("/bookings/inquiry").send({
       packageId,
       departureDateId,
-      groupSize: 999,
+      groupSize: 49, // within the 1-50 cap but more than the departure has left
       trekkerName: "Too Many",
       trekkerEmail: `toomany-${Date.now()}@example.com`,
       trekkerPhone: "+9779800000002",

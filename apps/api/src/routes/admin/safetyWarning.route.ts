@@ -1,13 +1,19 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { requireAuth } from "@funtush/auth";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
 import { issueSafetyWarning } from "../../services/sosMonitoring.service";
 import { writeAuditLog } from "../../services/auditLog.service";
 
 const router = Router();
 
+// Was gated only by the IP allow-list (`requireAdmin` on the parent router) —
+// require a real platform-admin session too, matching every other admin route.
+router.use(requireAuth, requirePlatformPermission("safety_warnings"));
+
 function clientIp(req: Request): string {
   return (
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.ip ||
     req.socket.remoteAddress ||
     "unknown"
   );

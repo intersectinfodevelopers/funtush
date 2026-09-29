@@ -192,12 +192,74 @@ model SubscriptionTier {
 
   agencies      Agency[]
   subscriptions Subscription[]
+  discountCodes TierDiscountCode[]
 
   @@map("subscription_tiers")
 }
 
+/// Which price a tier discount code discounts — the tier itself always
+/// carries both `monthlyPrice` and `annualPrice`, so a code has to say which
+/// one it applies to. `BOTH` covers a code meant to work at signup time
+/// regardless of the cycle the agency picks.
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+  BOTH
+}
+
+/// Admin-managed promo codes for subscription-tier pricing (distinct from
+/// `Coupon`, which discounts a trekker's *booking*, not an agency's plan).
+/// `appliesToTierId: null` means the code works for every tier.
+model TierDiscountCode {
+  id     String @id @default(uuid())
+  code   String @unique
+
+  discountType  DiscountType
+  discountValue Decimal      @db.Decimal(10, 2)
+
+  appliesToTierId String?           @map("applies_to_tier_id")
+  appliesToTier   SubscriptionTier? @relation(fields: [appliesToTierId], references: [id])
+  billingCycle    BillingCycle      @default(BOTH) @map("billing_cycle")
+
+  maxRedemptions Int? @map("max_redemptions")
+  timesRedeemed  Int  @default(0) @map("times_redeemed")
+
+  validFrom  DateTime? @map("valid_from")
+  validUntil DateTime? @map("valid_until")
+  isActive   Boolean   @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  redemptions      TierDiscountRedemption[]
+  khaltiAttempts   KhaltiTransaction[]
+  esewaAttempts    EsewaTransaction[]
+
+  @@map("tier_discount_codes")
+}
+
+/// One row per successful redemption — what actually caps `maxRedemptions`
+/// and lets admin see which agencies used a code.
+model TierDiscountRedemption {
+  id             String @id @default(uuid())
+  discountCodeId String @map("discount_code_id")
+  agencyId       String @map("agency_id")
+
+  discountCode TierDiscountCode @relation(fields: [discountCodeId], references: [id], onDelete: Cascade)
+  agency       Agency           @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  amountOff Decimal  @map("amount_off") @db.Decimal(10, 2)
+  redeemedAt DateTime @default(now()) @map("redeemed_at")
+
+  @@index([discountCodeId])
+  @@index([agencyId])
+  @@map("tier_discount_redemptions")
+}
+
 model Agency {
+  customerOverrides AgencyCustomerOverride[]
   adCampaigns       AdCampaign[]
+  tierDiscountRedemptions TierDiscountRedemption[]
   id                String                 @id @default(uuid())
   name              String
   email             String                 @unique
@@ -289,7 +351,10 @@ model Agency {
   fonepayTransactions FonepayTransaction[]
   categories          Category[]
   blogs               Blog[]
+  blogPhotos          BlogPhoto[]
 
+  @@index([customDomain])
+  breakGlassTokens BreakGlassToken[]
   @@map("agencies")
 }
 
@@ -353,6 +418,12 @@ model AgencyUser {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
+  /// Canonical, alias-collapsed form of `email` (see normalizeEmail in
+  /// @funtush/shared) — the real uniqueness guard. `email` alone being
+  /// unique doesn't stop john.doe@gmail.com / johndoe@gmail.com /
+  /// john+x@gmail.com from registering as "different" accounts that all
+  /// land in one real inbox; every User-creation call site must set this.
+  normalizedEmail String   @unique @map("normalized_email")
   passwordHash String   @map("password_hash")
   role         UserRole
   roleType     RoleType @map("role_type")
@@ -380,9 +451,20 @@ model User {
 
   isLocked  Boolean   @default(false)
   lockUntil DateTime?
+  /// Platform-staff (roleType PLATFORM) deactivation flag — mirrors
+  /// `AgencyStaff.isActive` for tenant staff. Unused/always true for
+  /// TENANT/TREKKER users; only the platform team-management feature
+  /// reads or writes this.
+  isActive  Boolean   @default(true) @map("is_active")
+  /// Which admin modules a PLATFORM_SUPPORT user can access (keys from
+  /// `platformPermissionCatalog.ts`, e.g. "kyc", "bugs"). Ignored for
+  /// SUPER_ADMIN/PLATFORM_ADMIN (they always have full access) and unused
+  /// outside roleType PLATFORM.
+  permissions String[] @default([])
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "users_email_trgm_idx")
   @@map("users")
 }
 
@@ -463,7 +545,12 @@ model Trekker {
   reviews           Review[]
 
   marketplaceClicks MarketplaceClick[]
+  notifications     TrekkerNotification[]
 
+  customerStats AgencyCustomerStat[]
+  @@index([fullName(ops: raw("gin_trgm_ops"))], type: Gin, map: "trekker_full_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "trekker_phone_trgm_idx")
+  savedDestinations TrekkerSavedDestination[]
   @@map("trekker")
 }
 
@@ -608,7 +695,26 @@ model TrekPackage {
   pricePerPerson Decimal        @map("price_per_person") @db.Decimal(10, 2)
   difficulty     TrekDifficulty
   maxGroupSize   Int            @map("max_group_size")
+  /// Public image URLs (uploaded via POST /upload); the first is the cover.
+  photos         String[]       @default([])
   status         PackageStatus  @default(DRAFT)
+
+  /// Package-builder details (all optional except where noted).
+  destination      String?
+  category         String?
+  minDurationDays  Int?     @map("min_duration_days")
+  maxDurationDays  Int?     @map("max_duration_days")
+  altitudeMinM     Int?     @map("altitude_min_m")
+  altitudeMaxM     Int?     @map("altitude_max_m")
+  region           String?
+  bestTimeToVisit  String?  @map("best_time_to_visit")
+  activities       String[] @default([])
+  routes           String[] @default([])
+  shortSummary     String?  @map("short_summary")
+  currency         String   @default("NPR")
+  isFeatured       Boolean  @default(false) @map("is_featured")
+  /// [{ minPeople: number, percentOff: number }] — the best matching tier discounts the per-person price.
+  volumeDiscounts  Json     @default("[]") @map("volume_discounts")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
@@ -630,6 +736,7 @@ model TrekPackage {
   packingItems    TrekPackingItem[]
 
   @@index([agencyId])
+  @@index([agencyId, createdAt])
   @@map("trek_packages")
 }
 
@@ -672,6 +779,8 @@ model AgencyDestination {
   bestTimeToVisit  String?  @map("best_time_to_visit")
   published        Boolean  @default(false)
   featured         Boolean  @default(false)
+  /// When customers were told about this destination (once, the first time it is published).
+  announcedAt      DateTime? @map("announced_at")
   rating           Decimal? @db.Decimal(3, 2)
   reviewCount      Int      @default(0) @map("review_count")
   views            Int      @default(0)
@@ -679,9 +788,24 @@ model AgencyDestination {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
+  savedBy          TrekkerSavedDestination[]
+
   @@unique([agencyId, slug])
   @@index([agencyId, published])
   @@map("agency_destinations")
+}
+
+/// A trekker bookmarking an agency's destination; `AgencyDestination.saves` is the count of these.
+model TrekkerSavedDestination {
+  trekkerId      String            @map("trekker_id")
+  trekker        Trekker           @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+  destinationId  String            @map("destination_id")
+  destination    AgencyDestination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@id([trekkerId, destinationId])
+  @@index([destinationId])
+  @@map("trekker_saved_destinations")
 }
 
 /// Phase 2: banner ads the agency places in fixed slots on its white-label site
@@ -857,6 +981,9 @@ model GuideProfile {
   photoUrl String?     @map("photo_url")
   bio      String?
   status   GuideStatus @default(AVAILABLE)
+  /// True while `status` is ON_TREK because the SYSTEM put the guide on a booking (not because the agency set it by hand).
+  /// Such a guide is freed automatically once none of their bookings is still active.
+  autoBusy Boolean     @default(false) @map("auto_busy")
   /// TODO(phase-later): derive from Review.guideRating instead of storing.
   rating   Decimal?    @db.Decimal(3, 2)
 
@@ -957,6 +1084,7 @@ model TrekDepartureDate {
   bookings    Booking[]
 
   @@index([packageId])
+  @@index([packageId, startDate])
   @@map("trek_departure_dates")
 }
 
@@ -1025,6 +1153,9 @@ model Booking {
 
   @@index([agencyId, status])
   @@index([trekkerId])
+  @@index([agencyId, createdAt])
+  @@index([agencyId, status, createdAt])
+  @@index([agencyId, trekkerId])
   @@map("bookings")
 }
 
@@ -1195,6 +1326,7 @@ model Review {
   @@index([agencyId])
   @@index([trekkerId])
   @@index([bookingId])
+  @@index([agencyId, createdAt])
   @@map("reviews")
 }
 
@@ -1507,7 +1639,7 @@ model Branch {
   agencyId String @map("agency_id")
   agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
-  name String @unique
+  name String
 
   address String
 
@@ -1527,6 +1659,7 @@ model Branch {
   bookings        Booking[]
   guides          GuideProfile[]
 
+  @@unique([agencyId, name])
   @@index([agencyId])
   @@index([managerStaffId])
   @@map("branches")
@@ -1595,7 +1728,14 @@ model KhaltiTransaction {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  /// Discount code applied at initiate time, if any — redeemed (usage
+  /// counted) only once `status` actually reaches "success", never on a
+  /// merely-initiated/abandoned attempt.
+  discountCodeId    String?  @map("discount_code_id")
+  discountAmountOff Float?   @map("discount_amount_off")
+
+  agency       Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  discountCode TierDiscountCode? @relation(fields: [discountCodeId], references: [id])
 
   @@index([agencyId])
   @@index([status])
@@ -1613,7 +1753,12 @@ model EsewaTransaction {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  /// See `KhaltiTransaction.discountCodeId` — same discount-on-success rule.
+  discountCodeId    String?  @map("discount_code_id")
+  discountAmountOff Float?   @map("discount_amount_off")
+
+  agency       Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  discountCode TierDiscountCode? @relation(fields: [discountCodeId], references: [id])
 
   @@index([agencyId])
   @@index([status])
@@ -2397,6 +2542,10 @@ model Category {
   agencyId    String  @map("agency_id")
   name        String
   description String?
+  slug         String
+  color        String  @default("#358CBD")
+  displayOrder Int     @default(0) @map("display_order")
+  isActive     Boolean @default(true) @map("is_active")
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
@@ -2405,6 +2554,7 @@ model Category {
   blogs     Blog[]
 
   @@unique([agencyId, name])
+  @@unique([agencyId, slug])
   @@index([agencyId])
   @@map("categories")
 }
@@ -2418,8 +2568,16 @@ model Blog {
   subtitle String
   content  String
   status   String?
-  tag      String?
+  tags     String[] @default([])
   photos   String[] @default([])
+  /// Only meaningful when status is "SCHEDULED": the job in publishScheduledBlogs.job.ts flips
+  /// the post to PUBLISHED once this time passes. Kept (not nulled) after publishing, as a record
+  /// of when it was scheduled for.
+  publishAt  DateTime? @map("publish_at")
+  /// Display name of whoever created the post (owner or staff member), resolved once at creation —
+  /// same denormalised-name pattern as PackageActivity.actorName. Never changes on a later edit.
+  authorName String?   @map("author_name")
+  views      Int       @default(0)
 
   agency   Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -2429,7 +2587,28 @@ model Blog {
 
   @@index([agencyId])
   @@index([categoryId])
+  @@index([agencyId, createdAt])
+  @@index([status, publishAt])
   @@map("blogs")
+}
+
+/// Every photo an agency has uploaded through the blog form (never through "add from gallery" —
+/// that just reuses a photo already recorded here). Lets "Add from Gallery" on the blog editor
+/// offer photos the agency already uploaded for an earlier post, instead of re-uploading.
+model BlogPhoto {
+  id       String @id @default(uuid())
+  agencyId String @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  url   String
+  /// Original file name at upload time — display only, never trusted for storage or type decisions.
+  title String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([agencyId, url])
+  @@index([agencyId, createdAt])
+  @@map("blog_photos")
 }
 
 /// Formal safety warning issued by a platform admin against an agency for poor
@@ -2502,4 +2681,151 @@ model BlocklistEntry {
   @@unique([type, value])
   @@index([value])
   @@map("blocklist_entries")
+}
+
+/// A single row, always read/written at id "singleton" — see
+/// platformSettings.service.ts. Platform-wide toggles a super-admin controls
+/// at runtime, as opposed to env vars (which need a redeploy) or per-agency
+/// settings (which live on Agency/AgencySiteConfig/etc).
+model PlatformSettings {
+  id String @id @default("singleton")
+
+  /// When true, POST /register/agency requires a phone OTP (sent via SMS)
+  /// before the agency account is created — see agency.service.ts::createAgency.
+  /// Defaults to false so existing registration behavior is unchanged until
+  /// a super-admin explicitly opts in.
+  agencyPhoneOtpRequired Boolean @default(false) @map("agency_phone_otp_required")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("platform_settings")
+}
+
+/// Time-boxed emergency access to an agency, issued by platform staff (see
+/// issueBreakGlassToken in apps/api/src/services/admin.service.ts). The token
+/// itself is also mirrored in Redis for fast lookup; this row is the durable
+/// record of who was granted access, from where, and until when.
+model BreakGlassToken {
+  id         String    @id @default(uuid())
+  /// SHA-256 of the raw token — the raw value is shown once to the issuing admin
+  /// and never stored, so a DB read can't be turned into account access.
+  token      String    @unique
+  agencyId   String    @map("agency_id")
+  agency     Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  /// The agency-owner account this token lets the holder set a new password for.
+  userId     String?   @map("user_id")
+  issuedBy   String?   @map("issued_by")
+  reason     String?
+  issuedByIp String    @map("issued_by_ip")
+  expiresAt  DateTime  @map("expires_at")
+  /// Single use: set atomically on redeem.
+  usedAt     DateTime? @map("used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([agencyId])
+  @@index([expiresAt])
+  @@map("break_glass_tokens")
+}
+
+/// One row per (agency, trekker who has booked with it): the numbers the
+/// agency's "customers" list shows and sorts by. Maintained by the
+/// `bookings_customer_stats` DATABASE TRIGGER (see migration
+/// 20260919150000) — not by application code — so every write path keeps it
+/// correct. Reading this replaces grouping *every* booking of an agency on
+/// each request, which is O(bookings); this is O(page).
+///
+/// Never write to it from application code; the trigger owns it.
+model AgencyCustomerStat {
+  agencyId      String   @map("agency_id")
+  trekkerId     String   @map("trekker_id")
+  totalBookings Int      @map("total_bookings")
+  totalSpent    Decimal  @map("total_spent") @db.Decimal(14, 2)
+  lastBookingAt DateTime @map("last_booking_at")
+
+  trekker Trekker @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+
+  @@id([agencyId, trekkerId])
+  @@index([agencyId, lastBookingAt(sort: Desc), trekkerId], map: "acs_agency_last_booking_idx")
+  @@index([agencyId, totalSpent(sort: Desc), trekkerId], map: "acs_agency_spent_idx")
+  @@index([agencyId, totalBookings(sort: Desc), trekkerId], map: "acs_agency_bookings_idx")
+  @@index([trekkerId], map: "acs_trekker_idx")
+  @@map("agency_customer_stats")
+}
+
+/// One row per gateway payment that has been applied to a booking. A gateway
+/// transaction id (Khalti `pidx`, …) may confirm exactly ONE booking: without
+/// this, a single real payment could be replayed against any number of
+/// same-priced bookings, since the callback names the booking itself.
+model GatewayTransaction {
+  id            String   @id @default(uuid())
+  gateway       String
+  transactionId String   @map("transaction_id")
+  bookingId     String   @map("booking_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([gateway, transactionId])
+  @@index([bookingId])
+  @@map("gateway_transactions")
+}
+
+
+/// In-app inbox for a trekker. `notifyTrekker` writes one row for every push it sends, so the message is
+/// still there when the phone was offline, the token was missing, or the trekker only uses the web app.
+model TrekkerNotification {
+  id        String    @id @default(uuid())
+  trekkerId String    @map("trekker_id")
+  trekker   Trekker   @relation(fields: [trekkerId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  /// Free-form context from the push payload (e.g. bookingId) so the UI can link to it.
+  data      Json?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([trekkerId, createdAt])
+  @@index([trekkerId, readAt])
+  @@map("trekker_notifications")
+}
+
+/// Who did what to a package (created / edited / published / deleted …). Kept after the package is deleted, so it has no FK.
+model PackageActivity {
+  id           String   @id @default(uuid())
+  agencyId     String   @map("agency_id")
+  packageId    String   @map("package_id")
+  packageTitle String   @map("package_title")
+  action       String
+  actorUserId  String   @map("actor_user_id")
+  actorName    String   @map("actor_name")
+  actorEmail   String?  @map("actor_email")
+  /// OWNER | STAFF | SUPPORT
+  actorRole    String   @map("actor_role")
+  summary      String?
+  changes      Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([agencyId, createdAt])
+  @@index([packageId, createdAt])
+  @@map("package_activity")
+}
+
+/// The agency's own edits to a customer (name / phone / country shown in ITS customer list) and "deleted" (hidden) customers.
+/// `customerKey` is the trekker id, or `guest:<lowercased email>` for a guest who completed a trek without an account.
+/// The trekker's account and every booking are left untouched.
+model AgencyCustomerOverride {
+  agencyId    String    @map("agency_id")
+  customerKey String    @map("customer_key")
+  fullName    String?   @map("full_name")
+  email       String?
+  phone       String?
+  country     String?
+  hiddenAt    DateTime? @map("hidden_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@id([agencyId, customerKey])
+  @@map("agency_customer_overrides")
 }

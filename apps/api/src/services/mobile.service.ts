@@ -54,7 +54,6 @@ export const TREK_SECTIONS: readonly TrekSection[] = ["upcoming", "active", "com
 export const SECTION_STATUSES: Record<TrekSection, readonly BookingStatus[]> = {
   upcoming: [
     "INQUIRY",
-    "PENDING",
     "ALTERNATIVE_PROPOSED",
     "CONFIRMED",
     "PAYMENT_PENDING",

@@ -1,4 +1,4 @@
-import { ObjectId } from "mongodb";
+import { ObjectId, type Filter } from "mongodb";
 import { getSosCollection, ACK_SLA_MINUTES, type SosIncident } from "../models/sosIncident.model";
 import { prisma } from "../packages/database/prisma";
 
@@ -54,13 +54,15 @@ export async function getActiveIncidents() {
 
 // ── Incident history ────────────────────────────────────────────────────────────
 
-export async function getIncidentHistory(limit = 100) {
+export async function getIncidentHistory(page = 1, limit = 20) {
   const col = await getSosCollection();
-  const incidents = await col
-    .find({ status: { $in: ["RESOLVED", "CANCELLED"] } })
-    .sort({ triggered_at: -1 })
-    .limit(limit)
-    .toArray();
+  const filter: Filter<SosIncident> = { status: { $in: ["RESOLVED", "CANCELLED"] } };
+  const skip = (Math.max(page, 1) - 1) * limit;
+
+  const [incidents, total] = await Promise.all([
+    col.find(filter).sort({ triggered_at: -1 }).skip(skip).limit(limit).toArray(),
+    col.countDocuments(filter),
+  ]);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -77,6 +79,12 @@ export async function getIncidentHistory(limit = 100) {
       resolution:   i.resolution,
       timeline:     i.timeline,
     })),
+    meta: {
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    },
   };
 }
 

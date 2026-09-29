@@ -1,9 +1,11 @@
 import { upload } from "@funtush/storage";
 import { Router } from "express";
+import { requireAuth } from "@funtush/auth";
 import { dismissReviewFlag, getFlaggedAgency, removeReview } from "src/controllers/review.controller";
-import { createReview, flagReview, getReviews, reviewResponse } from "src/controllers/review.controller";
+import { createReview, flagReview, getReviews, reviewResponse, deleteReview } from "src/controllers/review.controller";
 import { authenticateWithRefreshToken } from "src/middleware/refreshTokenAuthentication";
 import { requireAdmin } from "src/middleware/requireAdmin.middleware";
+import { requirePlatformPermission } from "src/middleware/requirePlatformPermission.middleware";
 
 const router = Router();
 
@@ -12,11 +14,13 @@ const router = Router();
  * /reviews:
  *   post: { tags: [Reviews], summary: "Public: submit a review (multipart, up to 10 photos)", responses: { 201: { description: Created } } }
  * /agencies/{slug}/reviews:
- *   get: { tags: [Reviews], summary: "Public: reviews for an agency", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Reviews } } }
+ *   get: { tags: [Reviews], summary: "Public: reviews for an agency (paginated; the summary always covers ALL reviews)", parameters: [{ name: slug, in: path, required: true, schema: { type: string } }, { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }, { name: limit, in: query, description: "Clamped to 1-100", schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }], responses: { 200: { description: "{ averageRating, totalReviews, starDistribution, reviews, page, limit, pages }" } } }
  * /reviews/{id}/response:
  *   post: { tags: [Reviews], summary: Agency responds to a review, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Response posted } } }
  * /reviews/{id}/flag:
  *   post: { tags: [Reviews], summary: Agency flags a review for moderation, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 201: { description: Flagged } } }
+ * /reviews/{id}:
+ *   delete: { tags: [Reviews], summary: Agency deletes one of its own reviews outright, security: [{ refreshToken: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { 200: { description: Deleted }, 404: { description: Not found } } }
  * /admin/reviews/flagged:
  *   get: { tags: [Admin], summary: Agencies with flagged reviews awaiting moderation, security: [{ bearerAuth: [] }], responses: { 200: { description: Flagged queue } } }
  * /admin/reviews/{id}/remove:
@@ -36,21 +40,28 @@ router.route('/reviews/:id/response')
 router.route('/reviews/:id/flag')
     .post(authenticateWithRefreshToken, flagReview);
 
+router.route('/reviews/:id')
+    .delete(authenticateWithRefreshToken, deleteReview);
+
 /**
  * These 3 routes had **no auth middleware and no in-controller check at
  * all** — mounted directly at `/` (`app.ts`), they never pass through
  * `admin/index.ts`'s `router.use(requireAdmin)` the way every other
  * `/admin/*` route does. Anyone could remove any review or dismiss any
- * moderation flag with no credentials whatsoever. `requireAdmin` added to
- * match the gate every other admin route already has.
+ * moderation flag with no credentials whatsoever. `requireAdmin` (the IP
+ * allow-list) was added to match the gate every other admin route had at the
+ * time — but that alone proves nothing about WHO is calling, only WHERE
+ * from (and it's dev-bypassable via SKIP_ADMIN_IP_CHECK). `requireAuth` +
+ * `requireSuperAdminRole` added on top, matching the real role gate every
+ * other admin route in routes/admin/* now has.
  */
 router.route("/admin/reviews/flagged")
-    .get(requireAdmin, getFlaggedAgency);
+    .get(requireAdmin, requireAuth, requirePlatformPermission("reviews"), getFlaggedAgency);
 
 router.route("/admin/reviews/:id/remove")
-    .patch(requireAdmin, removeReview);
+    .patch(requireAdmin, requireAuth, requirePlatformPermission("reviews"), removeReview);
 
 router.route("/admin/reviews/:id/dismiss-flag")
-    .patch(requireAdmin, dismissReviewFlag);
+    .patch(requireAdmin, requireAuth, requirePlatformPermission("reviews"), dismissReviewFlag);
 
 export default router;

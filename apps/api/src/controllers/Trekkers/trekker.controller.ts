@@ -46,7 +46,7 @@ export const trekkerPreference = async (req: Request, res: Response) => {
     } catch (err) {
         res.status(500).json({
             status: "error",
-            message: err
+            message: err instanceof Error ? err.message : "Failed to save trekker preferences"
         });
     }
 }

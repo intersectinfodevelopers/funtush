@@ -77,7 +77,8 @@ const sitePageSectionSchema = z
     title: safeText("Title", SITE_PAGE_TEXT_LIMITS.title.max).nullable().optional(),
     text: safeText("Text", SITE_PAGE_TEXT_LIMITS.text.max).nullable().optional(),
     subtitle: safeText("Subtitle", SITE_PAGE_TEXT_LIMITS.subtitle.max).nullable().optional(),
-    image: z.string().trim().max(MAX_LINK_LENGTH, "Image URL is too long").nullable().optional(),
+    // Rendered as an <img>/CSS background on the public site: same scheme rules as links.
+    image: safeLink("Image URL").nullable().optional(),
     link: safeLink("Link").nullable().optional(),
     ctaText: safeText("Button label", SITE_PAGE_TEXT_LIMITS.ctaText.max).nullable().optional(),
     ctaText2: safeText("Second button label", SITE_PAGE_TEXT_LIMITS.ctaText.max).nullable().optional(),

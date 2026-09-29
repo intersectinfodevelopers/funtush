@@ -7,7 +7,7 @@ const ADMIN_WHITELIST = new Set(
 
 function getClientIp(req: Request): string {
   return (
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.ip ||
     req.socket.remoteAddress ||
     ""
   );
@@ -21,6 +21,15 @@ export async function resolveTenant(
   next: NextFunction
 ): Promise<void> {
   try {
+    // Operational endpoints are probed by load balancers/orchestrators/scrapers
+    // that address the pod by IP or an internal name — not a Funtush domain — so
+    // they must not be subject to host-based tenant resolution (which 404s any
+    // unrecognised host in production and would get a healthy instance killed).
+    if (req.path === "/health" || req.path === "/metrics") {
+      req.context = "platform"; req.tenantId = null; req.agencyId = null;
+      return next();
+    }
+
     const host = req.headers.host?.split(":")[0]?.toLowerCase();
 
     // Outside production, treat localhost / missing Host as the platform context

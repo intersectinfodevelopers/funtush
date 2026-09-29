@@ -6,6 +6,7 @@ import {
   reassignRoleService,
   updateStaffProfileService,
   deactivateStaffService,
+  reactivateStaffService,
    getStaffActivityService,
 } from "../services/staff.service";
 
@@ -83,8 +84,23 @@ export const deactivateStaff = async (req: AuthRequest, res: Response) => {
   if (!agencyId) return res.status(403).json({ error: "No agency context" });
 
   const id = req.params["id"] as string;
-  const staff = await deactivateStaffService(agencyId, id);
-  return res.status(200).json({ staff });
+  const result = await deactivateStaffService(agencyId, id);
+  if (result.deleted) return res.status(200).json({ deleted: true });
+  return res.status(200).json({ deleted: false, staff: result.staff });
+};
+
+export const reactivateStaff = async (req: AuthRequest, res: Response) => {
+  const agencyId = req.user?.agencyId;
+  if (!agencyId) return res.status(403).json({ error: "No agency context" });
+
+  const id = req.params["id"] as string;
+  try {
+    const staff = await reactivateStaffService(agencyId, id);
+    return res.status(200).json({ staff });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to reactivate staff";
+    return res.status(staffErrStatus(err)).json({ error: message });
+  }
 };
 
 

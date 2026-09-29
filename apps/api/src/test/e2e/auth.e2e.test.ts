@@ -17,6 +17,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { db } from "@funtush/database";
 import { hashPassword, generateAccessToken, generateRefreshToken, storeOTP, hashToken } from "@funtush/auth";
+import { normalizeEmail } from "@funtush/shared";
 import { app } from "../../app";
 import { dbAvailable } from "./helpers";
 
@@ -36,13 +37,20 @@ d("Auth (e2e)", () => {
     }
   });
 
-  async function createUser(overrides: { role: "SUPER_ADMIN" | "AGENCY_ADMIN" | "STAFF"; roleType: "PLATFORM" | "TENANT" | "TREKKER"; email: string }) {
+  async function createUser(overrides: {
+    role: "SUPER_ADMIN" | "PLATFORM_ADMIN" | "PLATFORM_SUPPORT" | "AGENCY_ADMIN" | "STAFF";
+    roleType: "PLATFORM" | "TENANT" | "TREKKER";
+    email: string;
+    isActive?: boolean;
+  }) {
     const user = await db.user.create({
       data: {
         email: overrides.email,
+        normalizedEmail: normalizeEmail(overrides.email),
         passwordHash: await hashPassword(PASSWORD),
         role: overrides.role,
         roleType: overrides.roleType,
+        ...(overrides.isActive !== undefined ? { isActive: overrides.isActive } : {}),
       },
       select: { id: true, email: true },
     });
@@ -72,9 +80,44 @@ d("Auth (e2e)", () => {
       expect(res.body.refreshToken).toBeTruthy();
     });
 
-    it("rejects a non-SUPER_ADMIN user with 401", async () => {
+    it("rejects a non-platform user with 401", async () => {
       const email = uniqueEmail("notadmin");
       await createUser({ role: "STAFF", roleType: "TENANT", email });
+
+      const res = await request(app).post("/auth/admin/login").send({ email, password: PASSWORD });
+      expect(res.status).toBe(401);
+    });
+
+    // Previously adminLogin hard-coded `role !== "SUPER_ADMIN"` (and even
+    // hard-coded the JWT's role claim to "SUPER_ADMIN" regardless of the
+    // real one) — a PLATFORM_ADMIN or PLATFORM_SUPPORT account created via
+    // the Team feature could never sign in at all. Fixed in
+    // packages/auth/src/service/auth.service.ts.
+    it("logs in a PLATFORM_ADMIN user with their real role in the JWT", async () => {
+      const email = uniqueEmail("platformadmin");
+      await createUser({ role: "PLATFORM_ADMIN", roleType: "PLATFORM", email });
+
+      const res = await request(app).post("/auth/admin/login").send({ email, password: PASSWORD });
+      expect(res.status).toBe(200);
+      expect(res.body.accessToken).toBeTruthy();
+      const payload = JSON.parse(Buffer.from(res.body.accessToken.split(".")[1], "base64url").toString());
+      expect(payload.role).toBe("PLATFORM_ADMIN");
+      expect(payload.roleType).toBe("PLATFORM");
+    });
+
+    it("logs in a PLATFORM_SUPPORT user with their real role in the JWT", async () => {
+      const email = uniqueEmail("platformsupport");
+      await createUser({ role: "PLATFORM_SUPPORT", roleType: "PLATFORM", email });
+
+      const res = await request(app).post("/auth/admin/login").send({ email, password: PASSWORD });
+      expect(res.status).toBe(200);
+      const payload = JSON.parse(Buffer.from(res.body.accessToken.split(".")[1], "base64url").toString());
+      expect(payload.role).toBe("PLATFORM_SUPPORT");
+    });
+
+    it("rejects a deactivated platform user with 401", async () => {
+      const email = uniqueEmail("deactivated");
+      await createUser({ role: "PLATFORM_SUPPORT", roleType: "PLATFORM", email, isActive: false });
 
       const res = await request(app).post("/auth/admin/login").send({ email, password: PASSWORD });
       expect(res.status).toBe(401);

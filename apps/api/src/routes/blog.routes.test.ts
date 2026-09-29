@@ -20,25 +20,37 @@ vi.mock("src/middleware/refreshTokenAuthentication", () => ({
     next: () => void,
   ) => {
     if (!authState.agencyId) return res.status(401).json({ message: "Refresh token is required" });
+    // Real middleware sets both: tenantId (the agency-user id, used for blog author
+    // attribution) and agencyId (the tenant, used for agency-wide resources like categories).
     req.tenantId = authState.agencyId;
+    req.agencyId = authState.agencyId;
     next();
   },
 }));
 
-const createCategoryService = vi.fn();
-const updateCategoryService = vi.fn();
-const getCategoriesService = vi.fn();
 const createBlogService = vi.fn();
 const updateBlogService = vi.fn();
 const getBlogsService = vi.fn();
 
 vi.mock("src/services/blog.service", () => ({
-  createCategoryService: (...a: unknown[]) => createCategoryService(...a),
-  updateCategoryService: (...a: unknown[]) => updateCategoryService(...a),
-  getCategoriesService: (...a: unknown[]) => getCategoriesService(...a),
   createBlogService: (...a: unknown[]) => createBlogService(...a),
   updateBlogService: (...a: unknown[]) => updateBlogService(...a),
   getBlogsService: (...a: unknown[]) => getBlogsService(...a),
+}));
+
+// Categories now live in their own service module (blogCategory.service),
+// split out of blog.service after this file was first written — the route
+// (src/routes/blog.routes.ts) calls `cat.listCategories`/etc. from there.
+const listCategories = vi.fn();
+const createCategory = vi.fn();
+const updateCategory = vi.fn();
+
+vi.mock("../services/blogCategory.service", () => ({
+  listCategories: (...a: unknown[]) => listCategories(...a),
+  createCategory: (...a: unknown[]) => createCategory(...a),
+  getCategory: vi.fn(),
+  updateCategory: (...a: unknown[]) => updateCategory(...a),
+  deleteCategory: vi.fn(),
 }));
 
 vi.mock("@funtush/storage", async () => {
@@ -73,12 +85,12 @@ afterAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   authState.agencyId = undefined;
-  createCategoryService.mockResolvedValue({ id: "c1" });
-  updateCategoryService.mockResolvedValue({ id: "c1", name: "Updated" });
-  getCategoriesService.mockResolvedValue([{ id: "c1" }]);
+  createCategory.mockResolvedValue({ id: "c1" });
+  updateCategory.mockResolvedValue({ id: "c1", name: "Updated" });
+  listCategories.mockResolvedValue({ data: [{ id: "c1" }], stats: { total: 1, active: 1, inactive: 0, totalBeforeMonth: 0 } });
   createBlogService.mockResolvedValue({ id: "b1" });
   updateBlogService.mockResolvedValue({ id: "b1" });
-  getBlogsService.mockResolvedValue([{ id: "b1" }]);
+  getBlogsService.mockResolvedValue({ data: [{ id: "b1" }], total: 1 });
 });
 
 function authed() {
@@ -104,7 +116,7 @@ describe("categories", () => {
   it("GET lists categories", async () => {
     const res = await fetch(`${baseUrl}/agencies/me/categories`, { headers: authed() });
     expect(res.status).toBe(200);
-    expect(getCategoriesService).toHaveBeenCalledWith("agencyuser-1");
+    expect(listCategories).toHaveBeenCalledWith("agencyuser-1");
   });
 
   it("POST creates a category", async () => {
@@ -114,7 +126,7 @@ describe("categories", () => {
       body: JSON.stringify({ name: "Trekking" }),
     });
     expect(res.status).toBe(201);
-    expect(createCategoryService).toHaveBeenCalledWith("agencyuser-1", { name: "Trekking" });
+    expect(createCategory).toHaveBeenCalledWith("agencyuser-1", { name: "Trekking" });
   });
 
   it("PATCH updates a category", async () => {
@@ -124,11 +136,11 @@ describe("categories", () => {
       body: JSON.stringify({ name: "Renamed" }),
     });
     expect(res.status).toBe(200);
-    expect(updateCategoryService).toHaveBeenCalledWith("agencyuser-1", "c1", { name: "Renamed" });
+    expect(updateCategory).toHaveBeenCalledWith("agencyuser-1", "c1", { name: "Renamed" });
   });
 
   it("surfaces a service error as 400", async () => {
-    createCategoryService.mockRejectedValue(new Error("Category already exists"));
+    createCategory.mockRejectedValue(Object.assign(new Error("Category already exists"), { status: 400 }));
     const res = await fetch(`${baseUrl}/agencies/me/categories`, {
       method: "POST",
       headers: { "content-type": "application/json", ...authed() },
@@ -146,7 +158,16 @@ describe("blogs", () => {
   it("GET lists blogs", async () => {
     const res = await fetch(`${baseUrl}/agencies/me/blogs`, { headers: authed() });
     expect(res.status).toBe(200);
-    expect(getBlogsService).toHaveBeenCalledWith("agencyuser-1");
+    expect(getBlogsService).toHaveBeenCalledWith("agencyuser-1", expect.objectContaining({ skip: 0, take: 50 }));
+    const body = (await res.json()) as { data: unknown[]; meta: { total: number; page: number; limit: number } };
+    expect(body.data).toHaveLength(1);
+    expect(body.meta).toMatchObject({ total: 1, page: 1, limit: 50 });
+  });
+
+  it("GET clamps a hostile limit and honours page", async () => {
+    const res = await fetch(`${baseUrl}/agencies/me/blogs?page=3&limit=99999`, { headers: authed() });
+    expect(res.status).toBe(200);
+    expect(getBlogsService).toHaveBeenCalledWith("agencyuser-1", expect.objectContaining({ skip: 200, take: 100 }));
   });
 
   it("POST creates a blog with no photos attached (photos: [])", async () => {
@@ -156,7 +177,7 @@ describe("blogs", () => {
       body: JSON.stringify({ title: "Trekking in Nepal" }),
     });
     expect(res.status).toBe(201);
-    expect(createBlogService).toHaveBeenCalledWith("agencyuser-1", { title: "Trekking in Nepal", photos: [] });
+    expect(createBlogService).toHaveBeenCalledWith("agencyuser-1", { title: "Trekking in Nepal", photos: [], newUploads: [], tags: undefined, authorName: null });
   });
 
   it("PATCH updates a blog", async () => {
@@ -166,6 +187,7 @@ describe("blogs", () => {
       body: JSON.stringify({ title: "Updated title" }),
     });
     expect(res.status).toBe(200);
-    expect(updateBlogService).toHaveBeenCalledWith("agencyuser-1", "b1", { title: "Updated title", photos: [] });
+    // No new files and no keepPhotos → photos are left alone (undefined), NOT reset to [].
+    expect(updateBlogService).toHaveBeenCalledWith("agencyuser-1", "b1", { title: "Updated title", photos: undefined, newUploads: [], tags: undefined });
   });
 });

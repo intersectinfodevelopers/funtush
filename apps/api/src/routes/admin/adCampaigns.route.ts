@@ -16,9 +16,13 @@
 import { Router, Response, Request } from "express";
 import { requireAuth } from "@funtush/auth";
 import { requireSuperAdminRole } from "../../middleware/requireSuperAdminRole.middleware";
+import { requirePlatformPermission } from "../../middleware/requirePlatformPermission.middleware";
+import { parsePagination, buildMeta } from "../../utils/pagination.js";
 import {
   getPendingCampaigns,
   getActiveCampaigns,
+  countPendingCampaigns,
+  countActiveCampaigns,
   approveCampaign,
   rejectCampaign,
   pauseCampaign,
@@ -28,20 +32,24 @@ import {
 const router = Router();
 
 // GET /admin/ad-campaigns/pending — queue from Large-tier agencies
-router.get("/pending", async (_req, res) => {
+// (read-only — delegable to "ad_campaigns"; approve/reject/pause below stay
+// SUPER_ADMIN/PLATFORM_ADMIN-only since they spend real budget on Meta).
+router.get("/pending", requireAuth, requirePlatformPermission("ad_campaigns"), async (req, res) => {
   try {
-    const data = await getPendingCampaigns();
-    res.json({ data, total: data.length });
+    const page = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const [data, total] = await Promise.all([getPendingCampaigns({ skip: page.skip, take: page.take }), countPendingCampaigns()]);
+    res.json({ data, total, meta: buildMeta(total, page.page, page.limit) });
   } catch (err) {
     handle(err, res);
   }
 });
 
 // GET /admin/ad-campaigns/active — running campaigns with impressions/clicks/spend
-router.get("/active", async (_req, res) => {
+router.get("/active", requireAuth, requirePlatformPermission("ad_campaigns"), async (req, res) => {
   try {
-    const data = await getActiveCampaigns();
-    res.json({ data, total: data.length });
+    const page = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const [data, total] = await Promise.all([getActiveCampaigns({ skip: page.skip, take: page.take }), countActiveCampaigns()]);
+    res.json({ data, total, meta: buildMeta(total, page.page, page.limit) });
   } catch (err) {
     handle(err, res);
   }

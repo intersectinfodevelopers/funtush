@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { createCouponService, getAgencyCouponsService, updateCouponService, validateAndApplyCoupon } from "src/services/coupon.service";
+import { CouponError, deleteCouponService, createCouponService, getAgencyCouponsService, updateCouponService, validateAndApplyCoupon } from "src/services/coupon.service";
 
 export const createCoupon = async (
     req: Request,
@@ -19,7 +19,7 @@ export const createCoupon = async (
         });
 
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof CouponError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -48,7 +48,7 @@ export const updateCoupon = async (
             data: coupon,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof CouponError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -75,7 +75,7 @@ export const getAgencyCoupons = async (
             data: coupons,
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof CouponError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
@@ -101,12 +101,24 @@ export const applyCoupon = async (
         });
 
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err instanceof CouponError ? err.status : 400).json({
             success: false,
             message:
                 err instanceof Error
                     ? err.message
                     : "Something went wrong",
+        });
+    }
+};
+
+export const deleteCoupon = async (req: Request, res: Response) => {
+    try {
+        await deleteCouponService(req.agencyId as string, req.params.id as string);
+        return res.status(204).send();
+    } catch (err) {
+        return res.status(err instanceof CouponError ? err.status : 400).json({
+            success: false,
+            message: err instanceof Error ? err.message : "Something went wrong",
         });
     }
 };

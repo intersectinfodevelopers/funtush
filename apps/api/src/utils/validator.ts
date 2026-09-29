@@ -1,3 +1,5 @@
+import { httpError, fieldError } from "./httpError";
+
 interface registrationInput {
   email: string;
   password: string;
@@ -14,32 +16,134 @@ interface PackageInput {
   maxGroupSize: number;
 }
 
-export const validateRegistrationInput = (data: registrationInput) => {
+export const validateRegistrationInput = (data: Partial<registrationInput>) => {
   const { email, password, phone } = data;
 
-  if (!email.includes("@")) {
-    throw new Error("Invalid email format");
+  // These come straight from a request body, so any of them can be missing or
+  // the wrong type — without the typeof checks a missing `email` surfaced as a
+  // TypeError ("Cannot read properties of undefined") and a 500. Every one of
+  // these is the caller's mistake, so they carry a 400.
+  if (typeof email !== "string" || !email.includes("@")) {
+    throw httpError(400, "Invalid email format");
   }
 
-  if (password.length < 8) {
-    throw new Error("Password must be at least 8 characters");
+  if (typeof password !== "string" || password.length < 8) {
+    throw httpError(400, "Password must be at least 8 characters");
   }
 
-  if (!/^(98|97)\d{8}$/.test(phone)) {
-    throw new Error("Invalid phone format");
+  if (typeof phone !== "string" || !/^(98|97)\d{8}$/.test(phone)) {
+    throw httpError(400, "Invalid phone format");
   }
 };
 
+/** Package photos: up to 8 http(s) URLs (uploaded via /upload); the first is the cover. */
+export const parsePackagePhotos = (v: unknown): string[] => {
+  if (!Array.isArray(v)) throw fieldError("photos", "Photos must be a list of image URLs.");
+  if (v.length > 5) throw fieldError("photos", "A package can have at most 5 photos.");
+  return v.map((u) => {
+    if (typeof u !== "string" || u.length > 500) throw fieldError("photos", "Each photo must be an image URL.");
+    let ok = false;
+    try { ok = ["http:", "https:"].includes(new URL(u).protocol); } catch { /* invalid */ }
+    if (!ok) throw fieldError("photos", "Each photo must be an http(s) image URL.");
+    return u;
+  });
+};
+
+export const PACKAGE_CATEGORIES = ["Trekking", "Peak Climbing", "Cultural Tour", "Wildlife Safari", "Adventure Sports", "Pilgrimage", "Day Hike"] as const;
+export const PACKAGE_CURRENCIES = ["NPR", "USD", "EUR", "GBP", "INR"] as const;
+
+const optInt = (v: unknown, label: string, field: string, min = 0, max = 100000): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) throw fieldError(field, `${label} must be a whole number between ${min} and ${max}.`);
+  return v;
+};
+const optText = (v: unknown, label: string, field: string, max: number): string | null => {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") throw fieldError(field, `${label} must be text.`);
+  const t = v.trim();
+  if (t.length > max) throw fieldError(field, `${label} must be at most ${max} characters.`);
+  return t === "" ? null : t;
+};
+const textList = (v: unknown, label: string, field: string): string[] => {
+  if (!Array.isArray(v) || v.length > 20) throw fieldError(field, `${label} must be a list of at most 20 items.`);
+  return [...new Set(v.map((x) => {
+    if (typeof x !== "string" || x.trim().length === 0 || x.trim().length > 60) throw fieldError(field, `${label}: each item must be 1-60 characters.`);
+    return x.trim();
+  }))];
+};
+
+/** Volume-discount tiers: [{ minPeople >= 2, percentOff 1..90 }], strictly increasing in both. */
+export const parseVolumeDiscounts = (v: unknown): { minPeople: number; percentOff: number }[] => {
+  if (!Array.isArray(v) || v.length > 6) throw fieldError("volumeDiscounts", "Group discounts: at most 6 tiers.");
+  const tiers = v.map((t) => {
+    const o = t as { minPeople?: unknown; percentOff?: unknown };
+    if (!Number.isInteger(o?.minPeople) || (o.minPeople as number) < 2 || (o.minPeople as number) > 1000) throw fieldError("volumeDiscounts", "Each discount tier needs a group size of 2 or more.");
+    if (typeof o.percentOff !== "number" || !(o.percentOff > 0) || o.percentOff > 90) throw fieldError("volumeDiscounts", "Each discount must be between 0 and 90 percent.");
+    return { minPeople: o.minPeople as number, percentOff: Math.round(o.percentOff * 100) / 100 };
+  }).sort((a, b) => a.minPeople - b.minPeople);
+  for (let i = 1; i < tiers.length; i++) {
+    if (tiers[i].minPeople === tiers[i - 1].minPeople) throw fieldError("volumeDiscounts", "Two discount tiers can't have the same group size.");
+    if (tiers[i].percentOff <= tiers[i - 1].percentOff) throw fieldError("volumeDiscounts", "A bigger group must get a bigger discount.");
+  }
+  return tiers;
+};
+
+/** The price for `groupSize` people after the best matching volume tier. */
+export const discountedPricePerPerson = (base: number, tiers: unknown, groupSize: number): number => {
+  const list = Array.isArray(tiers) ? (tiers as { minPeople: number; percentOff: number }[]) : [];
+  const hit = list.filter((t) => groupSize >= t.minPeople).sort((a, b) => b.percentOff - a.percentOff)[0];
+  return hit ? Math.round(base * (1 - hit.percentOff / 100) * 100) / 100 : base;
+};
+
+/**
+ * The optional "package builder" fields, validated and cleaned; only keys present in `data` are returned, so it works
+ * for both create and partial update.
+ */
+export const parsePackageDetails = (data: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  const has = (k: string) => data[k] !== undefined;
+  if (has("destination")) out.destination = optText(data.destination, "Destination", "destination", 120);
+  if (has("category")) {
+    const c = optText(data.category, "Category", "category", 60);
+    if (c !== null && !(PACKAGE_CATEGORIES as readonly string[]).includes(c)) throw fieldError("category", "Choose a category from the list.");
+    out.category = c;
+  }
+  if (has("minDurationDays")) out.minDurationDays = optInt(data.minDurationDays, "Minimum duration", "minDurationDays", 1, 365);
+  if (has("maxDurationDays")) out.maxDurationDays = optInt(data.maxDurationDays, "Maximum duration", "maxDurationDays", 1, 365);
+  if (has("altitudeMinM")) out.altitudeMinM = optInt(data.altitudeMinM, "Minimum altitude", "altitudeMinM", 0, 9000);
+  if (has("altitudeMaxM")) out.altitudeMaxM = optInt(data.altitudeMaxM, "Maximum altitude", "altitudeMaxM", 0, 9000);
+  const lo = (out.minDurationDays ?? data.minDurationDays) as number | null | undefined, hi = (out.maxDurationDays ?? data.maxDurationDays) as number | null | undefined;
+  if (typeof lo === "number" && typeof hi === "number" && lo > hi) throw fieldError("minDurationDays", "Minimum duration can't be more than the maximum.");
+  const alo = out.altitudeMinM as number | null | undefined, ahi = out.altitudeMaxM as number | null | undefined;
+  if (typeof alo === "number" && typeof ahi === "number" && alo > ahi) throw fieldError("altitudeMinM", "Minimum altitude can't be more than the maximum.");
+  if (has("region")) out.region = optText(data.region, "Region", "region", 120);
+  if (has("bestTimeToVisit")) out.bestTimeToVisit = optText(data.bestTimeToVisit, "Best time to visit", "bestTimeToVisit", 120);
+  if (has("activities")) out.activities = textList(data.activities, "Activities", "activities");
+  if (has("routes")) out.routes = textList(data.routes, "Routes", "routes");
+  if (has("shortSummary")) out.shortSummary = optText(data.shortSummary, "Short summary", "shortSummary", 300);
+  if (has("currency")) {
+    if (typeof data.currency !== "string" || !(PACKAGE_CURRENCIES as readonly string[]).includes(data.currency)) throw fieldError("currency", "Choose a currency from the list.");
+    out.currency = data.currency;
+  }
+  if (has("isFeatured")) {
+    if (typeof data.isFeatured !== "boolean") throw fieldError("isFeatured", "Featured must be on or off.");
+    out.isFeatured = data.isFeatured;
+  }
+  if (has("volumeDiscounts")) out.volumeDiscounts = parseVolumeDiscounts(data.volumeDiscounts);
+  return out;
+};
+
 export const validatePackageInput = (data: PackageInput) => {
-  if (!data.title?.trim()) throw new Error("title is required");
+  if (typeof data.title !== "string" || !data.title.trim()) throw fieldError("title", "Title is required.");
+  if (data.title.trim().length > 200) throw fieldError("title", "Title must be at most 200 characters.");
   if (!Number.isInteger(data.durationDays) || data.durationDays < 1)
-    throw new Error("durationDays must be a positive integer");
-  if (typeof data.pricePerPerson !== "number" || data.pricePerPerson < 0)
-    throw new Error("pricePerPerson must be a non-negative number");
+    throw fieldError("durationDays", "Duration must be a whole number of days (1 or more).");
+  if (typeof data.pricePerPerson !== "number" || !(data.pricePerPerson >= 0))
+    throw fieldError("pricePerPerson", "Price is required and can't be negative.");
   if (!DIFFICULTIES.includes(data.difficulty))
-    throw new Error("difficulty must be one of: " + DIFFICULTIES.join(", "));
+    throw fieldError("difficulty", "Choose a difficulty: " + DIFFICULTIES.join(", ").toLowerCase() + ".");
   if (!Number.isInteger(data.maxGroupSize) || data.maxGroupSize < 1)
-    throw new Error("maxGroupSize must be a positive integer");
+    throw fieldError("maxGroupSize", "Max group size must be a whole number (1 or more).");
 };
 
 // ── Day 3: Itinerary Builder ─────────────────────────────────────────

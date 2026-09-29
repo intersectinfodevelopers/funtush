@@ -2,8 +2,10 @@ import multer from "multer";
 
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
+  "image/jpg", // some clients label .jpg files this way; the real type is checked from the bytes
   "image/png",
   "image/webp",
+  "image/gif",
   "application/pdf",
 ];
 
@@ -16,7 +18,7 @@ export const upload = multer({
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only jpg, png, webp, pdf allowed."));
+      cb(new Error("Invalid file type. Only jpg, jpeg, png, webp, gif, pdf allowed."));
     }
   },
 });

@@ -25,8 +25,10 @@ vi.mock("../lib/verifySignature", async () => {
 });
 
 const processConfirmedPayment = vi.fn();
+const claimGatewayTransaction = vi.fn();
 vi.mock("../services/payment.service", () => ({
   processConfirmedPayment: (...a: unknown[]) => processConfirmedPayment(...a),
+  claimGatewayTransaction: (...a: unknown[]) => claimGatewayTransaction(...a),
 }));
 
 let server: Server;
@@ -60,6 +62,7 @@ afterAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   processConfirmedPayment.mockResolvedValue(undefined);
+  claimGatewayTransaction.mockResolvedValue(undefined);
 });
 
 function stripeSignature(rawBody: string, secret: string, timestamp = Math.floor(Date.now() / 1000)) {
@@ -100,7 +103,7 @@ describe("POST /:agencyId/stripe", () => {
       body,
     });
     expect(res.status).toBe(200);
-    expect(processConfirmedPayment).toHaveBeenCalledWith("bk-1", "agency-1", 1500);
+    expect(processConfirmedPayment).toHaveBeenCalledWith("bk-1", "agency-1", 1500, "USD");
   });
 
   it("ignores an event type other than payment_intent.succeeded, without calling processConfirmedPayment", async () => {
@@ -161,7 +164,20 @@ describe("POST /:agencyId/khalti", () => {
       body: JSON.stringify({ pidx: "pidx-1", purchase_order_id: "bk-1" }),
     });
     expect(res.status).toBe(200);
-    expect(processConfirmedPayment).toHaveBeenCalledWith("bk-1", "agency-1", 1500);
+    expect(processConfirmedPayment).toHaveBeenCalledWith("bk-1", "agency-1", 1500, "NPR");
+    expect(claimGatewayTransaction).toHaveBeenCalledWith("khalti", "pidx-1", "bk-1");
+  });
+
+  it("409s and confirms nothing when the pidx was already used for a different booking (replay)", async () => {
+    verifyKhaltiPayment.mockResolvedValue({ amount: 1500, transactionId: "txn-1" });
+    claimGatewayTransaction.mockRejectedValue(Object.assign(new Error("Transaction already used"), { status: 409 }));
+    const res = await fetch(`${baseUrl}/agency-1/khalti`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pidx: "pidx-1", purchase_order_id: "bk-2" }),
+    });
+    expect(res.status).toBe(409);
+    expect(processConfirmedPayment).not.toHaveBeenCalled();
   });
 });
 
@@ -225,7 +241,7 @@ describe("POST /:agencyId/esewa", () => {
       body: JSON.stringify({ data }),
     });
     expect(res.status).toBe(200);
-    expect(processConfirmedPayment).toHaveBeenCalledWith("bk-1", "agency-1", 1500);
+    expect(processConfirmedPayment).toHaveBeenCalledWith("bk-1", "agency-1", 1500, "NPR");
   });
 });
 

@@ -1,5 +1,12 @@
 import crypto from "crypto";
 
+/** Constant-time string equality. `===` on a signature leaks, byte by byte, how much of a guess was right. */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
 export type GatewayType = "stripe" | "khalti" | "esewa" | "connectips";
 
 export interface VerifiedPayment {
@@ -29,7 +36,8 @@ export function verifyStripeSignature(
   const signedPayload = `${parts.t}.${rawBody.toString()}`;
   const expected = crypto.createHmac("sha256", secret).update(signedPayload).digest("hex");
 
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
+  // timingSafeEqual THROWS on unequal lengths — a malformed header used to become a 500
+  return safeEqual(expected, parts.v1);
 }
 
 // Khalti
@@ -70,7 +78,7 @@ export function verifyEsewaSignature(
     .createHmac("sha256", secret)
     .update(message)
     .digest("base64");
-  return hmac === receivedSignature;
+  return typeof receivedSignature === "string" && safeEqual(hmac, receivedSignature);
 }
 
 // ConnectIPS
@@ -83,5 +91,5 @@ export function verifyConnectIPSSignature(
     .createHmac("sha256", secret)
     .update(message)
     .digest("base64");
-  return hmac === receivedSignature;
+  return typeof receivedSignature === "string" && safeEqual(hmac, receivedSignature);
 }

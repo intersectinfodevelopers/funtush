@@ -36,3 +36,13 @@ export function httpError(status: number, message: string): HttpError {
   error.status = status;
   return error;
 }
+
+/** A 400 that also says WHICH field is wrong, so the dashboard can show the message under that input. */
+export interface FieldError extends HttpError {
+  field: string;
+}
+export function fieldError(field: string, message: string): FieldError {
+  const error = httpError(400, message) as FieldError;
+  error.field = field;
+  return error;
+}

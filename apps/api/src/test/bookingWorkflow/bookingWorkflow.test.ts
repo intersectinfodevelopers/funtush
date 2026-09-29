@@ -39,6 +39,9 @@ vi.mock("@funtush/database", () => {
         get: vi.fn(),
         set: vi.fn(),
         del: vi.fn(),
+        // rate-limit / OTP-attempt counters: first hit of a window, so nothing is throttled
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
     };
     const $executeRaw = vi.fn().mockResolvedValue(1);
     const $transaction = vi.fn(async (fn: (tx: unknown) => unknown) =>
@@ -77,6 +80,7 @@ vi.mock("@funtush/database", () => {
 // Mock notifications, emails, and PDF generation to keep the tests focused on the service logic.
 // Path must match the exact specifier booking.service.ts / payment.service.ts use to
 // import notification.service.ts (the dotted FCM-push file, imported with a .js extension).
+vi.mock("../../services/guideAvailability.service", () => ({ assertGuideAssignable: vi.fn(async () => undefined), markGuideBusy: vi.fn(async () => undefined), releaseIdleGuides: vi.fn(async () => 0) }));
 vi.mock("../../services/notification.service.js", () => ({
     notifyTrekker: vi.fn(),
     notifyAgencyAdmins: vi.fn(),
@@ -211,7 +215,7 @@ beforeEach(() => {
 describe("acceptBooking", () => {
     it("moves INQUIRY -> PAYMENT_PENDING and creates a payment link", async () => {
         (prisma.booking.findUnique as Mock).mockResolvedValue(baseBooking());
-        (prisma.package.findUnique as Mock).mockResolvedValue(basePackage());
+        (prisma.trekPackage.findUnique as Mock).mockResolvedValue(basePackage());
         (prisma.trekDepartureDate.findUnique as Mock).mockResolvedValue({
             id: DEPARTURE_ID,
             maxSlots: 10,
@@ -254,6 +258,35 @@ describe("processConfirmedPayment", () => {
 
         await expect(processConfirmedPayment(BOOKING_ID, AGENCY_ID, 1000)).resolves.toBeUndefined();
         expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    it("counts revenue once on success, and NOT again when the gateway retries the webhook", async () => {
+        const { register } = await import("../../services/prometheusMetrics");
+        const revenue = async () => {
+            const m = (await register.getSingleMetricAsString("revenue_total")).match(/revenue_total\{currency="NPR"\} ([\d.]+)/);
+            return m ? Number(m[1]) : 0;
+        };
+        const before = await revenue();
+
+        (prisma.booking.findUnique as Mock).mockResolvedValueOnce(
+            baseBooking({
+                status: "PAYMENT_PENDING",
+                paymentLink: { used: false },
+                agency: { profile: null, name: "Agency", email: "a@example.com" },
+                departureDate: { startDate: new Date() },
+                package: { title: "Trek", durationDays: 10, itineraries: [] },
+                addOns: [],
+            })
+        );
+        await processConfirmedPayment(BOOKING_ID, AGENCY_ID, 1000, "NPR");
+        expect(await revenue()).toBe(before + 1000);
+
+        // gateway retry: the link is now used -> early return, no second count
+        (prisma.booking.findUnique as Mock).mockResolvedValueOnce(
+            baseBooking({ status: "PAID", paymentLink: { used: true } })
+        );
+        await processConfirmedPayment(BOOKING_ID, AGENCY_ID, 1000, "NPR");
+        expect(await revenue()).toBe(before + 1000);
     });
 
     it("throws on amount mismatch", async () => {

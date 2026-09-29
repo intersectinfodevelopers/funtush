@@ -21,12 +21,18 @@ vi.mock("../src/lib/mongo", () => ({
   }),
 }));
 
+vi.mock("@funtush/database", () => ({
+  db: { booking: { findMany: vi.fn() } },
+}));
+
+import { db } from "@funtush/database";
 import {
   resolveDateRange,
   getOverviewAnalytics,
   getPackageAnalytics,
   getCustomerAnalytics,
   getGuideAnalytics,
+  getOriginPackagePerformance,
 } from "../src/services/agencyAnalytics.service";
 
 const makeEvent = (overrides: Record<string, unknown> = {}) => ({
@@ -156,6 +162,76 @@ describe("getPackageAnalytics()", () => {
     const result = await getPackageAnalytics("agency_xyz", range);
     expect(result.topByBookings).toHaveLength(0);
     expect(result.topByRevenue).toHaveLength(0);
+  });
+
+  it("counts every distinct package with activity, not just the top-10 slice shown", async () => {
+    // 12 distinct packages, one booking each — `total` must be 12, not 10.
+    const events = Array.from({ length: 12 }, (_, i) => makeEvent({ event_type: "BOOKING_CONFIRMED", package_id: `pkg_${i}` }));
+    findMock.mockReturnValue({
+      sort:    vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue(events) }),
+      toArray: vi.fn().mockResolvedValue(events),
+    });
+    const result = await getPackageAnalytics("agency_xyz", range);
+    expect(result.topByBookings).toHaveLength(10);
+    expect(result.total).toBe(12);
+  });
+});
+
+describe("getOriginPackagePerformance()", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const range = { from: new Date("2024-01-01"), to: new Date("2024-01-31") };
+  const booking = (overrides: Record<string, unknown> = {}) => ({
+    trekkerCountry: "Germany",
+    packageId: "pkg_1",
+    totalPrice: "100.00",
+    createdAt: new Date("2024-01-10"),
+    package: { title: "EBC Trek" },
+    ...overrides,
+  });
+
+  it("groups by country + package and sums real booking amounts", async () => {
+    vi.mocked(db.booking.findMany).mockResolvedValue([
+      booking({ totalPrice: "100.00" }),
+      booking({ totalPrice: "150.00" }),
+      booking({ trekkerCountry: "France", totalPrice: "200.00" }),
+    ] as never);
+
+    const rows = await getOriginPackagePerformance("agency_xyz", range);
+
+    expect(rows).toHaveLength(2);
+    const germany = rows.find((r) => r.country === "Germany")!;
+    expect(germany.bookings).toBe(2);
+    expect(germany.revenueNet).toBe(250);
+    expect(germany.avgValue).toBe(125);
+    expect(germany.packageTitle).toBe("EBC Trek");
+  });
+
+  it("falls back to 'Unknown' when trekkerCountry is not set", async () => {
+    vi.mocked(db.booking.findMany).mockResolvedValue([booking({ trekkerCountry: null })] as never);
+
+    const rows = await getOriginPackagePerformance("agency_xyz", range);
+
+    expect(rows[0].country).toBe("Unknown");
+  });
+
+  it("tracks the most recent booking date per group", async () => {
+    vi.mocked(db.booking.findMany).mockResolvedValue([
+      booking({ createdAt: new Date("2024-01-05") }),
+      booking({ createdAt: new Date("2024-01-20") }),
+    ] as never);
+
+    const rows = await getOriginPackagePerformance("agency_xyz", range);
+
+    expect(rows[0].lastBooking).toBe(new Date("2024-01-20").toISOString());
+  });
+
+  it("returns an empty list when there are no matching bookings", async () => {
+    vi.mocked(db.booking.findMany).mockResolvedValue([] as never);
+
+    const rows = await getOriginPackagePerformance("agency_xyz", range);
+
+    expect(rows).toHaveLength(0);
   });
 });
 

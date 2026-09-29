@@ -1,5 +1,6 @@
 import { db } from "@funtush/database";
 import { validateRegistrationInput } from "../utils/validator";
+import { normalizeEmail } from "@funtush/shared";
 import bcrypt from "bcrypt";
 
 interface CreateTrekkerInput {
@@ -20,9 +21,12 @@ export const createTrekker = async (data: CreateTrekkerInput) => {
     // validation
     validateRegistrationInput({ email, password, phone });
 
-    // check duplicate USER (not trekker)
+    const normalizedEmail = normalizeEmail(email);
+
+    // check duplicate USER (not trekker) — normalizedEmail catches
+    // dot/plus-alias re-registration a plain `email` match would miss.
     const existingUser = await db.user.findUnique({
-        where: { email },
+        where: { normalizedEmail },
     });
 
     if (existingUser) {
@@ -40,6 +44,7 @@ export const createTrekker = async (data: CreateTrekkerInput) => {
     const user = await db.user.create({
         data: {
             email,
+            normalizedEmail,
             passwordHash: hashedPassword,
             role: "STAFF",
             roleType: "TREKKER",

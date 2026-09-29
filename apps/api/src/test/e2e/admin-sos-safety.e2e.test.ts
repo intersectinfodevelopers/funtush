@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { ObjectId } from "mongodb";
 import request from "supertest";
+import { generateAccessToken } from "@funtush/auth";
 import { app } from "../../app";
 import { dbAvailable, createAgencyContext, type E2EContext } from "./helpers";
 import { getSosCollection, type SosIncident } from "../../models/sosIncident.model";
@@ -15,7 +16,11 @@ import { getSosCollection, type SosIncident } from "../../models/sosIncident.mod
 const RUN = await dbAvailable();
 const d = RUN ? describe : describe.skip;
 
-const adminHeaders = { Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" };
+const adminHeaders = {
+  Host: "admin.funtush.com",
+  "X-Forwarded-For": "127.0.0.1",
+  Authorization: `Bearer ${generateAccessToken({ userId: "e2e-platform-admin", roleType: "PLATFORM", role: "SUPER_ADMIN" } as Parameters<typeof generateAccessToken>[0])}`,
+};
 
 function fixtureIncident(overrides: Partial<SosIncident> = {}): SosIncident {
   return {

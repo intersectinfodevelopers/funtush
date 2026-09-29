@@ -1,4 +1,5 @@
-import { db } from "@funtush/database";
+import { db, type AccountType } from "@funtush/database";
+import { ensureChartOfAccounts } from "./chartOfAccounts.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Finance service (Day 2 — Revenue & Expense Recording)
@@ -49,6 +50,8 @@ export interface ExpensePayload {
 
 export interface TransactionQuery {
     accountCode?: string;
+    /** Only lines on accounts of this type — REVENUE for the income list, EXPENSE for expenses. */
+    type?: string;
     from?: string;
     to?: string;
     page?: number;
@@ -118,13 +121,18 @@ export const getAccountOrThrow = async (
     // transaction client so the lookup joins that same transaction.
     client: Pick<typeof db, "account"> = db
 ) => {
-    const account = await client.account.findFirst({
+    let account = await client.account.findFirst({
         where: {
             agencyId,
             code,
             isActive: true,
         },
     });
+
+    // A brand-new agency has no chart yet: seed the default one (only if it has NO accounts) and retry.
+    if (!account && (await ensureChartOfAccounts(agencyId))) {
+        account = await client.account.findFirst({ where: { agencyId, code, isActive: true } });
+    }
 
     if (!account) {
         throw new Error(
@@ -310,6 +318,9 @@ export const getTransactionsService = async (
 
     // Tenant isolation lives on the parent entry: every line belongs to a
     // journal entry, and the entry filter pins agencyId.
+    if (query.type !== undefined && !["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"].includes(String(query.type))) {
+        throw new Error("type must be one of ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE.");
+    }
     const where = {
         journalEntry: {
             agencyId,
@@ -317,7 +328,9 @@ export const getTransactionsService = async (
                 ? { entryDate: entryDateFilter }
                 : {}),
         },
-        ...(query.accountCode ? { account: { code: String(query.accountCode) } } : {}),
+        ...(query.accountCode || query.type
+            ? { account: { ...(query.accountCode ? { code: String(query.accountCode) } : {}), ...(query.type ? { type: query.type as AccountType } : {}) } }
+            : {}),
     };
 
     const [total, lines] = await Promise.all([

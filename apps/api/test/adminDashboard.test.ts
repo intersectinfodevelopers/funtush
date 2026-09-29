@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
 vi.mock("../src/packages/database/prisma", () => ({
   prisma: {
-    agency:           { groupBy: vi.fn(), findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    subscriptionTier: { findMany: vi.fn() },
+    agency:           { groupBy: vi.fn().mockResolvedValue([]), findMany: vi.fn(), count: vi.fn().mockResolvedValue(0), findUnique: vi.fn(), update: vi.fn() },
+    kycSubmission:    { groupBy: vi.fn().mockResolvedValue([]) },
+    subscriptionTier: { findMany: vi.fn().mockResolvedValue([]) },
     subscription:     { count: vi.fn() },
     trekkerInvoice:   { aggregate: vi.fn() },
     trekPackage:      { count: vi.fn() },
@@ -34,67 +35,55 @@ describe("Admin dashboard", () => {
 
   it("returns correct shape with all expected fields", async () => {
     vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([
-      { name: "BASIC", _count: { agencies: 10 } },
-      { name: "PRO",   _count: { agencies: 5  } },
+      { name: "FREE", _count: { agencies: 10 } },
+      { name: "PRO",  _count: { agencies: 5  } },
     ] as never);
-    vi.mocked(prisma.subscription.count).mockResolvedValue(15);
-    vi.mocked(prisma.trekkerInvoice.aggregate).mockResolvedValue({ _sum: { total: 48320.50 } } as never);
-    vi.mocked(prisma.trekPackage.count).mockResolvedValue(34);
+    vi.mocked(prisma.agency.groupBy).mockResolvedValue([
+      { status: "TRIAL", _count: { _all: 2 } },
+      { status: "ACTIVE", _count: { _all: 13 } },
+    ] as never);
+    vi.mocked(prisma.kycSubmission.groupBy).mockResolvedValue([
+      { status: "APPROVED", _count: { _all: 7 } },
+    ] as never);
+    vi.mocked(prisma.agency.count).mockResolvedValueOnce(3).mockResolvedValueOnce(15);
 
     const stats = await getDashboardStats() as Record<string, unknown>;
 
-    expect(stats.agenciesByTier).toEqual({ BASIC: 10, PRO: 5 });
-    expect(stats.totalActiveSubscriptions).toBe(15);
-    expect(stats.revenueThisMonth).toBe(48320.50);
-    expect(stats.activeTreksLive).toBe(34);
+    expect(stats.totalAgencies).toBe(15);
+    expect(stats.agenciesOnTrial).toBe(2);
+    expect(stats.agenciesOnPaidPlan).toBe(5);
+    expect(stats.kycVerified).toBe(7);
+    expect(stats.kycByStatus).toMatchObject({ NOT_SUBMITTED: 3, APPROVED: 7 });
+    expect(stats.agenciesByTier).toEqual({ FREE: 10, PRO: 5 });
     expect(stats.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("revenueThisMonth defaults to 0 when _sum.total is null", async () => {
+  it("defaults lifecycle and KYC counts to 0 when there is no data", async () => {
     vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([] as never);
-    vi.mocked(prisma.subscription.count).mockResolvedValue(0);
-    vi.mocked(prisma.trekkerInvoice.aggregate).mockResolvedValue({ _sum: { total: null } } as never);
-    vi.mocked(prisma.trekPackage.count).mockResolvedValue(0);
+    vi.mocked(prisma.agency.groupBy).mockResolvedValue([] as never);
+    vi.mocked(prisma.kycSubmission.groupBy).mockResolvedValue([] as never);
+    vi.mocked(prisma.agency.count).mockResolvedValue(0);
 
     const stats = await getDashboardStats() as Record<string, unknown>;
-    expect(stats.revenueThisMonth).toBe(0);
+    expect(stats.agenciesOnTrial).toBe(0);
+    expect(stats.agenciesOnPaidPlan).toBe(0);
+    expect(stats.kycVerified).toBe(0);
+    expect(stats.kycByStatus).toMatchObject({ NOT_SUBMITTED: 0, APPROVED: 0 });
   });
 
   it("caches result — Prisma called only once on second request", async () => {
-    vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([] as never);
-    vi.mocked(prisma.subscription.count).mockResolvedValue(0);
-    vi.mocked(prisma.trekkerInvoice.aggregate).mockResolvedValue({ _sum: { total: 0 } } as never);
-    vi.mocked(prisma.trekPackage.count).mockResolvedValue(0);
-
     await getDashboardStats();
     await getDashboardStats();
 
-    expect(prisma.subscriptionTier.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.subscription.count).toHaveBeenCalledTimes(1);
+    expect(prisma.agency.count).toHaveBeenCalledTimes(2);
+    expect(prisma.kycSubmission.groupBy).toHaveBeenCalledTimes(1);
   });
 
-  it("invoice query filters by PAID status and start of current month", async () => {
-    vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([] as never);
-    vi.mocked(prisma.subscription.count).mockResolvedValue(0);
-    vi.mocked(prisma.trekkerInvoice.aggregate).mockResolvedValue({ _sum: { total: 0 } } as never);
-    vi.mocked(prisma.trekPackage.count).mockResolvedValue(0);
-
+  it("groups agency and KYC submissions by status", async () => {
     await getDashboardStats();
 
-    const invoiceCall = vi.mocked(prisma.trekkerInvoice.aggregate).mock.calls[0][0] as Record<string, unknown>;
-    const where = invoiceCall.where as Record<string, unknown>;
-    expect(where.status).toBe("PAID");
-    expect((where.paidAt as Record<string, unknown>).gte).toBeInstanceOf(Date);
-  });
-
-  it("trek package query filters by PUBLISHED status", async () => {
-    vi.mocked(prisma.subscriptionTier.findMany).mockResolvedValue([] as never);
-    vi.mocked(prisma.subscription.count).mockResolvedValue(0);
-    vi.mocked(prisma.trekkerInvoice.aggregate).mockResolvedValue({ _sum: { total: 0 } } as never);
-    vi.mocked(prisma.trekPackage.count).mockResolvedValue(0);
-
-    await getDashboardStats();
-    expect(vi.mocked(prisma.trekPackage.count).mock.calls[0][0]).toEqual({ where: { status: "PUBLISHED" } });
+    expect(prisma.agency.groupBy).toHaveBeenCalledWith({ by: ["status"], _count: { _all: true } });
+    expect(prisma.kycSubmission.groupBy).toHaveBeenCalledWith({ by: ["status"], _count: { _all: true } });
   });
 });
 

@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { parsePagination } from "../utils/pagination";
+import { hasPlatformPermission } from "../services/platformPermissions.service";
 import {
   submitBug,
   getAgencyBugs,
@@ -6,6 +8,7 @@ import {
   assignBug,
   addBugHint,
   resolveBug,
+  listPlatformStaff,
 } from "../services/bugReport.service";
 
 export const submitBugController = async (req: Request, res: Response) => {
@@ -23,17 +26,31 @@ export const submitBugController = async (req: Request, res: Response) => {
     return res.status(201).json({ success: true, data: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to submit bug report";
-    const status = message.includes("required") ? 400 : 500;
+    const status = /required|must be|limit/.test(message) ? 400 : 500;
     return res.status(status).json({ success: false, message });
   }
 };
 
 export const getAgencyBugsController = async (req: Request, res: Response) => {
   try {
-    const agencyId = req.user!.agencyId!;
+    // Platform admins (reaching this via /admin/bugs) have no agencyId of
+    // their own — null means "every agency" (see getAgencyBugs' doc comment).
+    const agencyId = req.user!.agencyId ?? null;
+
+    // This route also serves AGENCY_ADMIN's own-agency list, so it can't
+    // carry a blanket requirePlatformPermission gate (that would 403 the
+    // TENANT-roleType caller). PLATFORM_SUPPORT specifically needs the
+    // "bugs" permission to see the cross-agency triage list; SUPER_ADMIN /
+    // PLATFORM_ADMIN / AGENCY_ADMIN are unaffected.
+    if (req.user!.roleType === "PLATFORM" && req.user!.role === "PLATFORM_SUPPORT") {
+      const allowed = await hasPlatformPermission(req.user!.userId, "bugs");
+      if (!allowed) {
+        return res.status(403).json({ success: false, message: "You don't have permission to view bug reports." });
+      }
+    }
+
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
-    const page = typeof req.query.page === "string" ? parseInt(req.query.page) : 1;
-    const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit) : 20;
+    const { page, limit } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
 
     const result = await getAgencyBugs(agencyId, status, page, limit);
 
@@ -54,6 +71,15 @@ export const setBugPriorityController = async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : "Failed to set priority";
     const status = message.includes("not found") ? 404 : 400;
     return res.status(status).json({ success: false, message });
+  }
+};
+
+export const listPlatformStaffController = async (_req: Request, res: Response) => {
+  try {
+    const result = await listPlatformStaff();
+    return res.status(200).json({ success: true, data: result });
+  } catch {
+    return res.status(500).json({ success: false, message: "Failed to list platform staff" });
   }
 };
 

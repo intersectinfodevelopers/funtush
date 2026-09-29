@@ -8,3 +8,6 @@ export * from "./service/otp.service";
 export * from "./types";
 export * from './utils/hashToken';
 
+
+export * from './utils/tokenRevocation';
+export { resetAttempts } from "./utils/lockout";
