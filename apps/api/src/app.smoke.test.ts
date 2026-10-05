@@ -105,7 +105,7 @@ describe("app: OpenAPI doc", () => {
   });
 
   it("serves the spec at /docs.json", async () => {
-    const res = await request(app).get("/docs.json");
+    const res = await request(app).get("/docs.json").set("Host", "develop.shirijanga.com");
     expect(res.status).toBe(200);
     expect(String(res.body.openapi)).toMatch(/^3\./);
   });
@@ -171,13 +171,16 @@ describe("app: routing", () => {
 // Infra-free behavioural checks — always run.
 describe("app: static behaviour", () => {
   it("GET /docs → serves Swagger UI HTML", async () => {
-    const res = await request(app).get("/docs/").redirects(1);
+    const res = await request(app)
+      .get("/docs/")
+      .set("Host", "develop.shirijanga.com")
+      .redirects(1);
     expect(res.status).toBe(200);
     expect(res.text).toMatch(/swagger-ui/i);
   });
 
   it("GET /docs.json → valid OpenAPI 3 with security schemes", async () => {
-    const res = await request(app).get("/docs.json");
+    const res = await request(app).get("/docs.json").set("Host", "develop.shirijanga.com");
     expect(res.status).toBe(200);
     expect(String(res.body.openapi)).toMatch(/^3\./);
     expect(res.body.components?.securitySchemes).toHaveProperty("bearerAuth");

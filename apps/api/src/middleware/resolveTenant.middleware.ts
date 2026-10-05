@@ -15,6 +15,14 @@ function getClientIp(req: Request): string {
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]);
 
+// Hosts served as the platform (non-tenant) context, e.g. a staging domain like
+// develop.shirijanga.com. Comma-separated; funtush.com/www.funtush.com always apply.
+const PLATFORM_HOSTS = new Set(
+  ["funtush.com", "www.funtush.com", ...(process.env.PLATFORM_HOSTS || "").split(",")]
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+);
+
 export async function resolveTenant(
   req: Request,
   res: Response,
@@ -25,7 +33,13 @@ export async function resolveTenant(
     // that address the pod by IP or an internal name — not a Funtush domain — so
     // they must not be subject to host-based tenant resolution (which 404s any
     // unrecognised host in production and would get a healthy instance killed).
-    if (req.path === "/health" || req.path === "/metrics") {
+    if (
+      req.path === "/health" ||
+      req.path === "/metrics" ||
+      req.path === "/docs" ||
+      req.path?.startsWith("/docs/") ||
+      req.path === "/docs.json"
+    ) {
       req.context = "platform"; req.tenantId = null; req.agencyId = null;
       return next();
     }
@@ -42,7 +56,7 @@ export async function resolveTenant(
 
     if (!host) { res.status(404).end(); return; }
 
-    if (host === "funtush.com" || host === "www.funtush.com") {
+    if (PLATFORM_HOSTS.has(host)) {
       req.context = "platform"; req.tenantId = null; req.agencyId = null;
       return next();
     }

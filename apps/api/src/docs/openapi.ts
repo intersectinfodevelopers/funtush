@@ -22,6 +22,7 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       "routes are mounted and functional but not yet fully described.",
   },
   servers: [
+    { url: "/", description: "Same origin as these docs" },
     { url: `http://localhost:${port}`, description: "Local" },
   ],
   components: {
