@@ -5,7 +5,29 @@ import bcrypt from "bcryptjs";
 import { prisma, UserRole, RoleType } from "@funtush/database";
 import { normalizeEmail } from "@funtush/shared";
 
+// Seeds the QA accounts used by the Funtush API QA test plan (admin, agency,
+// two trekkers) plus the fixtures their tests rely on. Every write is an upsert,
+// so it is safe to re-run; re-running also resets these accounts' passwords.
+//
+// Local / test DBs:   pnpm --filter @funtush/database db:seed
+// Staging (NODE_ENV=production): refuses to run unless you confirm explicitly,
+// so it can never be run against a real production database by accident:
+//   QA_SEED_CONFIRM=staging pnpm --filter @funtush/database db:seed
+// Optional: QA_ACCOUNTS_PASSWORD overrides the shared default password.
+const QA_PASSWORD = process.env.QA_ACCOUNTS_PASSWORD || "Test@123";
+
+function assertSeedAllowed(): void {
+  if (process.env.NODE_ENV === "production" && process.env.QA_SEED_CONFIRM !== "staging") {
+    throw new Error(
+      "Refusing to seed QA accounts with NODE_ENV=production. If this is the staging " +
+        "database, re-run with QA_SEED_CONFIRM=staging.",
+    );
+  }
+}
+
 async function main() {
+  assertSeedAllowed();
+
   const tiers = [
     {
       name: "FREE",
@@ -51,7 +73,7 @@ async function main() {
     }
   }
 
-  const passwordHash = await bcrypt.hash("Test@123", 10);
+  const passwordHash = await bcrypt.hash(QA_PASSWORD, 10);
 
   const users = [
     {
@@ -261,27 +283,52 @@ async function main() {
     },
   });
 
-  const testTrekker = await prisma.trekker.upsert({
-    where: {
-      userId: "00000000-0000-0000-0000-000000000301",
+  // Upsert the user by email first and key the trekker profile on that user's
+  // REAL id. (It used to look up a hardcoded userId that the created user never
+  // had, so every re-run tried to create john@test.com again and crashed.)
+  const johnUser = await prisma.user.upsert({
+    where: { email: "john@test.com" },
+    update: { passwordHash, role: UserRole.STAFF, roleType: RoleType.TREKKER },
+    create: {
+      email: "john@test.com",
+      normalizedEmail: normalizeEmail("john@test.com"),
+      passwordHash,
+      role: UserRole.STAFF,
+      roleType: RoleType.TREKKER,
     },
+  });
+
+  const testTrekker = await prisma.trekker.upsert({
+    where: { userId: johnUser.id },
     update: {},
     create: {
-      user: {
-        create: {
-          email: "john@test.com",
-          normalizedEmail: normalizeEmail("john@test.com"),
-          passwordHash,
-          role: UserRole.STAFF,
-          roleType: RoleType.TREKKER,
-        },
-      },
+      userId: johnUser.id,
       fullName: "John Doe",
       phone: "1111111111",
       country: "Nepal",
       nationality: "Nepali",
       emergencyContactName: "Jane Doe",
       emergencyContactPhone: "9800000000",
+      isEmailVerified: true,
+      emailVerifiedAt: new Date(),
+      isActive: true,
+    },
+  });
+
+  // test@auth.com is the QA plan's primary trekker (john@test.com is the second
+  // one, for cross-user/IDOR tests). Trekker login needs a profile row — a bare
+  // user returns 401 — so give it one, verified and active like John's.
+  await prisma.trekker.upsert({
+    where: { userId: usersByEmail["test@auth.com"].id },
+    update: {},
+    create: {
+      userId: usersByEmail["test@auth.com"].id,
+      fullName: "Test Trekker",
+      phone: "2222222222",
+      country: "Nepal",
+      nationality: "Nepali",
+      emergencyContactName: "Test Contact",
+      emergencyContactPhone: "9800000001",
       isEmailVerified: true,
       emailVerifiedAt: new Date(),
       isActive: true,
@@ -332,8 +379,14 @@ async function main() {
 }
 
 
+// process.exit: importing @funtush/database also opens Redis/Mongo connections
+// that keep the event loop alive, so without it this script never returns
+// (which hangs `docker exec ... db:seed` on a server).
 main()
-  .then(() => prisma.$disconnect())
+  .then(async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  })
   .catch(async (e) => {
     console.error(e);
     await prisma.$disconnect();
@@ -341,4 +394,8 @@ main()
   });
 
 
-// Seeded Super Admin: admin@funtush.com (password: ChangeMe123!)
+// Seeded accounts (password: Test@123 unless QA_ACCOUNTS_PASSWORD is set):
+//   admin@funtush.com  SUPER_ADMIN   POST /auth/admin/login
+//   agency@funtush.com AGENCY_ADMIN  POST /auth/agency/login
+//   test@auth.com      trekker       POST /auth/trekker/login
+//   john@test.com      trekker       POST /auth/trekker/login
