@@ -105,7 +105,7 @@ describe("app: OpenAPI doc", () => {
   });
 
   it("serves the spec at /docs.json", async () => {
-    const res = await request(app).get("/docs.json");
+    const res = await request(app).get("/docs.json").set("Host", "develop.shirijanga.com");
     expect(res.status).toBe(200);
     expect(String(res.body.openapi)).toMatch(/^3\./);
   });
@@ -171,17 +171,29 @@ describe("app: routing", () => {
 // Infra-free behavioural checks — always run.
 describe("app: static behaviour", () => {
   it("GET /docs → serves Swagger UI HTML", async () => {
-    const res = await request(app).get("/docs/").redirects(1);
+    const res = await request(app)
+      .get("/docs/")
+      .set("Host", "develop.shirijanga.com")
+      .redirects(1);
     expect(res.status).toBe(200);
     expect(res.text).toMatch(/swagger-ui/i);
   });
 
   it("GET /docs.json → valid OpenAPI 3 with security schemes", async () => {
-    const res = await request(app).get("/docs.json");
+    const res = await request(app).get("/docs.json").set("Host", "develop.shirijanga.com");
     expect(res.status).toBe(200);
     expect(String(res.body.openapi)).toMatch(/^3\./);
     expect(res.body.components?.securitySchemes).toHaveProperty("bearerAuth");
     expect(res.body.components?.securitySchemes).toHaveProperty("refreshToken");
+  });
+
+  it("each login endpoint's Swagger example is the matching QA account (see docs/QA_TEST_ACCOUNTS.md)", async () => {
+    const res = await request(app).get("/docs.json").set("Host", "develop.shirijanga.com");
+    const example = (path: string) =>
+      res.body.paths?.[path]?.post?.requestBody?.content?.["application/json"]?.example;
+    expect(example("/auth/admin/login")).toEqual({ email: "admin@funtush.com", password: "Test@123" });
+    expect(example("/auth/agency/login")).toEqual({ email: "agency@funtush.com", password: "Test@123" });
+    expect(example("/auth/trekker/login")).toEqual({ email: "test@auth.com", password: "Test@123" });
   });
 
   it("auth-gated routes reject anonymous callers with 401/403 (not 500)", async () => {

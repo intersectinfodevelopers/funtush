@@ -148,4 +148,20 @@ describe("resolveTenant middleware", () => {
     expect(res._status).toBe(404);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it("PLATFORM_HOSTS entry in production → context=platform, no tenant lookup", async () => {
+    const prev = { env: process.env.NODE_ENV, hosts: process.env.PLATFORM_HOSTS };
+    process.env.NODE_ENV = "production";
+    process.env.PLATFORM_HOSTS = "develop.shirijanga.com, staging.example.com";
+    vi.resetModules();
+    const { resolveTenant: fresh } = await import("../src/middleware/resolveTenant.middleware");
+    const { req, res, next } = mockReqRes("develop.shirijanga.com");
+    req.path = "/agencies/me/finance/pnl";
+    await fresh(req, res, next);
+    process.env.NODE_ENV = prev.env;
+    if (prev.hosts === undefined) delete process.env.PLATFORM_HOSTS; else process.env.PLATFORM_HOSTS = prev.hosts;
+    expect(req.context).toBe("platform");
+    expect(next).toHaveBeenCalledOnce();
+    expect(getTenantByCustomDomain).not.toHaveBeenCalled();
+  });
 });

@@ -46,8 +46,16 @@ d("Admin platform settings (e2e)", () => {
     await setPhoneOtpRequired(false);
   });
 
-  it("GET /admin/settings is reachable with just the admin context (no bearer) and defaults to phone OTP off", async () => {
+  it("GET /admin/settings is unreachable without a bearer token", async () => {
     const res = await request(app).get("/admin/settings").set(adminHeaders);
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /admin/settings defaults to phone OTP off for a platform admin", async () => {
+    const res = await request(app)
+      .get("/admin/settings")
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data.agencyPhoneOtpRequired).toBe(false);
   });
@@ -71,7 +79,10 @@ d("Admin platform settings (e2e)", () => {
 
   it("PATCH /admin/settings persists the toggle, reflected by a subsequent GET", async () => {
     await setPhoneOtpRequired(true);
-    const res = await request(app).get("/admin/settings").set(adminHeaders);
+    const res = await request(app)
+      .get("/admin/settings")
+      .set(adminHeaders)
+      .set("Authorization", `Bearer ${platformAdminToken()}`);
     expect(res.body.data.agencyPhoneOtpRequired).toBe(true);
   });
 });
