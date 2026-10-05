@@ -13,7 +13,6 @@ import express, {
   type NextFunction,
 } from "express";
 import { MulterError } from "multer";
-import swaggerUi from "swagger-ui-express";
 import cors from "cors";
 import { useLocalStorage, localUploadDir } from "@funtush/storage";
 
@@ -80,7 +79,7 @@ import adminRoutes from "./routes/admin/index";
 import paymentWebhookRoutes from "./routes/payment.webhook.routes";
 import stripeWebhookRoutes from "./routes/webhooks/stripe";
 
-import { openapiSpec } from "./docs/openapi";
+import { mountSwaggerDocs } from "./docs/swaggerUi";
 
 const docsEnabled =
   process.env.NODE_ENV !== "production" || process.env.ENABLE_DOCS === "true";
@@ -187,8 +186,7 @@ export function createApp(): Express {
   });
 
   if (docsEnabled) {
-    app.get("/docs.json", (_req, res) => res.json(openapiSpec));
-    app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
+    mountSwaggerDocs(app);
   }
 
   // Prometheus scrape target — request rate/latency/error-rate, labeled by

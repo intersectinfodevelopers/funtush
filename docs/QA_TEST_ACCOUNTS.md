@@ -25,6 +25,23 @@ Not seeded — create these through the API while testing:
 - **Agency staff** with a limited custom role: `POST /agencies/me/staff`
 - **Throwaway users** for password change/reset, lockout, break-glass and ban tests
 
+## Testing from Swagger (`/docs`)
+
+Open `/docs`, expand a login endpoint, pick the account from the **Examples**
+dropdown and press **Execute**. A successful login authorizes the page
+automatically (the bearer token **and** `x-refresh-token`), and the
+authorization survives a reload. Log in as another account to switch role.
+
+| Role | Login | What the routes need |
+|---|---|---|
+| Super admin | `POST /auth/admin/login` | `Authorization: Bearer <accessToken>` — `/admin/*`, `/emails/*` |
+| Agency admin | `POST /auth/agency/login` | `x-refresh-token: <refreshToken>` — `/agencies/me/*`, `/billing/*` (the bearer token alone is rejected) |
+
+A super-admin token is rejected on agency routes and vice-versa; that is the
+role separation working. If Swagger still shows old examples after a deploy,
+that was a cached `swagger-ui-init.js` — it is now versioned per spec and sent
+`no-store`, so it should not recur.
+
 ## Running the seed
 
 Local / test database:

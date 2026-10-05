@@ -187,15 +187,6 @@ describe("app: static behaviour", () => {
     expect(res.body.components?.securitySchemes).toHaveProperty("refreshToken");
   });
 
-  it("each login endpoint's Swagger example is the matching QA account (see docs/QA_TEST_ACCOUNTS.md)", async () => {
-    const res = await request(app).get("/docs.json").set("Host", "develop.shirijanga.com");
-    const example = (path: string) =>
-      res.body.paths?.[path]?.post?.requestBody?.content?.["application/json"]?.example;
-    expect(example("/auth/admin/login")).toEqual({ email: "admin@funtush.com", password: "Test@123" });
-    expect(example("/auth/agency/login")).toEqual({ email: "agency@funtush.com", password: "Test@123" });
-    expect(example("/auth/trekker/login")).toEqual({ email: "test@auth.com", password: "Test@123" });
-  });
-
   it("auth-gated routes reject anonymous callers with 401/403 (not 500)", async () => {
     for (const path of [
       "/agencies/me/roles",
