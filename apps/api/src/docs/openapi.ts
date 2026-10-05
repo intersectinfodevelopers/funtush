@@ -11,6 +11,28 @@ import swaggerJsdoc from "swagger-jsdoc";
 
 const port = process.env.PORT ?? 4000;
 
+// Shared by the three login endpoints. The pre-filled example is the matching QA
+// account (see docs/QA_TEST_ACCOUNTS.md) so "Try it out" works on the first click.
+const QA_PASSWORD_EXAMPLE = "Test@123";
+function loginBody(exampleEmail: string) {
+  return {
+    required: true,
+    content: {
+      "application/json": {
+        schema: {
+          type: "object",
+          required: ["email", "password"],
+          properties: {
+            email: { type: "string", format: "email", example: exampleEmail },
+            password: { type: "string", format: "password", example: QA_PASSWORD_EXAMPLE },
+          },
+        },
+        example: { email: exampleEmail, password: QA_PASSWORD_EXAMPLE },
+      },
+    },
+  };
+}
+
 const baseDefinition: swaggerJsdoc.Options["definition"] = {
   openapi: "3.0.3",
   info: {
@@ -19,7 +41,19 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     description:
       "Backend for the Funtush agency operating system + public marketplace. " +
       "Phase 0: core agency-dashboard endpoints are documented here; other " +
-      "routes are mounted and functional but not yet fully described.",
+      "routes are mounted and functional but not yet fully described.\n\n" +
+      "**Test accounts (local / staging only) — password `Test@123`.** Each account logs in " +
+      "through its own endpoint; the wrong one returns 401 \"Invalid credentials\":\n\n" +
+      "| Account | Role | Login endpoint |\n" +
+      "|---|---|---|\n" +
+      "| `admin@funtush.com` | SUPER_ADMIN | `POST /auth/admin/login` |\n" +
+      "| `agency@funtush.com` | AGENCY_ADMIN | `POST /auth/agency/login` |\n" +
+      "| `test@auth.com` | Trekker (primary) | `POST /auth/trekker/login` |\n" +
+      "| `john@test.com` | Trekker (second, for cross-user tests) | `POST /auth/trekker/login` |\n\n" +
+      "Send the returned `accessToken` as `Authorization: Bearer <token>` (use **Authorize**). " +
+      "Most `/agencies/me/*` routes also need the `refreshToken` as `x-refresh-token`. " +
+      "Refresh tokens are single-use: after `POST /auth/refresh`, use the new one. " +
+      "Login is rate-limited to 5 attempts per minute.",
   },
   servers: [
     { url: "/", description: "Same origin as these docs" },
@@ -162,22 +196,8 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     "/auth/agency/login": {
       post: {
         tags: ["Auth"],
-        summary: "Agency staff login",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "password"],
-                properties: {
-                  email: { type: "string", format: "email" },
-                  password: { type: "string", format: "password" },
-                },
-              },
-            },
-          },
-        },
+        summary: "Agency staff login (e.g. agency@funtush.com — not the super-admin)",
+        requestBody: loginBody("agency@funtush.com"),
         responses: {
           "200": { description: "Access + refresh tokens" },
           "401": { description: "Invalid credentials" },
@@ -195,21 +215,7 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       post: {
         tags: ["Auth"],
         summary: "Platform (super-admin) login — locks for 15 min after 5 failed attempts",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "password"],
-                properties: {
-                  email: { type: "string", format: "email" },
-                  password: { type: "string", format: "password" },
-                },
-              },
-            },
-          },
-        },
+        requestBody: loginBody("admin@funtush.com"),
         responses: {
           "200": { description: "Access + refresh tokens" },
           "401": { description: "Invalid credentials or not a super admin" },
@@ -220,22 +226,8 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
     "/auth/trekker/login": {
       post: {
         tags: ["Auth"],
-        summary: "Trekker login",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "password"],
-                properties: {
-                  email: { type: "string", format: "email" },
-                  password: { type: "string", format: "password" },
-                },
-              },
-            },
-          },
-        },
+        summary: "Trekker login (e.g. test@auth.com or john@test.com)",
+        requestBody: loginBody("test@auth.com"),
         responses: { "200": { description: "Access + refresh tokens" }, "401": { description: "Invalid credentials" } },
       },
     },
