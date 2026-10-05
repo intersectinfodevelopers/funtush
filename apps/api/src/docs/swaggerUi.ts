@@ -16,21 +16,36 @@ import type { Express, NextFunction, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { openapiSpec } from "./openapi";
 
+/** The slice of swagger-ui's response object (and `window.ui`) the interceptor touches. */
+export interface SwaggerResponse {
+  url?: string;
+  status?: number;
+  body?: unknown;
+}
+interface AuthPayload {
+  accessToken?: string;
+  refreshToken?: string;
+}
+interface SwaggerUiGlobal {
+  ui: { authActions: { authorize: (authorized: Record<string, unknown>) => void } };
+}
+
 /**
  * Runs IN THE BROWSER: swagger-ui-express serialises it with Function#toString into
  * swagger-ui-init.js. It must therefore be self-contained plain JS — no imports, no outer
  * variables, and no named inner functions (the TS toolchain wraps those in a `__name` helper
  * that does not exist in the browser; swaggerUi.test.ts guards against that).
  */
-export function autoAuthorizeInterceptor(res: any): any {
+export function autoAuthorizeInterceptor(res: SwaggerResponse): SwaggerResponse {
   try {
     const url = String(res.url || "").split("?")[0];
     if (res.status === 200 && /\/auth\/(admin\/login|agency\/login|trekker\/login|refresh)$/.test(url)) {
       let body = res.body;
       if (typeof body === "string") body = JSON.parse(body);
-      const data = (body && body.data) || body;
+      const envelope = body as (AuthPayload & { data?: AuthPayload }) | null | undefined;
+      const data = (envelope && envelope.data) || envelope;
       if (data && data.accessToken) {
-        const authorized: any = {
+        const authorized: Record<string, unknown> = {
           bearerAuth: {
             name: "bearerAuth",
             schema: { type: "http", scheme: "bearer", in: "header" },
@@ -44,7 +59,7 @@ export function autoAuthorizeInterceptor(res: any): any {
             value: data.refreshToken,
           };
         }
-        (globalThis as any).ui.authActions.authorize(authorized);
+        (globalThis as unknown as SwaggerUiGlobal).ui.authActions.authorize(authorized);
       }
     }
   } catch (_e) {
@@ -56,7 +71,7 @@ export function autoAuthorizeInterceptor(res: any): any {
 export function buildDocsHtml(): string {
   const specHash = createHash("sha1").update(JSON.stringify(openapiSpec)).digest("hex").slice(0, 10);
   return swaggerUi
-    .generateHTML(openapiSpec as any, {
+    .generateHTML(openapiSpec as unknown as Parameters<typeof swaggerUi.generateHTML>[0], {
       customSiteTitle: "Funtush API",
       swaggerOptions: {
         persistAuthorization: true,

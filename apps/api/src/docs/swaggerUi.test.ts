@@ -5,7 +5,19 @@ import { openapiSpec } from "./openapi";
 import { autoAuthorizeInterceptor, buildDocsHtml } from "./swaggerUi";
 
 const HOST = "develop.shirijanga.com";
-const spec = openapiSpec as any;
+
+// Just the parts of the OpenAPI document these tests read.
+interface Operation {
+  security?: Record<string, string[]>[];
+  requestBody?: { content: Record<string, { examples?: Record<string, { summary: string; value: { email: string; password: string } }> }> };
+}
+interface Spec {
+  info: { description: string };
+  components: { securitySchemes: Record<string, unknown> };
+  paths: Record<string, Record<string, Operation>>;
+}
+const spec = openapiSpec as unknown as Spec;
+const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
 
 describe("Swagger UI: cache safety", () => {
   it("versions the init script URL so a stale Cloudflare copy can't be served", () => {
@@ -48,10 +60,10 @@ describe("Swagger UI: auto-authorize after login", () => {
   const authorize = vi.fn();
   afterEach(() => {
     authorize.mockReset();
-    delete (globalThis as any).ui;
+    delete (globalThis as { ui?: unknown }).ui;
   });
   const withUi = () => {
-    (globalThis as any).ui = { authActions: { authorize } };
+    (globalThis as { ui?: unknown }).ui = { authActions: { authorize } };
   };
   const tokens = { accessToken: "ACCESS.jwt", refreshToken: "REFRESH.jwt" };
 
@@ -93,24 +105,23 @@ describe("Swagger UI: auto-authorize after login", () => {
 });
 
 describe("OpenAPI spec: auth documentation", () => {
-  const ops = Object.entries(spec.paths).flatMap(([path, item]: [string, any]) =>
+  const ops = Object.entries(spec.paths).flatMap(([path, item]) =>
     Object.entries(item)
-      .filter(([m]) => ["get", "post", "put", "patch", "delete"].includes(m))
-      .map(([m, op]: [string, any]) => ({ id: `${m.toUpperCase()} ${path}`, op })),
+      .filter(([m]) => HTTP_METHODS.includes(m))
+      .map(([m, op]) => ({ id: `${m.toUpperCase()} ${path}`, op })),
   );
 
   it("every operation's security requirement names a defined security scheme", () => {
     const defined = new Set(Object.keys(spec.components.securitySchemes));
     const bad = ops.flatMap(({ id, op }) =>
-      (op.security ?? []).flatMap((req: object) => Object.keys(req)).filter((s: string) => !defined.has(s)).map((s: string) => `${id} → ${s}`),
+      (op.security ?? []).flatMap((req) => Object.keys(req)).filter((name) => !defined.has(name)).map((name) => `${id} → ${name}`),
     );
     expect(bad).toEqual([]);
   });
 
   it("each login endpoint offers the matching QA account(s) as named examples (see docs/QA_TEST_ACCOUNTS.md)", () => {
-    const examples = (path: string) => spec.paths[path].post.requestBody.content["application/json"].examples;
-    const accounts = (path: string) =>
-      Object.values<any>(examples(path)).map((e) => `${e.value.email} / ${e.value.password}`);
+    const examples = (path: string) => spec.paths[path].post.requestBody?.content["application/json"].examples ?? {};
+    const accounts = (path: string) => Object.values(examples(path)).map((e) => `${e.value.email} / ${e.value.password}`);
     expect(accounts("/auth/admin/login")).toEqual(["admin@funtush.com / Test@123"]);
     expect(accounts("/auth/agency/login")).toEqual(["agency@funtush.com / Test@123"]);
     expect(accounts("/auth/trekker/login")).toEqual(["test@auth.com / Test@123", "john@test.com / Test@123"]);
@@ -119,7 +130,7 @@ describe("OpenAPI spec: auth documentation", () => {
   });
 
   it("the description explains the Super Admin and Agency Admin quick start", () => {
-    const d: string = spec.info.description;
+    const d = spec.info.description;
     expect(d).toContain("Quick start");
     expect(d).toContain("admin@funtush.com");
     expect(d).toContain("agency@funtush.com");
