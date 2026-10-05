@@ -503,7 +503,9 @@ d("X-Forwarded-For spoofing can't bypass the admin whitelist or rate limits (e2e
     const genuine = await request(app)
       .get("/admin/settings")
       .set({ Host: "admin.funtush.com", "X-Forwarded-For": "127.0.0.1" });
-    expect(genuine.status).toBe(200);
+    // /admin/settings requires a login, so a whitelisted caller with no token gets
+    // 401 — proof it reached the admin context — whereas the spoofed one got 404.
+    expect(genuine.status).toBe(401);
   });
 
   it("can't dodge the per-IP rate limit by rotating the client-controlled header", async () => {
