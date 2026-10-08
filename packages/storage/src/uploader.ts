@@ -7,9 +7,12 @@ import path from "node:path";
 
 /**
  * Local development without an object store: when STORAGE_ENDPOINT is unset (and NODE_ENV is not production) files are
- * written under `.local-uploads/` and the API serves them at CDN_BASE_URL (`/cdn`). Production always uses the bucket.
+ * written under `.local-uploads/` and the API serves them at CDN_BASE_URL (`/cdn`). Production uses the bucket — unless
+ * STORAGE_DRIVER=local is set explicitly, which a staging/QA environment without an object store can opt into
+ * (point CDN_BASE_URL at `<api-origin>/cdn` and keep LOCAL_UPLOAD_DIR on a mounted volume so files survive a redeploy).
  */
-export const useLocalStorage = (): boolean => !process.env.STORAGE_ENDPOINT && process.env.NODE_ENV !== "production";
+export const useLocalStorage = (): boolean =>
+    process.env.STORAGE_DRIVER === "local" || (!process.env.STORAGE_ENDPOINT && process.env.NODE_ENV !== "production");
 export const localUploadDir = (): string => path.resolve(process.env.LOCAL_UPLOAD_DIR || path.join(process.cwd(), ".local-uploads"));
 const localPath = (key: string): string => path.join(localUploadDir(), key);
 

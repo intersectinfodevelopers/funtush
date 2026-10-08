@@ -8,6 +8,19 @@ interface registrationInput {
 
 const DIFFICULTIES = ["EASY", "MODERATE", "CHALLENGING", "DIFFICULT"];
 
+/** What the API tells a caller to send. The values are accepted in any letter case (see normalizeDifficulty). */
+export const DIFFICULTY_MESSAGE = "Choose a difficulty: " + DIFFICULTIES.join(", ").toLowerCase() + ".";
+
+/**
+ * Canonical TrekDifficulty enum value for "moderate" / "Moderate" / "MODERATE", or null if it isn't one.
+ * (BUG-202: the error message used to list lowercase values while only uppercase was accepted.)
+ */
+export const normalizeDifficulty = (v: unknown): string | null => {
+  if (typeof v !== "string") return null;
+  const upper = v.trim().toUpperCase();
+  return DIFFICULTIES.includes(upper) ? upper : null;
+};
+
 interface PackageInput {
   title: string;
   durationDays: number;
@@ -140,8 +153,9 @@ export const validatePackageInput = (data: PackageInput) => {
     throw fieldError("durationDays", "Duration must be a whole number of days (1 or more).");
   if (typeof data.pricePerPerson !== "number" || !(data.pricePerPerson >= 0))
     throw fieldError("pricePerPerson", "Price is required and can't be negative.");
-  if (!DIFFICULTIES.includes(data.difficulty))
-    throw fieldError("difficulty", "Choose a difficulty: " + DIFFICULTIES.join(", ").toLowerCase() + ".");
+  const difficulty = normalizeDifficulty(data.difficulty);
+  if (!difficulty) throw fieldError("difficulty", DIFFICULTY_MESSAGE);
+  data.difficulty = difficulty; // the service stores exactly this value, so "moderate" and "MODERATE" both work
   if (!Number.isInteger(data.maxGroupSize) || data.maxGroupSize < 1)
     throw fieldError("maxGroupSize", "Max group size must be a whole number (1 or more).");
 };
