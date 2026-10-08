@@ -10,6 +10,7 @@
 import swaggerJsdoc from "swagger-jsdoc";
 
 const port = process.env.PORT ?? 4000;
+const publicOrigin = (process.env.API_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
 
 // Shared by the three login endpoints. Each lists the matching QA account(s) as
 // named examples (a dropdown in Swagger UI, first one pre-selected) so "Try it
@@ -64,6 +65,10 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       "use the new one. Login is rate-limited to 5 attempts per minute.",
   },
   servers: [
+    // This environment's public origin comes first so tools that import docs.json (Postman, Insomnia, code
+    // generators) use it as the base URL: a relative "/" only means something inside Swagger UI, and localhost only
+    // on a developer machine. Set API_PUBLIC_URL per environment (BUG-002: imports kept defaulting to localhost).
+    ...(publicOrigin ? [{ url: publicOrigin, description: "This environment" }] : []),
     { url: "/", description: "Same origin as these docs" },
     { url: `http://localhost:${port}`, description: "Local" },
   ],

@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import type { Request, Response } from "express";
 import { verifyAccessToken } from "@funtush/auth";
 import { searchMarketplacePackages } from "../services/search.service.js";
-import { cacheGet, cacheSet } from "../services/redis.service.js";
+import { cacheGet, cacheSet, claimOnce } from "../services/redis.service.js";
 
 import {
   getAgencyProfile,
@@ -148,31 +149,89 @@ export const searchMarketplace = async (req: Request, res: Response) => {
   }
 };
 
+const MAX_CLICK_AGENCY_ID_LENGTH = 64;
+const MAX_CLICK_DESTINATION_LENGTH = 100;
+const MAX_CLICK_SEARCH_QUERY_LENGTH = 200;
+/** An identical click (same visitor, agency, destination, search) inside this window is not counted again. */
+const CLICK_DEDUP_WINDOW_SECONDS = 30;
+
+type ClickInput = { agencyId: string; destination: string; searchQuery?: string };
+
+/**
+ * Validates POST /marketplace/click. Every value arrives from a public, unauthenticated request, so it may be missing
+ * or the wrong type; each of those is the caller's mistake (400), never a server error. (BUG-203: a number/boolean/array
+ * used to reach the database layer and come back as a 500.)
+ */
+function parseClickBody(body: unknown): { ok: true; value: ClickInput } | { ok: false; message: string } {
+  const b = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+
+  if (b.agencyId === undefined || b.agencyId === null || b.agencyId === "") {
+    return { ok: false, message: "agencyId is required" };
+  }
+  if (typeof b.agencyId !== "string") return { ok: false, message: "agencyId must be a string" };
+  const agencyId = b.agencyId.trim();
+  if (!agencyId || agencyId.length > MAX_CLICK_AGENCY_ID_LENGTH || !/^[\w-]+$/.test(agencyId)) {
+    return { ok: false, message: "agencyId is not a valid agency id" };
+  }
+
+  if (b.destination === undefined || b.destination === null || b.destination === "") {
+    return { ok: false, message: "destination is required (e.g. 'agency-profile', 'inquiry-form')" };
+  }
+  if (typeof b.destination !== "string") return { ok: false, message: "destination must be a string" };
+  const destination = b.destination.trim();
+  if (!destination || destination.length > MAX_CLICK_DESTINATION_LENGTH) {
+    return { ok: false, message: `destination must be 1-${MAX_CLICK_DESTINATION_LENGTH} characters` };
+  }
+
+  let searchQuery: string | undefined;
+  if (b.searchQuery !== undefined && b.searchQuery !== null) {
+    if (typeof b.searchQuery !== "string") return { ok: false, message: "searchQuery must be a string" };
+    const q = b.searchQuery.trim();
+    if (q.length > MAX_CLICK_SEARCH_QUERY_LENGTH) {
+      return { ok: false, message: `searchQuery must be at most ${MAX_CLICK_SEARCH_QUERY_LENGTH} characters` };
+    }
+    searchQuery = q || undefined;
+  }
+
+  return { ok: true, value: { agencyId, destination, searchQuery } };
+}
+
+/**
+ * True when this exact click was already counted a moment ago (BUG-204: 52 rapid identical requests used to add 52
+ * clicks, inflating an agency's CTR). The "same visitor" is the signed-in trekker, else the anonymous visitor id,
+ * else IP + user-agent — never IP alone, because behind a CDN many visitors share one address. Fails open.
+ */
+async function isDuplicateClick(req: Request, trekkerUserId: string | undefined, click: ClickInput): Promise<boolean> {
+  try {
+    const visitor =
+      trekkerUserId ?? visitorId(req) ?? `${req.ip ?? "?"}|${String(req.headers["user-agent"] ?? "").slice(0, 120)}`;
+    const digest = createHash("sha1")
+      .update([visitor, click.agencyId, click.destination, click.searchQuery ?? ""].join("\u0000"))
+      .digest("hex");
+    return !(await claimOnce(`marketplace:click:${digest}`, CLICK_DEDUP_WINDOW_SECONDS));
+  } catch {
+    return false;
+  }
+}
+
 export const recordMarketplaceClick = async (req: Request, res: Response) => {
   try {
-    const { agencyId, destination, searchQuery } = req.body;
+    const parsed = parseClickBody(req.body);
+    if (!parsed.ok) {
+      return res.status(400).json({ success: false, message: parsed.message });
+    }
+    const { agencyId, destination, searchQuery } = parsed.value;
     const trekkerUserId = optionalTrekkerUserId(req);
 
-    if (!agencyId) {
-      return res.status(400).json({
-        success: false,
-        message: "agencyId is required",
+    if (await isDuplicateClick(req, trekkerUserId, parsed.value)) {
+      return res.status(200).json({
+        success: true,
+        message: "Duplicate click ignored",
+        deduplicated: true,
       });
     }
 
-    if (!destination) {
-      return res.status(400).json({
-        success: false,
-        message: "destination is required (e.g. 'agency-profile', 'inquiry-form')",
-      });
-    }
-
-    const click = await recordClick(
-      agencyId,
-      trekkerUserId,
-      destination,
-      searchQuery
-    );
+    const click = await recordClick(agencyId, trekkerUserId, destination, searchQuery);
 
     return res.status(201).json({
       success: true,
@@ -180,6 +239,10 @@ export const recordMarketplaceClick = async (req: Request, res: Response) => {
       clickId: click.id,
     });
   } catch (err) {
+    // A well-formed id that matches no agency violates the click's foreign key — the caller's mistake, not ours.
+    if ((err as { code?: string } | null)?.code === "P2003") {
+      return res.status(404).json({ success: false, message: "Agency not found" });
+    }
     const message = err instanceof Error ? err.message : "Failed to record click";
     return res.status(500).json({ success: false, message });
   }

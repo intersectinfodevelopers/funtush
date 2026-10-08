@@ -1,6 +1,6 @@
 import { db } from "@funtush/database";
 import { fieldError } from "../utils/httpError";
-import { validatePackageInput, parsePackagePhotos, parsePackageDetails } from "../utils/validator";
+import { validatePackageInput, parsePackagePhotos, parsePackageDetails, normalizeDifficulty, DIFFICULTY_MESSAGE } from "../utils/validator";
 import { indexPackage, indexAgency, removePackage } from "./search.service.js";
 
 // TrekPackage.slug is @unique and required — derive it from the title and
@@ -78,7 +78,11 @@ export const updatePackageService = async (
   if (data.description !== undefined) updateData.description = data.description;
   if (data.durationDays !== undefined) updateData.durationDays = data.durationDays;
   if (data.pricePerPerson !== undefined) updateData.pricePerPerson = data.pricePerPerson;
-  if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
+  if (data.difficulty !== undefined) {
+    const difficulty = normalizeDifficulty(data.difficulty);
+    if (!difficulty) throw fieldError("difficulty", DIFFICULTY_MESSAGE);
+    updateData.difficulty = difficulty;
+  }
   if (data.maxGroupSize !== undefined) updateData.maxGroupSize = data.maxGroupSize;
   if (data.photos !== undefined) {
     updateData.photos = parsePackagePhotos(data.photos);

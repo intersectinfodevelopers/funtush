@@ -98,6 +98,16 @@ router.patch("/:id/tier", requireAuth, requireSuperAdminRole, async (req: Reques
     });
     res.json(updated);
   } catch (err) {
+    // An unknown tier name / agency id is the caller's mistake, not a server fault (it used to be a bare 500).
+    const message = err instanceof Error ? err.message : "";
+    if (message.startsWith("Unknown tier")) {
+      res.status(400).json({ error: message });
+      return;
+    }
+    if ((err as { code?: string } | null)?.code === "P2025") {
+      res.status(404).json({ error: "Agency not found" });
+      return;
+    }
     console.error("[PATCH /admin/agencies/:id/tier]", err);
     res.status(500).json({ error: "Failed to update agency tier" });
   }
@@ -127,6 +137,10 @@ router.patch("/:id/status", requireAuth, requireSuperAdminRole, async (req: Requ
     });
     res.json(updated);
   } catch (err) {
+    if ((err as { code?: string } | null)?.code === "P2025") {
+      res.status(404).json({ error: "Agency not found" });
+      return;
+    }
     console.error("[PATCH /admin/agencies/:id/status]", err);
     res.status(500).json({ error: "Failed to update agency status" });
   }

@@ -25,6 +25,36 @@ Not seeded — create these through the API while testing:
 - **Agency staff** with a limited custom role: `POST /agencies/me/staff`
 - **Throwaway users** for password change/reset, lockout, break-glass and ban tests
 
+## Marketplace test data
+
+The public marketplace (`/marketplace/*`) shows **only** data that passes its visibility rules, so the default QA
+agency (`agency@funtush.com`) is invisible there **by design**: it is a FREE-tier / TRIAL agency, and anything created
+under it stays hidden. A package is visible only when its agency is **ACTIVE**, on a **paid tier** (SMALL or above)
+and — for `/marketplace/agencies` and ranking — **KYC APPROVED**; and the package itself must be **PUBLISHED and in the
+search index** (data inserted straight into the database is not indexed until `search:reindex` runs).
+`/marketplace/stats` is deliberately different: it counts *all* registered agencies and published packages.
+
+`seed:marketplace-demo` creates data that satisfies all of that, then reindexes search:
+
+| | |
+|---|---|
+| Agencies | `himalayan-trails-demo` (MEDIUM) and `annapurna-adventures-demo` (LARGE, sponsored) — ACTIVE, KYC approved, full profile |
+| Packages (6, all PUBLISHED, future departures) | `demo-everest-base-camp`, `demo-langtang-valley`, `demo-gokyo-lakes`, `demo-annapurna-circuit`, `demo-poon-hill`, `demo-mardi-himal` — EASY, MODERATE, CHALLENGING and DIFFICULT, 420–1,900 USD, 5–18 days |
+| Reviews | 4 verified (from `john@test.com` and `test@auth.com`) |
+
+```bash
+# local / test database
+pnpm --filter @funtush/api seed:marketplace-demo
+# staging server (production mode needs the confirmation flag)
+docker exec -e QA_SEED_CONFIRM=staging funtush-api sh -c "cd /app/apps/api && pnpm seed:marketplace-demo"
+# optional: also make agency@funtush.com itself marketplace-visible (SMALL tier, ACTIVE, KYC approved)
+docker exec -e QA_SEED_CONFIRM=staging -e PROMOTE_DEFAULT_AGENCY=1 funtush-api sh -c "cd /app/apps/api && pnpm seed:marketplace-demo"
+```
+
+Re-running is safe; it resets these rows. Packages created later through the API under a paid, ACTIVE agency are
+indexed when they are **published**. `GET /marketplace/seasonal` matches the current month/season *word* in a
+destination's best-season text ("Autumn"), so it returns nothing in June–August for this data.
+
 ## Testing from Swagger (`/docs`)
 
 Open `/docs`, expand a login endpoint, pick the account from the **Examples**
