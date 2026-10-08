@@ -10,11 +10,14 @@
 import swaggerJsdoc from "swagger-jsdoc";
 
 const port = process.env.PORT ?? 4000;
+const publicOrigin = (process.env.API_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
 
-// Shared by the three login endpoints. The pre-filled example is the matching QA
-// account (see docs/QA_TEST_ACCOUNTS.md) so "Try it out" works on the first click.
+// Shared by the three login endpoints. Each lists the matching QA account(s) as
+// named examples (a dropdown in Swagger UI, first one pre-selected) so "Try it
+// out" works on the first click. Accounts are created by the DB seed — see
+// docs/QA_TEST_ACCOUNTS.md; src/app.smoke.test.ts pins these to that seed.
 const QA_PASSWORD_EXAMPLE = "Test@123";
-function loginBody(exampleEmail: string) {
+function loginBody(accounts: { key: string; summary: string; email: string }[]) {
   return {
     required: true,
     content: {
@@ -23,11 +26,13 @@ function loginBody(exampleEmail: string) {
           type: "object",
           required: ["email", "password"],
           properties: {
-            email: { type: "string", format: "email", example: exampleEmail },
-            password: { type: "string", format: "password", example: QA_PASSWORD_EXAMPLE },
+            email: { type: "string", format: "email" },
+            password: { type: "string", format: "password" },
           },
         },
-        example: { email: exampleEmail, password: QA_PASSWORD_EXAMPLE },
+        examples: Object.fromEntries(
+          accounts.map((a) => [a.key, { summary: a.summary, value: { email: a.email, password: QA_PASSWORD_EXAMPLE } }]),
+        ),
       },
     },
   };
@@ -42,20 +47,28 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       "Backend for the Funtush agency operating system + public marketplace. " +
       "Phase 0: core agency-dashboard endpoints are documented here; other " +
       "routes are mounted and functional but not yet fully described.\n\n" +
-      "**Test accounts (local / staging only) — password `Test@123`.** Each account logs in " +
-      "through its own endpoint; the wrong one returns 401 \"Invalid credentials\":\n\n" +
-      "| Account | Role | Login endpoint |\n" +
-      "|---|---|---|\n" +
-      "| `admin@funtush.com` | SUPER_ADMIN | `POST /auth/admin/login` |\n" +
-      "| `agency@funtush.com` | AGENCY_ADMIN | `POST /auth/agency/login` |\n" +
-      "| `test@auth.com` | Trekker (primary) | `POST /auth/trekker/login` |\n" +
-      "| `john@test.com` | Trekker (second, for cross-user tests) | `POST /auth/trekker/login` |\n\n" +
-      "Send the returned `accessToken` as `Authorization: Bearer <token>` (use **Authorize**). " +
-      "Most `/agencies/me/*` routes also need the `refreshToken` as `x-refresh-token`. " +
-      "Refresh tokens are single-use: after `POST /auth/refresh`, use the new one. " +
-      "Login is rate-limited to 5 attempts per minute.",
+      "## Quick start — test as Super Admin or Agency Admin\n\n" +
+      "Password for every test account is `Test@123`. Each account logs in through **its own** " +
+      "endpoint; the wrong one returns 401 \"Invalid credentials\".\n\n" +
+      "| Account | Role | Login endpoint | Credential the API routes need |\n" +
+      "|---|---|---|---|\n" +
+      "| `admin@funtush.com` | Super admin | `POST /auth/admin/login` | `Authorization: Bearer <accessToken>` — for `/admin/*`, `/emails/*` |\n" +
+      "| `agency@funtush.com` | Agency admin | `POST /auth/agency/login` | `x-refresh-token: <refreshToken>` — for `/agencies/me/*`, `/billing/*` |\n" +
+      "| `test@auth.com` | Trekker (primary) | `POST /auth/trekker/login` | `Authorization: Bearer <accessToken>` |\n" +
+      "| `john@test.com` | Trekker (second, for cross-user tests) | `POST /auth/trekker/login` | `Authorization: Bearer <accessToken>` |\n\n" +
+      "**1.** Open a login endpoint, pick the account from the *Examples* dropdown, press *Execute*. " +
+      "**2.** A successful login **authorizes this page automatically** (see the *Authorize* button) — " +
+      "both the bearer token and the refresh token are filled in. **3.** Call any endpoint that has a lock icon. " +
+      "To switch role, log in as the other account; its tokens replace the old ones.\n\n" +
+      "A super-admin token is rejected on agency routes and an agency token on `/admin/*` (403/401) — " +
+      "that is the role separation, not a bug. Refresh tokens are single-use: after `POST /auth/refresh`, " +
+      "use the new one. Login is rate-limited to 5 attempts per minute.",
   },
   servers: [
+    // This environment's public origin comes first so tools that import docs.json (Postman, Insomnia, code
+    // generators) use it as the base URL: a relative "/" only means something inside Swagger UI, and localhost only
+    // on a developer machine. Set API_PUBLIC_URL per environment (BUG-002: imports kept defaulting to localhost).
+    ...(publicOrigin ? [{ url: publicOrigin, description: "This environment" }] : []),
     { url: "/", description: "Same origin as these docs" },
     { url: `http://localhost:${port}`, description: "Local" },
   ],
@@ -72,8 +85,9 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
         in: "header",
         name: "x-refresh-token",
         description:
-          "Refresh token issued at registration. Used by most /agencies/me/* routes " +
-          "to resolve the acting agency.",
+          "refreshToken from POST /auth/agency/login (filled in automatically after a successful " +
+          "login on this page). Used by the /agencies/me/* and /billing/* routes to resolve the " +
+          "acting agency; those routes do not accept the bearer token on its own.",
       },
     },
     schemas: {
@@ -197,7 +211,9 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       post: {
         tags: ["Auth"],
         summary: "Agency staff login (e.g. agency@funtush.com — not the super-admin)",
-        requestBody: loginBody("agency@funtush.com"),
+        requestBody: loginBody([
+          { key: "agencyAdmin", summary: "Agency admin — agency@funtush.com", email: "agency@funtush.com" },
+        ]),
         responses: {
           "200": { description: "Access + refresh tokens" },
           "401": { description: "Invalid credentials" },
@@ -215,7 +231,9 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       post: {
         tags: ["Auth"],
         summary: "Platform (super-admin) login — locks for 15 min after 5 failed attempts",
-        requestBody: loginBody("admin@funtush.com"),
+        requestBody: loginBody([
+          { key: "superAdmin", summary: "Super admin — admin@funtush.com", email: "admin@funtush.com" },
+        ]),
         responses: {
           "200": { description: "Access + refresh tokens" },
           "401": { description: "Invalid credentials or not a super admin" },
@@ -227,7 +245,10 @@ const baseDefinition: swaggerJsdoc.Options["definition"] = {
       post: {
         tags: ["Auth"],
         summary: "Trekker login (e.g. test@auth.com or john@test.com)",
-        requestBody: loginBody("test@auth.com"),
+        requestBody: loginBody([
+          { key: "primaryTrekker", summary: "Primary trekker — test@auth.com", email: "test@auth.com" },
+          { key: "secondTrekker", summary: "Second trekker (cross-user tests) — john@test.com", email: "john@test.com" },
+        ]),
         responses: { "200": { description: "Access + refresh tokens" }, "401": { description: "Invalid credentials" } },
       },
     },

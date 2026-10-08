@@ -13,49 +13,49 @@ const router = Router();
  *   post:
  *     tags: [Billing]
  *     summary: Create a Stripe subscription for the authenticated agency
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Subscription created }, 400: { description: Missing subscriptionTierId }, 404: { description: Agency not found } }
  * /billing/subscribe/verify:
  *   post:
  *     tags: [Billing]
  *     summary: Verify and complete a Nepali-gateway (Khalti/eSewa/ConnectIPS) subscription payment
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Verified }, 400: { description: Invalid provider or missing fields } }
  * /billing/subscribe/khalti/initiate:
  *   post:
  *     tags: [Billing]
  *     summary: Initiate a Khalti subscription payment
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Payment initiated }, 400: { description: Missing fields } }
  * /billing/subscribe/esewa/initiate:
  *   post:
  *     tags: [Billing]
  *     summary: Initiate an eSewa subscription payment
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Payment initiated }, 400: { description: Missing fields } }
  * /billing/subscribe/connectips/initiate:
  *   post:
  *     tags: [Billing]
  *     summary: Initiate a ConnectIPS subscription payment
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Payment initiated }, 400: { description: Missing fields } }
  * /billing/fonepay/activate:
  *   post:
  *     tags: [Billing]
  *     summary: Activate Fonepay for the authenticated agency
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Activated }, 400: { description: Activation failed }, 401: { description: Agency not found } }
  * /billing/fonepay/qr/dynamic:
  *   post:
  *     tags: [Billing]
  *     summary: Generate a dynamic Fonepay QR code for a given amount
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: QR generated }, 400: { description: Missing fields } }
  * /billing/fonepay/status:
  *   get:
  *     tags: [Billing]
  *     summary: Get the agency's Fonepay activation status
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Status }, 401: { description: Agency not found } }
  * /billing/fonepay/verify:
  *   post:
@@ -69,7 +69,7 @@ const router = Router();
  *   post:
  *     tags: [Billing]
  *     summary: Preview a subscription-tier discount code's price before paying
- *     security: [{ refreshTokenAuth: [] }]
+ *     security: [{ refreshToken: [] }]
  *     responses: { 200: { description: Quote }, 400: { description: Invalid or inapplicable code } }
  */
 router.post(

@@ -10,6 +10,7 @@
     "start": "tsx --env-file=.env src/cluster.ts",
     "start:single": "tsx --env-file=.env src/index.ts",
     "search:reindex": "tsx --env-file=.env src/scripts/reindexSearch.ts",
+    "seed:marketplace-demo": "tsx --env-file=.env src/scripts/seedMarketplaceDemo.ts",
     "admin:reset-password": "tsx --env-file=.env src/scripts/resetAdminPassword.ts",
     "lint": "eslint src",
     "test:security": "vitest run --dir security",
